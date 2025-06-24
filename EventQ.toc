@@ -1,0 +1,21 @@
+## Interface: 110107
+## Title: EventQ
+## Version: 1.0.0
+## X-Curse-Project-ID: 1285727
+## Author: LightskyGG
+## IconTexture: 236705
+## SavedVariables: EventQDB
+## Category-enUS: Miscellaneous
+## Category-deDE: Verschiedenes
+## Category-esES: Misceláneo
+## Category-esMX: Misceláneo
+## Category-frFR: Divers
+## Category-itIT: Varie
+## Category-koKR: 기타
+## Category-ptBR: Diversos
+## Category-ruRU: Разное
+## Category-zhCN: 其他
+## Category-zhTW: 其他
+
+Init.lua
+Settings.lua
