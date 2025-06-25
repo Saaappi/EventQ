@@ -75,15 +75,15 @@ local function SlashHandler(msg)
 
             frame:SetTitle(addonName)
 
-            local testDropdown = NewDropdown(frame, "Events", function(value)
-                return addonTable.SelectedEvents[value] == true
+            local eventsDropdown = NewDropdown(frame, "Events", function(value)
+                return EventQDB.Events[value] ~= false
             end, function(value)
-                EventQDB.Events[value].Enabled = true
+                EventQDB.Events[value] = not EventQDB.Events[value]
             end)
-            testDropdown.Dropdown:SetupMenu(function(_, rootDescription)
+            eventsDropdown.Dropdown:SetupMenu(function(_, rootDescription)
 
             end)
-            testDropdown:SetPoint("CENTER", frame, "CENTER", -10, -10)
+            eventsDropdown:SetPoint("CENTER", frame, "CENTER", -10, -10)
 
             local paired = {}
             for _, evtID in ipairs(addonTable.RegionEventIDs[addonTable.Locale]) do
@@ -93,23 +93,16 @@ local function SlashHandler(msg)
                 end
             end
 
+            -- Sort the paired table by the event's name
             table.sort(paired, function(a, b) return a.name < b.name end)
 
-            --[[local entries, values = {}, {}
-            for eventID, event in pairs(addonTable.Events) do
-                for _, evtID in ipairs(addonTable.RegionEventIDs[addonTable.Locale]) do
-                    if evtID == eventID then
-                        table.insert(entries, event.Name)
-                        table.insert(values, eventID)
-                    end
-                end
-            end]]
+            -- Build the final entries and values tables
             local entries, values = {}, {}
             for _, pair in ipairs(paired) do
                 table.insert(entries, pair.name)
                 table.insert(values, pair.id)
             end
-            testDropdown:Init(entries, values)
+            eventsDropdown:Init(entries, values)
         else
             frame:Show()
         end
