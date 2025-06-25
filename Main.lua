@@ -93,6 +93,21 @@ local function ShowButton()
                 print(self.LfgDungeonID)
             end
         end)
+        queueButton:SetMovable(true)
+        queueButton:EnableMouse(true)
+        queueButton:RegisterForDrag("RightButton")
+        queueButton:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        queueButton:SetScript("OnDragStop", function(self)
+            self:StopMovingOrSizing()
+            local anchor, _, relativeAnchor, x, y = self:GetPoint()
+            EventQDB.Position = {
+                Anchor = anchor, Relative = relativeAnchor, X = x, Y = y
+            }
+        end)
+        if EventQDB.Position and EventQDB.Position.Anchor then
+            local position = EventQDB.Position
+            queueButton:SetPoint(position.Anchor, UIParent, position.Relative, position.X, position.Y)
+        end
     end
 
     if #events == 0 then

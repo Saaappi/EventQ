@@ -17,6 +17,7 @@ eventFrame:SetScript("OnEvent", function(_, event, addonLoaded)
         if not EventQDB then
             EventQDB = {}
             EventQDB["Events"] = {}
+            EventQDB["Position"] = {}
         end
 
         addonTable.Locale = GetLocale()
