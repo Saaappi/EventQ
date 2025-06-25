@@ -99,14 +99,14 @@ local function ShowButton()
         queueButton:SetScript("OnDragStart", function(self) self:StartMoving() end)
         queueButton:SetScript("OnDragStop", function(self)
             self:StopMovingOrSizing()
-            local anchor, _, relativeAnchor, x, y = self:GetPoint()
+            local anchor, parent, relativeAnchor, x, y = self:GetPoint(1)
             EventQDB.Position = {
-                Anchor = anchor, Relative = relativeAnchor, X = x, Y = y
+                Anchor = anchor, Parent = (parent and parent:GetName()) or "UIParent", Relative = relativeAnchor, X = x, Y = y
             }
         end)
         if EventQDB.Position and EventQDB.Position.Anchor then
             local position = EventQDB.Position
-            queueButton:SetPoint(position.Anchor, UIParent, position.Relative, position.X, position.Y)
+            queueButton:SetPoint(position.Anchor, position.Parent, position.Relative, position.X, position.Y)
         end
     end
 
