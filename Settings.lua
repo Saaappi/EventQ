@@ -85,17 +85,13 @@ local function SlashHandler(msg)
             end)
             testDropdown:SetPoint("CENTER", frame, "CENTER", -10, -10)
 
-            do
-                local entries = {
-                    "Hallow's End",
-                    "Midsummer Fire Festival"
-                }
-                local values = {
-                    1,
-                    2
-                }
-                testDropdown:Init(entries, values)
+            local entries, values = {}, {}
+            for eventID, event in pairs(addonTable.Events) do
+                table.insert(entries, event.Name)
+                table.insert(values, eventID)
             end
+            -- Note: pairs() does not guarantee order!
+            testDropdown:Init(entries, values)
         else
             frame:Show()
         end

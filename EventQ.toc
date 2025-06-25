@@ -18,4 +18,5 @@
 ## Category-zhTW: 其他
 
 Init.lua
+Events.lua
 Settings.lua
