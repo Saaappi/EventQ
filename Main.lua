@@ -286,7 +286,7 @@ local function UpdateActiveEvents()
             local calendarEvent = C_Calendar.GetDayEvent(0, day.monthDay, index)
             if C_DateAndTime.CompareCalendarTime(day, calendarEvent.startTime) == -1 and C_DateAndTime.CompareCalendarTime(day, calendarEvent.endTime) == 1 then
                 local evt = addonTable.Events[calendarEvent.eventID]
-                if evt then
+                if evt and EventQDB.Events[calendarEvent.eventID] then
                     table.insert(activeEvents, { Name = evt.Name, LfgDungeonID = evt.LfgDungeonID, TextureID = evt.TextureID })
                 end
             end
