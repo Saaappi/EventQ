@@ -2,12 +2,11 @@ local addonName, addonTable = ...
 local eventFrame = CreateFrame("Frame")
 local activeEvents = {}
 local queueButton
---[[local currentEventIndex = 1
-local previousEventIndex = 1
-
--- Queue Button Variables
 local leftChevron
 local rightChevron
+local currentEventIndex = 1
+local previousEventIndex = 1
+--[[
 
 -- This function is used to update the button to the next event in the
 -- table based on the chevron the player clicked (left or right).
@@ -176,10 +175,10 @@ local function ShowButton()
         -- There are multiple events active, so let's make the chevron
         -- buttons so the player can toggle between the active events.
         if (#activeEvents > 1) then
-            --[[if not leftChevron then
+            if not leftChevron then
                 leftChevron = CreateFrame("Button", nil, button)
-                leftChevron:SetSize(20, 20)
-                leftChevron:SetPoint("RIGHT", button, "LEFT", -2, 0)
+                leftChevron:SetSize(16, 16)
+                leftChevron:SetPoint("RIGHT", queueButton, "LEFT", -2, 0)
                 leftChevron.texture = leftChevron:CreateTexture()
                 leftChevron.texture:SetAtlas("common-icon-backarrow")
                 leftChevron:SetNormalTexture(leftChevron.texture)
@@ -187,29 +186,26 @@ local function ShowButton()
 
                 leftChevron:SetScript("OnClick", function(self)
                     if currentEventIndex == 1 then
-                        currentEventIndex = #events
+                        currentEventIndex = #activeEvents
                         previousEventIndex = 1
                     else
                         currentEventIndex = currentEventIndex - 1
                         previousEventIndex = currentEventIndex + 1
                     end
-                    HelpMePlay.Tooltip_OnEnter(self, events[previousEventIndex].name, "")
-                    SetEvent(events[currentEventIndex])
+                    SetEvent(activeEvents[currentEventIndex])
                 end)
-                leftChevron:SetScript("OnEnter", function(self)
+                --[[leftChevron:SetScript("OnEnter", function(self)
                     local previewIndex = 0
                     if currentEventIndex == 1 then
-                        previewIndex = #events
+                        previewIndex = #activeEvents
                     else
                         previewIndex = currentEventIndex - 1
                     end
-                    HelpMePlay.Tooltip_OnEnter(self, events[previewIndex].name, "")
-                end)
-                leftChevron:SetScript("OnLeave", HelpMePlay.Tooltip_OnLeave)
+                end)]]
 
                 rightChevron = CreateFrame("Button", nil, button)
-                rightChevron:SetSize(20, 20)
-                rightChevron:SetPoint("LEFT", button, "RIGHT", 2, 0)
+                rightChevron:SetSize(16, 16)
+                rightChevron:SetPoint("LEFT", queueButton, "RIGHT", 2, 0)
                 rightChevron.texture = rightChevron:CreateTexture()
                 rightChevron.texture:SetAtlas("common-icon-forwardarrow")
                 rightChevron:SetNormalTexture(rightChevron.texture)
@@ -217,28 +213,25 @@ local function ShowButton()
 
                 rightChevron:SetScript("OnClick", function(self)
                     if currentEventIndex == 1 then
-                        currentEventIndex = #events
+                        currentEventIndex = #activeEvents
                         previousEventIndex = 1
                     else
                         currentEventIndex = currentEventIndex - 1
                         previousEventIndex = currentEventIndex + 1
                     end
-                    HelpMePlay.Tooltip_OnEnter(self, events[previousEventIndex].name, "")
-                    SetEvent(events[currentEventIndex])
+                    SetEvent(activeEvents[currentEventIndex])
                 end)
-                rightChevron:SetScript("OnEnter", function(self)
+                --[[rightChevron:SetScript("OnEnter", function(self)
                     local previewIndex = 0
-                    if currentEventIndex == (#events) then
+                    if currentEventIndex == (#activeEvents) then
                         previewIndex = 1
                     else
                         previewIndex = currentEventIndex + 1
                     end
-                    HelpMePlay.Tooltip_OnEnter(self, events[previewIndex].name, "")
-                end)
-                rightChevron:SetScript("OnLeave", HelpMePlay.Tooltip_OnLeave)
+                end)]]
 
-                SetEvent(events[currentEventIndex])
-            end]]
+                SetEvent(activeEvents[currentEventIndex])
+            end
             SetEvent(activeEvents[1])
         elseif (#activeEvents == 1) then
             SetEvent(activeEvents[1])
