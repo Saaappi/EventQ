@@ -17,6 +17,6 @@
 ## Category-zhCN: 其他
 ## Category-zhTW: 其他
 
-Init.lua
 Events.lua
+Init.lua
 Settings.lua
