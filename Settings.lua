@@ -109,5 +109,5 @@ local function SlashHandler(msg)
     end
 end
 
-SLASH_EVENTQ1 = "/eq1"
+SLASH_EVENTQ1 = "/eventq"
 SlashCmdList["EVENTQ"] = SlashHandler
