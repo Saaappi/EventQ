@@ -1,11 +1,108 @@
 local addonName, addonTable = ...
 local eventFrame = CreateFrame("Frame")
-local queueButton
-local leftChevron
-local rightChevron
-local currentEventIndex = 1
-local previousEventIndex = 1
+local queueButton, leftChevron, rightChevron
+local currentEventIndex, previousEventIndex = 1, 1
 addonTable.activeEvents = {}
+
+-- Helper: Tooltip display
+local function ShowTooltip(self, text)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(text, nil, nil, nil, 1, true)
+    GameTooltip:Show()
+end
+local function HideTooltip() GameTooltip:Hide() end
+
+-- Helper: Set event queue button state
+local function SetEvent(event)
+    if not event or not queueButton then return end
+    queueButton.icon:SetTexture(event.TextureID)
+    queueButton.Name = event.Name
+    queueButton.LfgDungeonID = event.LfgDungeonID
+end
+
+-- Chevron logic for left/right navigation
+local function UpdateEventIndex(direction, events)
+    previousEventIndex = currentEventIndex
+    local count = #events
+    if direction == "left" then
+        currentEventIndex = (currentEventIndex - 2 + count) % count + 1
+    elseif direction == "right" then
+        currentEventIndex = (currentEventIndex % count) + 1
+    end
+    SetEvent(events[currentEventIndex])
+end
+
+-- Create or update the event queue button and chevrons
+local function ShowButton()
+    local events = addonTable.activeEvents
+    if not queueButton then
+        queueButton = CreateFrame("Button", nil, UIParent, "ActionButtonTemplate")
+        queueButton:SetPoint("CENTER")
+        queueButton:RegisterForClicks("LeftButtonUp")
+
+        if #events > 1 then
+            leftChevron = CreateFrame("Button", nil, button)
+            leftChevron:SetSize(16, 16)
+            leftChevron:SetPoint("RIGHT", queueButton, "LEFT", -2, 0)
+            leftChevron.texture = leftChevron:CreateTexture()
+            leftChevron.texture:SetAtlas("common-icon-backarrow")
+            leftChevron:SetNormalTexture(leftChevron.texture)
+            leftChevron:SetHighlightAtlas("common-icon-backarrow", "ADD")
+
+            leftChevron:SetScript("OnClick", function(self)
+                if #events > 1 then
+                    UpdateEventIndex("left", events)
+                    ShowTooltip(self, events[previousEventIndex].Name)
+                end
+            end)
+            leftChevron:SetScript("OnEnter", function(self)
+                if #events > 1 then
+                    local previewIndex = (currentEventIndex - 2 + #events) % #events + 1
+                    ShowTooltip(self, events[previewIndex].Name)
+                end
+            end)
+            leftChevron:SetScript("OnLeave", HideTooltip)
+
+            rightChevron = CreateFrame("Button", nil, button)
+            rightChevron:SetSize(16, 16)
+            rightChevron:SetPoint("LEFT", queueButton, "RIGHT", 2, 0)
+            rightChevron.texture = rightChevron:CreateTexture()
+            rightChevron.texture:SetAtlas("common-icon-forwardarrow")
+            rightChevron:SetNormalTexture(rightChevron.texture)
+            rightChevron:SetHighlightAtlas("common-icon-forwardarrow", "ADD")
+
+            rightChevron:SetScript("OnClick", function(self)
+                if #events > 1 then
+                    UpdateEventIndex("right", events)
+                    ShowTooltip(self, events[previousEventIndex].Name)
+                end
+            end)
+            rightChevron:SetScript("OnEnter", function(self)
+                if #events > 1 then
+                    local previewIndex = (currentEventIndex % #events) + 1
+                    ShowTooltip(self, events[previewIndex].Name)
+                end
+            end)
+            rightChevron:SetScript("OnLeave", HideTooltip)
+        end
+
+        queueButton:SetScript("OnEnter", function(self) ShowTooltip(self, self.Name) end)
+        queueButton:SetScript("OnLeave", HideTooltip)
+        queueButton:SetScript("OnClick", function(self)
+            if self.LfgDungeonID then
+                print(self.LfgDungeonID)
+            end
+        end)
+    end
+
+    if #events == 0 then
+        queueButton:Hide()
+        return
+    end
+    queueButton:Show()
+    currentEventIndex, previousEventIndex = 1, 1
+    SetEvent(events[1])
+end
 --[[
 
 -- This function is used to update the button to the next event in the
@@ -38,80 +135,6 @@ HelpMePlay.CreateEventQueueButton = function()
         button:RegisterForClicks("LeftButtonUp")
 
         local extraActionButtonBinding = GetBindingKey("HELPMEPLAY_QUICKWORLDEVENTQUEUE")
-
-        -- There are multiple events active, so let's make the chevron
-        -- buttons so the player can toggle between the active events.
-        if (#events > 1) then
-            if not leftChevron then
-                leftChevron = CreateFrame("Button", nil, button)
-                leftChevron:SetSize(20, 20)
-                leftChevron:SetPoint("RIGHT", button, "LEFT", -2, 0)
-                leftChevron.texture = leftChevron:CreateTexture()
-                leftChevron.texture:SetAtlas("common-icon-backarrow")
-                leftChevron:SetNormalTexture(leftChevron.texture)
-                leftChevron:SetHighlightAtlas("common-icon-backarrow", "ADD")
-
-                leftChevron:SetScript("OnClick", function(self)
-                    if currentEventIndex == 1 then
-                        currentEventIndex = #events
-                        previousEventIndex = 1
-                    else
-                        currentEventIndex = currentEventIndex - 1
-                        previousEventIndex = currentEventIndex + 1
-                    end
-                    HelpMePlay.Tooltip_OnEnter(self, events[previousEventIndex].name, "")
-                    SetEvent(events[currentEventIndex])
-                end)
-                leftChevron:SetScript("OnEnter", function(self)
-                    local previewIndex = 0
-                    if currentEventIndex == 1 then
-                        previewIndex = #events
-                    else
-                        previewIndex = currentEventIndex - 1
-                    end
-                    HelpMePlay.Tooltip_OnEnter(self, events[previewIndex].name, "")
-                end)
-                leftChevron:SetScript("OnLeave", HelpMePlay.Tooltip_OnLeave)
-
-                rightChevron = CreateFrame("Button", nil, button)
-                rightChevron:SetSize(20, 20)
-                rightChevron:SetPoint("LEFT", button, "RIGHT", 2, 0)
-                rightChevron.texture = rightChevron:CreateTexture()
-                rightChevron.texture:SetAtlas("common-icon-forwardarrow")
-                rightChevron:SetNormalTexture(rightChevron.texture)
-                rightChevron:SetHighlightAtlas("common-icon-forwardarrow", "ADD")
-
-                rightChevron:SetScript("OnClick", function(self)
-                    if currentEventIndex == 1 then
-                        currentEventIndex = #events
-                        previousEventIndex = 1
-                    else
-                        currentEventIndex = currentEventIndex - 1
-                        previousEventIndex = currentEventIndex + 1
-                    end
-                    HelpMePlay.Tooltip_OnEnter(self, events[previousEventIndex].name, "")
-                    SetEvent(events[currentEventIndex])
-                end)
-                rightChevron:SetScript("OnEnter", function(self)
-                    local previewIndex = 0
-                    if currentEventIndex == (#events) then
-                        previewIndex = 1
-                    else
-                        previewIndex = currentEventIndex + 1
-                    end
-                    HelpMePlay.Tooltip_OnEnter(self, events[previewIndex].name, "")
-                end)
-                rightChevron:SetScript("OnLeave", HelpMePlay.Tooltip_OnLeave)
-
-                SetEvent(events[currentEventIndex])
-            end
-        elseif (#events == 1) then
-            SetEvent(events[1])
-        else
-            -- There aren't any events, so hide the button and return.
-            button:Hide()
-            return
-        end
 
         button:SetScript("OnClick", function(self)
             LFG_JoinDungeon(LE_LFG_CATEGORY_LFD, self.lfgDungeonID, LFDDungeonList, LFDHiddenByCollapseList)
@@ -158,153 +181,32 @@ HelpMePlay.CreateEventQueueButton = function()
     end
 end]]
 
-local function OnEnter(self, text)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText(text, nil, nil, nil, 1, true)
-    GameTooltip:Show()
-end
-
-local function OnLeave()
-    GameTooltip:Hide()
-end
-
-local function SetEvent(event)
-    queueButton.icon:SetTexture(event.TextureID)
-    queueButton.Name = event.Name
-    queueButton.LfgDungeonID = event.LfgDungeonID
-end
-
-local function ShowButton()
-    if not queueButton then
-        queueButton = CreateFrame("Button", nil, UIParent, "ActionButtonTemplate")
-        queueButton:SetPoint("CENTER")
-        queueButton:RegisterForClicks("LeftButtonUp")
-
-        --local extraActionButtonBinding = GetBindingKey("HELPMEPLAY_QUICKWORLDEVENTQUEUE")
-
-        -- There are multiple events active, so let's make the chevron
-        -- buttons so the player can toggle between the active events.
-        if (#addonTable.activeEvents > 1) then
-            if not leftChevron then
-                leftChevron = CreateFrame("Button", nil, button)
-                leftChevron:SetSize(16, 16)
-                leftChevron:SetPoint("RIGHT", queueButton, "LEFT", -2, 0)
-                leftChevron.texture = leftChevron:CreateTexture()
-                leftChevron.texture:SetAtlas("common-icon-backarrow")
-                leftChevron:SetNormalTexture(leftChevron.texture)
-                leftChevron:SetHighlightAtlas("common-icon-backarrow", "ADD")
-
-                leftChevron:SetScript("OnClick", function(self)
-                    if currentEventIndex == 1 then
-                        currentEventIndex = #addonTable.activeEvents
-                        previousEventIndex = 1
-                    else
-                        currentEventIndex = currentEventIndex - 1
-                        previousEventIndex = currentEventIndex + 1
-                    end
-                    SetEvent(addonTable.activeEvents[currentEventIndex])
-                    if #addonTable.activeEvents > 1 then
-                        OnEnter(self, addonTable.activeEvents[previousEventIndex].Name)
-                    end
-                end)
-                leftChevron:SetScript("OnEnter", function(self)
-                    if #addonTable.activeEvents > 1 then
-                        local previewIndex = 0
-                        if currentEventIndex == 1 then
-                            previewIndex = #addonTable.activeEvents
-                        else
-                            previewIndex = currentEventIndex - 1 or 1
-                        end
-                        OnEnter(self, addonTable.activeEvents[previewIndex].Name)
-                    end
-                end)
-                leftChevron:SetScript("OnLeave", OnLeave)
-
-                rightChevron = CreateFrame("Button", nil, button)
-                rightChevron:SetSize(16, 16)
-                rightChevron:SetPoint("LEFT", queueButton, "RIGHT", 2, 0)
-                rightChevron.texture = rightChevron:CreateTexture()
-                rightChevron.texture:SetAtlas("common-icon-forwardarrow")
-                rightChevron:SetNormalTexture(rightChevron.texture)
-                rightChevron:SetHighlightAtlas("common-icon-forwardarrow", "ADD")
-
-                rightChevron:SetScript("OnClick", function(self)
-                    if currentEventIndex == 1 then
-                        currentEventIndex = #addonTable.activeEvents
-                        previousEventIndex = 1
-                    else
-                        currentEventIndex = currentEventIndex - 1
-                        previousEventIndex = currentEventIndex + 1
-                    end
-                    SetEvent(addonTable.activeEvents[currentEventIndex])
-                    if #addonTable.activeEvents > 1 then
-                        OnEnter(self, addonTable.activeEvents[previousEventIndex].Name)
-                    end
-                end)
-                rightChevron:SetScript("OnEnter", function(self)
-                    if #addonTable.activeEvents > 1 then
-                        local previewIndex = 0
-                        if currentEventIndex == (#addonTable.activeEvents) then
-                            previewIndex = 1
-                        else
-                            previewIndex = currentEventIndex + 1 or 1
-                        end
-                        OnEnter(self, addonTable.activeEvents[previewIndex].Name)
-                    end
-                end)
-                rightChevron:SetScript("OnLeave", OnLeave)
-
-                SetEvent(addonTable.activeEvents[currentEventIndex])
-            end
-            SetEvent(addonTable.activeEvents[1])
-        elseif (#addonTable.activeEvents == 1) then
-            SetEvent(addonTable.activeEvents[1])
-        else
-            -- There aren't any events, so hide the button and return.
-            queueButton:Hide()
-            return
-        end
-
-        queueButton:SetScript("OnEnter", function(self)
-            --[[extraActionButtonBinding = GetBindingKey("HELPMEPLAY_QUICKWORLDEVENTQUEUE")
-            if extraActionButtonBinding then
-                HelpMePlay.Tooltip_OnEnter(self, self.name, string.format("%s Use |cff06BEC6%s|r for quick use.\n\nClick and hold to drag.", LHMP:ColorText("UNCOMMON", "TIP:"), extraActionButtonBinding))
-            else
-                HelpMePlay.Tooltip_OnEnter(self, self.name, LHMP:ColorText("UNCOMMON", "TIP: ") .. "You can set a keybind in the Keybindings menu for quick use.\n\nClick and hold to drag.")
-            end]]
-            OnEnter(self, self.Name)
-        end)
-        queueButton:SetScript("OnLeave", OnLeave)
-    end
-end
-
 local UPDATE_INTERVAL = 180
 addonTable.UpdateActiveEvents = function()
     wipe(addonTable.activeEvents)
 
-    if not CalendarFrame then
-        ToggleCalendar(); CalendarFrame:Hide()
-    end
+    if not CalendarFrame then ToggleCalendar(); CalendarFrame:Hide() end
 
     local day = C_DateAndTime.GetCurrentCalendarTime()
     local numEvents = C_Calendar.GetNumDayEvents(0, day.monthDay)
-    if numEvents > 0 then
-        for index = 1, numEvents do
-            local calendarEvent = C_Calendar.GetDayEvent(0, day.monthDay, index)
-            if C_DateAndTime.CompareCalendarTime(day, calendarEvent.startTime) == -1 and C_DateAndTime.CompareCalendarTime(day, calendarEvent.endTime) == 1 then
-                local evt = addonTable.Events[calendarEvent.eventID]
-                if evt and EventQDB.Events[calendarEvent.eventID] then
-                    table.insert(addonTable.activeEvents, { Name = evt.Name, LfgDungeonID = evt.LfgDungeonID, TextureID = evt.TextureID })
-                end
+    for index = 1, numEvents do
+        local calendarEvent = C_Calendar.GetDayEvent(0, day.monthDay, index)
+        if C_DateAndTime.CompareCalendarTime(day, calendarEvent.startTime) == -1 and
+           C_DateAndTime.CompareCalendarTime(day, calendarEvent.endTime) == 1 then
+            local evt = addonTable.Events and addonTable.Events[calendarEvent.eventID]
+            if evt and EventQDB.Events[calendarEvent.eventID] then
+                table.insert(addonTable.activeEvents, {
+                    Name = evt.Name,
+                    LfgDungeonID = evt.LfgDungeonID,
+                    TextureID = evt.TextureID
+                })
             end
         end
     end
-
     if queueButton then
         currentEventIndex, previousEventIndex = 1, 1
         SetEvent(addonTable.activeEvents[1])
     end
-
     C_Timer.After(UPDATE_INTERVAL, addonTable.UpdateActiveEvents)
 end
 
