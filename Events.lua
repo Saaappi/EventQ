@@ -19,53 +19,22 @@ local addonName, addonTable = ...
                         Enabled = false,
                         LfgDungeonID = 995,
                         TextureID = 630787
-                    },
-                    [617] = { -- Timewalking: Wrath of the Lich King (CN/KR)
-                        Enabled = false,
-                        LfgDungeonID = 995,
-                        TextureID = 630787
-                    },
-                    [618] = { -- Timewalking: Wrath of the Lich King (TW)
-                        Enabled = false,
-                        LfgDungeonID = 995,
-                        TextureID = 630787
-                    },
-                    [622] = { -- Timewalking: The Burning Crusade (EU)
-                        Enabled = false,
-                        LfgDungeonID = 744,
-                        TextureID = 630783
-                    },
-                    [623] = { -- Timewalking: The Burning Crusade (CN/KR)
-                        Enabled = false,
-                        LfgDungeonID = 744,
-                        TextureID = 630783
-                    },
-                    [624] = { -- Timewalking: The Burning Crusade (TW)
-                        Enabled = false,
-                        LfgDungeonID = 744,
-                        TextureID = 630783
-                    },
-                    [628] = { -- Timewalking: Cataclysm (EU)
-                        Enabled = false,
-                        LfgDungeonID = 1146,
-                        TextureID = 630784
-                    },
-                    [629] = { -- Timewalking: Cataclysm (CN/KR)
-                        Enabled = false,
-                        LfgDungeonID = 1146,
-                        TextureID = 630784
-                    },
-                    [630] = { -- Timewalking: Cataclysm (TW)
-                        Enabled = false,
-                        LfgDungeonID = 1146,
-                        TextureID = 630784
                     },]]
 
+-- Localize the names
 addonTable.Events = {
     [324] = { LfgDungeonID = 285, TextureID = 133661, Name = "Hallow's End" },
     [341] = { LfgDungeonID = 286, TextureID = 368565, Name = "Midsummer Fire Festival" },
     [372] = { LfgDungeonID = 287, TextureID = 132621, Name = "Brewfest" },
     [423] = { LfgDungeonID = 288, TextureID = 135450, Name = "Love is in the Air" },
+    [617] = { LfgDungeonID = 995, TextureID = 630787, Name = "Timewalking: Wrath of the Lich King" }, -- CN/KR
+    [618] = { LfgDungeonID = 995, TextureID = 630787, Name = "Timewalking: Wrath of the Lich King" }, -- TW
+    [622] = { LfgDungeonID = 744, TextureID = 630783, Name = "Timewalking: The Burning Crusade" }, -- EU
+    [623] = { LfgDungeonID = 744, TextureID = 630783, Name = "Timewalking: The Burning Crusade" }, -- CN/KR
+    [624] = { LfgDungeonID = 1146, TextureID = 630784, Name = "Timewalking: Cataclysm" }, -- US
+    [628] = { LfgDungeonID = 1146, TextureID = 630784, Name = "Timewalking: Cataclysm" }, -- EU
+    [629] = { LfgDungeonID = 1146, TextureID = 630784, Name = "Timewalking: Cataclysm" }, -- CN/KR
+    [630] = { LfgDungeonID = 1146, TextureID = 630784, Name = "Timewalking: Cataclysm" }, -- TW
     [643] = { LfgDungeonID = 1453, TextureID = 630786, Name = "Timewalking: Mists of Pandaria" }, -- US
     [652] = { LfgDungeonID = 1453, TextureID = 630786, Name = "Timewalking: Mists of Pandaria" }, -- EU
     [654] = { LfgDungeonID = 1453, TextureID = 630786, Name = "Timewalking: Mists of Pandaria" }, -- CN/KR
