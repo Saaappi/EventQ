@@ -85,7 +85,17 @@ local function SlashHandler(msg)
             end)
             testDropdown:SetPoint("CENTER", frame, "CENTER", -10, -10)
 
-            local entries, values = {}, {}
+            local paired = {}
+            for _, evtID in ipairs(addonTable.RegionEventIDs[addonTable.Locale]) do
+                local event = addonTable.Events[evtID]
+                if event then
+                    table.insert(paired, { name = event.Name, id = evtID })
+                end
+            end
+
+            table.sort(paired, function(a, b) return a.name < b.name end)
+
+            --[[local entries, values = {}, {}
             for eventID, event in pairs(addonTable.Events) do
                 for _, evtID in ipairs(addonTable.RegionEventIDs[addonTable.Locale]) do
                     if evtID == eventID then
@@ -93,6 +103,11 @@ local function SlashHandler(msg)
                         table.insert(values, eventID)
                     end
                 end
+            end]]
+            local entries, values = {}, {}
+            for _, pair in ipairs(paired) do
+                table.insert(entries, pair.name)
+                table.insert(values, pair.id)
             end
             testDropdown:Init(entries, values)
         else
