@@ -158,6 +158,17 @@ HelpMePlay.CreateEventQueueButton = function()
     end
 end]]
 
+local function OnEnter(self, text)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(text, nil, nil, nil, 1, true)
+    --GameTooltip:AddLine(text, 1, 1, 1, true)
+    GameTooltip:Show()
+end
+
+local function OnLeave()
+    GameTooltip:Hide()
+end
+
 local function SetEvent(event)
     queueButton.icon:SetTexture(event.TextureID)
     queueButton.Name = event.Name
@@ -193,15 +204,18 @@ local function ShowButton()
                         previousEventIndex = currentEventIndex + 1
                     end
                     SetEvent(activeEvents[currentEventIndex])
+                    OnEnter(self, activeEvents[previousEventIndex].Name)
                 end)
-                --[[leftChevron:SetScript("OnEnter", function(self)
+                leftChevron:SetScript("OnEnter", function(self)
                     local previewIndex = 0
                     if currentEventIndex == 1 then
                         previewIndex = #activeEvents
                     else
                         previewIndex = currentEventIndex - 1
                     end
-                end)]]
+                    OnEnter(self, activeEvents[previewIndex].Name)
+                end)
+                leftChevron:SetScript("OnLeave", OnLeave)
 
                 rightChevron = CreateFrame("Button", nil, button)
                 rightChevron:SetSize(16, 16)
@@ -220,15 +234,18 @@ local function ShowButton()
                         previousEventIndex = currentEventIndex + 1
                     end
                     SetEvent(activeEvents[currentEventIndex])
+                    OnEnter(self, activeEvents[previousEventIndex].Name)
                 end)
-                --[[rightChevron:SetScript("OnEnter", function(self)
+                rightChevron:SetScript("OnEnter", function(self)
                     local previewIndex = 0
                     if currentEventIndex == (#activeEvents) then
                         previewIndex = 1
                     else
                         previewIndex = currentEventIndex + 1
                     end
-                end)]]
+                    OnEnter(self, activeEvents[previewIndex].Name)
+                end)
+                rightChevron:SetScript("OnLeave", OnLeave)
 
                 SetEvent(activeEvents[currentEventIndex])
             end
