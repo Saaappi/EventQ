@@ -1,11 +1,11 @@
 local addonName, addonTable = ...
 local eventFrame = CreateFrame("Frame")
-local activeEvents = {}
 local queueButton
 local leftChevron
 local rightChevron
 local currentEventIndex = 1
 local previousEventIndex = 1
+addonTable.activeEvents = {}
 --[[
 
 -- This function is used to update the button to the next event in the
@@ -161,7 +161,6 @@ end]]
 local function OnEnter(self, text)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText(text, nil, nil, nil, 1, true)
-    --GameTooltip:AddLine(text, 1, 1, 1, true)
     GameTooltip:Show()
 end
 
@@ -185,7 +184,7 @@ local function ShowButton()
 
         -- There are multiple events active, so let's make the chevron
         -- buttons so the player can toggle between the active events.
-        if (#activeEvents > 1) then
+        if (#addonTable.activeEvents > 1) then
             if not leftChevron then
                 leftChevron = CreateFrame("Button", nil, button)
                 leftChevron:SetSize(16, 16)
@@ -197,23 +196,27 @@ local function ShowButton()
 
                 leftChevron:SetScript("OnClick", function(self)
                     if currentEventIndex == 1 then
-                        currentEventIndex = #activeEvents
+                        currentEventIndex = #addonTable.activeEvents
                         previousEventIndex = 1
                     else
                         currentEventIndex = currentEventIndex - 1
                         previousEventIndex = currentEventIndex + 1
                     end
-                    SetEvent(activeEvents[currentEventIndex])
-                    OnEnter(self, activeEvents[previousEventIndex].Name)
+                    SetEvent(addonTable.activeEvents[currentEventIndex])
+                    if #addonTable.activeEvents > 1 then
+                        OnEnter(self, addonTable.activeEvents[previousEventIndex].Name)
+                    end
                 end)
                 leftChevron:SetScript("OnEnter", function(self)
-                    local previewIndex = 0
-                    if currentEventIndex == 1 then
-                        previewIndex = #activeEvents
-                    else
-                        previewIndex = currentEventIndex - 1
+                    if #addonTable.activeEvents > 1 then
+                        local previewIndex = 0
+                        if currentEventIndex == 1 then
+                            previewIndex = #addonTable.activeEvents
+                        else
+                            previewIndex = currentEventIndex - 1 or 1
+                        end
+                        OnEnter(self, addonTable.activeEvents[previewIndex].Name)
                     end
-                    OnEnter(self, activeEvents[previewIndex].Name)
                 end)
                 leftChevron:SetScript("OnLeave", OnLeave)
 
@@ -227,31 +230,35 @@ local function ShowButton()
 
                 rightChevron:SetScript("OnClick", function(self)
                     if currentEventIndex == 1 then
-                        currentEventIndex = #activeEvents
+                        currentEventIndex = #addonTable.activeEvents
                         previousEventIndex = 1
                     else
                         currentEventIndex = currentEventIndex - 1
                         previousEventIndex = currentEventIndex + 1
                     end
-                    SetEvent(activeEvents[currentEventIndex])
-                    OnEnter(self, activeEvents[previousEventIndex].Name)
+                    SetEvent(addonTable.activeEvents[currentEventIndex])
+                    if #addonTable.activeEvents > 1 then
+                        OnEnter(self, addonTable.activeEvents[previousEventIndex].Name)
+                    end
                 end)
                 rightChevron:SetScript("OnEnter", function(self)
-                    local previewIndex = 0
-                    if currentEventIndex == (#activeEvents) then
-                        previewIndex = 1
-                    else
-                        previewIndex = currentEventIndex + 1
+                    if #addonTable.activeEvents > 1 then
+                        local previewIndex = 0
+                        if currentEventIndex == (#addonTable.activeEvents) then
+                            previewIndex = 1
+                        else
+                            previewIndex = currentEventIndex + 1 or 1
+                        end
+                        OnEnter(self, addonTable.activeEvents[previewIndex].Name)
                     end
-                    OnEnter(self, activeEvents[previewIndex].Name)
                 end)
                 rightChevron:SetScript("OnLeave", OnLeave)
 
-                SetEvent(activeEvents[currentEventIndex])
+                SetEvent(addonTable.activeEvents[currentEventIndex])
             end
-            SetEvent(activeEvents[1])
-        elseif (#activeEvents == 1) then
-            SetEvent(activeEvents[1])
+            SetEvent(addonTable.activeEvents[1])
+        elseif (#addonTable.activeEvents == 1) then
+            SetEvent(addonTable.activeEvents[1])
         else
             -- There aren't any events, so hide the button and return.
             queueButton:Hide()
@@ -272,8 +279,8 @@ local function ShowButton()
 end
 
 local UPDATE_INTERVAL = 180
-local function UpdateActiveEvents()
-    wipe(activeEvents)
+addonTable.UpdateActiveEvents = function()
+    wipe(addonTable.activeEvents)
 
     if not CalendarFrame then
         ToggleCalendar(); CalendarFrame:Hide()
@@ -287,13 +294,18 @@ local function UpdateActiveEvents()
             if C_DateAndTime.CompareCalendarTime(day, calendarEvent.startTime) == -1 and C_DateAndTime.CompareCalendarTime(day, calendarEvent.endTime) == 1 then
                 local evt = addonTable.Events[calendarEvent.eventID]
                 if evt and EventQDB.Events[calendarEvent.eventID] then
-                    table.insert(activeEvents, { Name = evt.Name, LfgDungeonID = evt.LfgDungeonID, TextureID = evt.TextureID })
+                    table.insert(addonTable.activeEvents, { Name = evt.Name, LfgDungeonID = evt.LfgDungeonID, TextureID = evt.TextureID })
                 end
             end
         end
     end
 
-    C_Timer.After(UPDATE_INTERVAL, UpdateActiveEvents)
+    if queueButton then
+        currentEventIndex, previousEventIndex = 1, 1
+        SetEvent(addonTable.activeEvents[1])
+    end
+
+    C_Timer.After(UPDATE_INTERVAL, addonTable.UpdateActiveEvents)
 end
 
 
@@ -301,7 +313,7 @@ end
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
-        UpdateActiveEvents()
+        addonTable.UpdateActiveEvents()
         C_Timer.After(2, ShowButton)
         eventFrame:UnregisterEvent(event)
     end

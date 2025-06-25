@@ -79,6 +79,7 @@ local function SlashHandler(msg)
                 return EventQDB.Events[value] ~= false
             end, function(value)
                 EventQDB.Events[value] = not EventQDB.Events[value]
+                addonTable.UpdateActiveEvents()
             end)
             eventsDropdown.Dropdown:SetupMenu(function(_, rootDescription)
 
