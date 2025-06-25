@@ -19,9 +19,9 @@ eventFrame:SetScript("OnEvent", function(_, event, addonLoaded)
             EventQDB["Events"] = {}
         end
 
-        local locale = GetLocale()
-        if addonTable.RegionEventIDs[locale] then
-            local regionEvents = addonTable.RegionEventIDs[locale]
+        addonTable.Locale = GetLocale()
+        if addonTable.RegionEventIDs[addonTable.Locale] then
+            local regionEvents = addonTable.RegionEventIDs[addonTable.Locale]
             for _, eventID in ipairs(regionEvents) do
                 if not EventQDB.Events[eventID] then
                     EventQDB.Events[eventID] = false

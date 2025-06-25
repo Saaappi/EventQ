@@ -87,10 +87,13 @@ local function SlashHandler(msg)
 
             local entries, values = {}, {}
             for eventID, event in pairs(addonTable.Events) do
-                table.insert(entries, event.Name)
-                table.insert(values, eventID)
+                for _, evtID in ipairs(addonTable.RegionEventIDs[addonTable.Locale]) do
+                    if evtID == eventID then
+                        table.insert(entries, event.Name)
+                        table.insert(values, eventID)
+                    end
+                end
             end
-            -- Note: pairs() does not guarantee order!
             testDropdown:Init(entries, values)
         else
             frame:Show()
