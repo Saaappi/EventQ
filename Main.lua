@@ -34,63 +34,56 @@ end
 
 -- Create or update the event queue button and chevrons
 addonTable.ShowButton = function()
-    if not EventQDB["Enabled"] and queueButton then
-        queueButton:Hide()
-        leftChevron:Hide()
-        rightChevron:Hide()
-        return
-    end
     local events = addonTable.activeEvents
-    if not queueButton then
+    if not queueButton and EventQDB["Enabled"] then
         queueButton = CreateFrame("Button", nil, UIParent, "ActionButtonTemplate")
         queueButton:SetPoint("CENTER")
         queueButton:RegisterForClicks("LeftButtonUp")
 
-        if #events > 1 then
-            leftChevron = CreateFrame("Button", nil, button)
-            leftChevron:SetSize(16, 16)
-            leftChevron:SetPoint("RIGHT", queueButton, "LEFT", -2, 0)
-            leftChevron.texture = leftChevron:CreateTexture()
-            leftChevron.texture:SetAtlas("common-icon-backarrow")
-            leftChevron:SetNormalTexture(leftChevron.texture)
-            leftChevron:SetHighlightAtlas("common-icon-backarrow", "ADD")
 
-            leftChevron:SetScript("OnClick", function(self)
-                if #events > 1 then
-                    UpdateEventIndex("left", events)
-                    ShowTooltip(self, events[previousEventIndex].Name)
-                end
-            end)
-            leftChevron:SetScript("OnEnter", function(self)
-                if #events > 1 then
-                    local previewIndex = (currentEventIndex - 2 + #events) % #events + 1
-                    ShowTooltip(self, events[previewIndex].Name)
-                end
-            end)
-            leftChevron:SetScript("OnLeave", HideTooltip)
+        leftChevron = CreateFrame("Button", nil, button)
+        leftChevron:SetSize(16, 16)
+        leftChevron:SetPoint("RIGHT", queueButton, "LEFT", -2, 0)
+        leftChevron.texture = leftChevron:CreateTexture()
+        leftChevron.texture:SetAtlas("common-icon-backarrow")
+        leftChevron:SetNormalTexture(leftChevron.texture)
+        leftChevron:SetHighlightAtlas("common-icon-backarrow", "ADD")
 
-            rightChevron = CreateFrame("Button", nil, button)
-            rightChevron:SetSize(16, 16)
-            rightChevron:SetPoint("LEFT", queueButton, "RIGHT", 2, 0)
-            rightChevron.texture = rightChevron:CreateTexture()
-            rightChevron.texture:SetAtlas("common-icon-forwardarrow")
-            rightChevron:SetNormalTexture(rightChevron.texture)
-            rightChevron:SetHighlightAtlas("common-icon-forwardarrow", "ADD")
+        leftChevron:SetScript("OnClick", function(self)
+            if #events > 1 then
+                UpdateEventIndex("left", events)
+                ShowTooltip(self, events[previousEventIndex].Name)
+            end
+        end)
+        leftChevron:SetScript("OnEnter", function(self)
+            if #events > 1 then
+                local previewIndex = (currentEventIndex - 2 + #events) % #events + 1
+                ShowTooltip(self, events[previewIndex].Name)
+            end
+        end)
+        leftChevron:SetScript("OnLeave", HideTooltip)
 
-            rightChevron:SetScript("OnClick", function(self)
-                if #events > 1 then
-                    UpdateEventIndex("right", events)
-                    ShowTooltip(self, events[previousEventIndex].Name)
-                end
-            end)
-            rightChevron:SetScript("OnEnter", function(self)
-                if #events > 1 then
-                    local previewIndex = (currentEventIndex % #events) + 1
-                    ShowTooltip(self, events[previewIndex].Name)
-                end
-            end)
-            rightChevron:SetScript("OnLeave", HideTooltip)
-        end
+        rightChevron = CreateFrame("Button", nil, button)
+        rightChevron:SetSize(16, 16)
+        rightChevron:SetPoint("LEFT", queueButton, "RIGHT", 2, 0)
+        rightChevron.texture = rightChevron:CreateTexture()
+        rightChevron.texture:SetAtlas("common-icon-forwardarrow")
+        rightChevron:SetNormalTexture(rightChevron.texture)
+        rightChevron:SetHighlightAtlas("common-icon-forwardarrow", "ADD")
+
+        rightChevron:SetScript("OnClick", function(self)
+            if #events > 1 then
+                UpdateEventIndex("right", events)
+                ShowTooltip(self, events[previousEventIndex].Name)
+            end
+        end)
+        rightChevron:SetScript("OnEnter", function(self)
+            if #events > 1 then
+                local previewIndex = (currentEventIndex % #events) + 1
+                ShowTooltip(self, events[previewIndex].Name)
+            end
+        end)
+        rightChevron:SetScript("OnLeave", HideTooltip)
 
         queueButton:SetScript("OnEnter", function(self) ShowTooltip(self, self.Name) end)
         queueButton:SetScript("OnLeave", HideTooltip)
@@ -114,15 +107,34 @@ addonTable.ShowButton = function()
             local position = EventQDB.Position
             queueButton:SetPoint(position.Anchor, position.Parent, position.Relative, position.X, position.Y)
         end
+    elseif queueButton then
+        if leftChevron then
+            leftChevron:Show()
+            rightChevron:Show()
+        end
     end
 
-    --[[if #events == 0 then
+    if #events == 0 and queueButton then
         queueButton:Hide()
+        leftChevron:Hide()
+        rightChevron:Hide()
         return
-    end]]
-    queueButton:Show()
-    currentEventIndex, previousEventIndex = 1, 1
-    SetEvent(events[1])
+    end
+
+    if queueButton then
+        queueButton:Show()
+        currentEventIndex, previousEventIndex = 1, 1
+        SetEvent(events[1])
+    end
+
+    if not EventQDB["Enabled"] and queueButton then
+        queueButton:Hide()
+        if leftChevron then
+            leftChevron:Hide()
+            rightChevron:Hide()
+        end
+        return
+    end
 end
 --[[
 
@@ -227,6 +239,7 @@ addonTable.UpdateActiveEvents = function()
     if queueButton then
         currentEventIndex, previousEventIndex = 1, 1
         SetEvent(addonTable.activeEvents[1])
+        addonTable.ShowButton()
     end
     C_Timer.After(UPDATE_INTERVAL, addonTable.UpdateActiveEvents)
 end
@@ -237,7 +250,7 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         addonTable.UpdateActiveEvents()
-        if EventQDB["Enabled"] then C_Timer.After(2, addonTable.ShowButton) end
+        C_Timer.After(2, addonTable.ShowButton)
         eventFrame:UnregisterEvent(event)
     end
 end)
