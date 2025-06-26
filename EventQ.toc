@@ -3,7 +3,7 @@
 ## Version: 1.0.0
 ## X-Curse-Project-ID: 1285727
 ## Author: LightskyGG
-## IconTexture: 236705
+## IconTexture: 397907
 ## SavedVariables: EventQDB
 ## Category-enUS: Miscellaneous
 ## Category-deDE: Verschiedenes
