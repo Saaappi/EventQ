@@ -16,6 +16,7 @@ eventFrame:SetScript("OnEvent", function(_, event, addonLoaded)
     if event == "ADDON_LOADED" and addonLoaded == addonName then
         if not EventQDB then
             EventQDB = {}
+            EventQDB["Enabled"] = false
             EventQDB["Events"] = {}
             EventQDB["Position"] = {}
         end

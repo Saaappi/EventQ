@@ -2,12 +2,41 @@ local addonName, addonTable = ...
 addonTable.SelectedEvents = {}
 local frame
 
+local function NewCheckbox(data)
+    local checkbox = CreateFrame("CheckButton", nil, data.parent, "SettingsCheckboxTemplate")
+    checkbox:SetText(data.labelText)
+
+    local label = checkbox:GetFontString()
+    label:SetWidth(100)
+    label:SetWordWrap(true)
+    label:SetJustifyH("LEFT")
+    label:SetJustifyV("MIDDLE")
+    label:SetPoint("LEFT", checkbox, "RIGHT", 3, 0)
+    checkbox:SetNormalFontObject(GameFontHighlight)
+
+    checkbox:SetChecked(EventQDB[data.savedVarKey] and true or false)
+
+    checkbox:SetScript("OnClick", function(self)
+        EventQDB[data.savedVarKey] = self:GetChecked() and true or false
+    end)
+
+    if data.tooltipText then
+        checkbox:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(data.tooltipText, 1, 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        checkbox:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+
+    return checkbox
+end
+
 local function NewDropdown(parent, labelText, isSelectedCallback, onSelectionCallback)
     local holder = CreateFrame("Frame", nil, parent)
     local dropdown = CreateFrame("DropdownButton", nil, holder, "WowStyle1DropdownTemplate")
 
     dropdown:SetWidth(175)
-    dropdown:SetPoint("CENTER", frame, "CENTER", 0, 0)
 
     local label = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     label:SetPoint("BOTTOMLEFT", dropdown, "TOPLEFT", 0, 5)
@@ -15,8 +44,8 @@ local function NewDropdown(parent, labelText, isSelectedCallback, onSelectionCal
     label:SetJustifyV("TOP")
     label:SetText(labelText)
 
-    holder:SetPoint("LEFT", 30, 0)
-    holder:SetPoint("RIGHT", -30, 0)
+    holder:SetPoint("LEFT", 5, 0)
+    holder:SetPoint("RIGHT", -5, 0)
 
     holder.Init = function(_, entryLabels, values)
         local entries = {}
@@ -75,6 +104,17 @@ local function SlashHandler(msg)
 
             frame:SetTitle(addonName)
 
+            local enabledCheckbox = NewCheckbox({
+                parent = frame,
+                labelText = "Enabled",
+                savedVarKey = "Enabled",
+                tooltipText = "Toggle the queue button."
+            })
+            enabledCheckbox:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -60)
+            enabledCheckbox:HookScript("OnClick", function()
+                addonTable.ShowButton()
+            end)
+
             local eventsDropdown = NewDropdown(frame, "Events", function(value)
                 return EventQDB.Events[value] ~= false
             end, function(value)
@@ -84,7 +124,7 @@ local function SlashHandler(msg)
             eventsDropdown.Dropdown:SetupMenu(function(_, rootDescription)
 
             end)
-            eventsDropdown:SetPoint("CENTER", frame, "CENTER", -10, -10)
+            eventsDropdown.Dropdown:SetPoint("TOPLEFT", enabledCheckbox, "BOTTOMLEFT", 0, -40)
 
             local paired = {}
             for _, evtID in ipairs(addonTable.RegionEventIDs[addonTable.Locale]) do

@@ -33,7 +33,13 @@ local function UpdateEventIndex(direction, events)
 end
 
 -- Create or update the event queue button and chevrons
-local function ShowButton()
+addonTable.ShowButton = function()
+    if not EventQDB["Enabled"] and queueButton then
+        queueButton:Hide()
+        leftChevron:Hide()
+        rightChevron:Hide()
+        return
+    end
     local events = addonTable.activeEvents
     if not queueButton then
         queueButton = CreateFrame("Button", nil, UIParent, "ActionButtonTemplate")
@@ -110,10 +116,10 @@ local function ShowButton()
         end
     end
 
-    if #events == 0 then
+    --[[if #events == 0 then
         queueButton:Hide()
         return
-    end
+    end]]
     queueButton:Show()
     currentEventIndex, previousEventIndex = 1, 1
     SetEvent(events[1])
@@ -231,7 +237,7 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         addonTable.UpdateActiveEvents()
-        C_Timer.After(2, ShowButton)
+        if EventQDB["Enabled"] then C_Timer.After(2, addonTable.ShowButton) end
         eventFrame:UnregisterEvent(event)
     end
 end)
