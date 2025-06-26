@@ -21,3 +21,4 @@ Events.lua
 Init.lua
 Settings.lua
 Main.lua
+EventQBindManager.lua
