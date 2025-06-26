@@ -108,8 +108,7 @@ local function SlashHandler(msg)
                 parent = frame,
                 labelText = "Enabled",
                 savedVarKey = "Enabled",
-                tooltipText = "Toggle the queue button.\n\n" ..
-                "You should opt in to some events before enabling the button."
+                tooltipText = "Toggle the queue button."
             })
             enabledCheckbox:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -60)
             enabledCheckbox:HookScript("OnClick", function()
