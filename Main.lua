@@ -141,7 +141,7 @@ local UPDATE_INTERVAL = 180
 addonTable.UpdateActiveEvents = function()
     wipe(addonTable.activeEvents)
 
-    if not CalendarFrame then ToggleCalendar(); CalendarFrame:Hide() end
+    if not CalendarFrame then ToggleCalendar(); HideUIPanel(CalendarFrame) end
 
     local day = C_DateAndTime.GetCurrentCalendarTime()
     local numEvents = C_Calendar.GetNumDayEvents(0, day.monthDay)
