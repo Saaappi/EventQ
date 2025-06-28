@@ -116,6 +116,36 @@ local function SlashHandler(msg)
                 addonTable.ShowButton()
             end)
 
+            local autoEnrollmentCheckbox = NewCheckbox({
+                parent = frame,
+                labelText = "Auto Enrollment",
+                savedVarKey = "AutoEnrollment",
+                tooltipText = "Toggle to automatically enroll in events based on whether or not they're active."
+            })
+            autoEnrollmentCheckbox:SetPoint("LEFT", enabledCheckbox, "RIGHT", 65, 0)
+            autoEnrollmentCheckbox:HookScript("OnClick", function()
+                if not EventQDB.Enabled then
+                    EventQDB.Enabled = true
+                    enabledCheckbox:Click()
+                end
+
+                if not CalendarFrame then ToggleCalendar(); HideUIPanel(CalendarFrame) end
+
+                local day = C_DateAndTime.GetCurrentCalendarTime()
+                local numEvents = C_Calendar.GetNumDayEvents(0, day.monthDay)
+                for index = 1, numEvents do
+                    local calendarEvent = C_Calendar.GetDayEvent(0, day.monthDay, index)
+                    if C_DateAndTime.CompareCalendarTime(day, calendarEvent.startTime) == -1 and
+                    C_DateAndTime.CompareCalendarTime(day, calendarEvent.endTime) == 1 then
+                        local evt = addonTable.Events and addonTable.Events[calendarEvent.eventID]
+                        if evt then
+                            EventQDB.Events[calendarEvent.eventID] = true
+                        end
+                    end
+                end
+                addonTable.UpdateActiveEvents()
+            end)
+
             local eventsDropdown = NewDropdown(frame, "Events", function(value)
                 return EventQDB.Events[value] ~= false
             end, function(value)

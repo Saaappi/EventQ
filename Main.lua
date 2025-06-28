@@ -167,9 +167,20 @@ addonTable.UpdateActiveEvents = function()
     C_Timer.After(UPDATE_INTERVAL, addonTable.UpdateActiveEvents)
 end
 
+eventFrame:RegisterEvent("LFG_PROPOSAL_SHOW")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
-    if event == "PLAYER_ENTERING_WORLD" then
+    if event == "LFG_PROPOSAL_SHOW" then
+        WorldFrame:HookScript("OnMouseUp", function(_, button)
+            if LFGDungeonReadyPopup:IsShown() then
+                local hasResponded = select(8, GetLFGProposal())
+                if button == "LeftButton" and (not hasResponded) then
+                    AcceptProposal()
+                end
+                return
+            end
+        end)
+    elseif event == "PLAYER_ENTERING_WORLD" then
         addonTable.UpdateActiveEvents()
         C_Timer.After(2, addonTable.ShowButton)
         eventFrame:UnregisterEvent(event)
