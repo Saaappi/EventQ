@@ -24,7 +24,7 @@ L["ENABLED"]        = "Enabled"
 L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
 
 L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
-L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether they're active or not."
 
 L["BREWFEST"]               = "Brewfest"
 L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
@@ -47,7 +47,7 @@ L["ENABLED"]        = "Enabled"
 L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
 
 L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
-L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether they're active or not."
 
 L["BREWFEST"]               = "Brewfest"
 L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
