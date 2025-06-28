@@ -122,9 +122,9 @@ local function CreateSettingsFrame()
 
     local enabledCheckbox = NewCheckbox({
         parent = frame,
-        labelText = "Enabled",
+        labelText = addonTable.Locales.ENABLED,
         savedVarKey = "Enabled",
-        tooltipText = "Toggle to show or hide the queue button."
+        tooltipText = addonTable.Locales.ENABLED_DESC
     })
     enabledCheckbox:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -60)
     enabledCheckbox:HookScript("OnClick", function()
@@ -134,9 +134,9 @@ local function CreateSettingsFrame()
 
     local autoEnrollmentCheckbox = NewCheckbox({
         parent = frame,
-        labelText = "Auto Enrollment",
+        labelText = addonTable.Locales.AUTO_ENROLLMENT,
         savedVarKey = "AutoEnrollment",
-        tooltipText = "Toggle to automatically enroll in events based on whether or not they're active."
+        tooltipText = addonTable.Locales.AUTO_ENROLLMENT_DESC
     })
     autoEnrollmentCheckbox:SetPoint("LEFT", enabledCheckbox, "RIGHT", 65, 0)
     autoEnrollmentCheckbox:HookScript("OnClick", function()
