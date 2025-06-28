@@ -204,16 +204,16 @@ local L = Locales.ptBR
 
 L["EVENTQ"]         = "eventq"
 
-L["ENABLED"]        = "Enabled"
-L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+L["ENABLED"]        = "Ativado"
+L["ENABLED_DESC"]   = "Alternar para mostrar ou ocultar o botão da fila."
 
-L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
-L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+L["AUTO_ENROLLMENT"]        = "Inscrição Automática"
+L["AUTO_ENROLLMENT_DESC"]   = "Alternar para se inscrever automaticamente em eventos com base em estarem ativos ou não."
 
-L["BREWFEST"]               = "Brewfest"
-L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
-L["HALLOWS_END"]            = "Hallow's End"
-L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["BREWFEST"]               = "CervaFest"
+L["LOVE_IS_IN_THE_AIR"]     = "O Amor Está No Ar"
+L["HALLOWS_END"]            = "Noturnália"
+L["MIDSUMMER"]              = "Festival do Fogo do Solstício"
 L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
 L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
 L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
