@@ -250,16 +250,16 @@ local L = Locales.zhCN
 
 L["EVENTQ"]         = "eventq"
 
-L["ENABLED"]        = "Enabled"
-L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+L["ENABLED"]        = "啟用"
+L["ENABLED_DESC"]   = "切換以顯示或隱藏隊列按鈕。"
 
-L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
-L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+L["AUTO_ENROLLMENT"]        = "自動報名"
+L["AUTO_ENROLLMENT_DESC"]   = "切換以根據活動是否啟動自動報名參加活動。"
 
-L["BREWFEST"]               = "Brewfest"
-L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
-L["HALLOWS_END"]            = "Hallow's End"
-L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["BREWFEST"]               = "美酒节"
+L["LOVE_IS_IN_THE_AIR"]     = "情人节"
+L["HALLOWS_END"]            = "万圣节"
+L["MIDSUMMER"]              = "仲夏火焰节"
 L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
 L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
 L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
