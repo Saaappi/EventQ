@@ -45,7 +45,7 @@ addonTable.ShowButton = function()
 
 
         leftChevron = CreateFrame("Button", nil, queueButton)
-        leftChevron:SetSize(16, 16)
+        leftChevron:SetSize(20, 20)
         leftChevron:SetPoint("RIGHT", queueButton, "LEFT", -2, 0)
         local ltex = leftChevron:CreateTexture()
         ltex:SetAtlas("common-icon-backarrow")
@@ -66,7 +66,7 @@ addonTable.ShowButton = function()
         leftChevron:SetScript("OnLeave", HideTooltip)
 
         rightChevron = CreateFrame("Button", nil, queueButton)
-        rightChevron:SetSize(16, 16)
+        rightChevron:SetSize(20, 20)
         rightChevron:SetPoint("LEFT", queueButton, "RIGHT", 2, 0)
         local rtex = rightChevron:CreateTexture()
         rtex:SetAtlas("common-icon-forwardarrow")
