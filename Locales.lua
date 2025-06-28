@@ -27,6 +27,15 @@ L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
 L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active."
 
 local L = Locales.enGB
+
+L["EVENTQ"]         = "eventq"
+
+L["ENABLED"]        = "Enabled"
+L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+
+L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
+L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active."
+
 local L = Locales.deDE
 local L = Locales.esES
 local L = Locales.esMX
