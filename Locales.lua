@@ -227,16 +227,16 @@ local L = Locales.ruRU
 
 L["EVENTQ"]         = "eventq"
 
-L["ENABLED"]        = "Enabled"
-L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+L["ENABLED"]        = "Активировать"
+L["ENABLED_DESC"]   = "Переключить, чтобы показать или скрыть кнопку очереди."
 
-L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
-L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+L["AUTO_ENROLLMENT"]        = "Автоматическая регистрация"
+L["AUTO_ENROLLMENT_DESC"]   = "Переключить для автоматической регистрации на события в зависимости от их активности."
 
-L["BREWFEST"]               = "Brewfest"
-L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
-L["HALLOWS_END"]            = "Hallow's End"
-L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["BREWFEST"]               = "Хмельной фестиваль"
+L["LOVE_IS_IN_THE_AIR"]     = "Любовная лихорадка"
+L["HALLOWS_END"]            = "Тыквовин"
+L["MIDSUMMER"]              = "Огненный солнцеворот"
 L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
 L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
 L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
