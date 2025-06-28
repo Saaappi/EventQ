@@ -86,6 +86,28 @@ L["TIMEWALKING_LEGION"]     = "Zeitwanderung: " .. EXPANSION_NAME6
 L["TIMEWALKING_BFA"]        = "Zeitwanderung: " .. EXPANSION_NAME7
 
 local L = Locales.esES
+
+L["EVENTQ"]         = "eventq"
+
+L["ENABLED"]        = "Activado"
+L["ENABLED_DESC"]   = "Alternar para mostrar u ocultar el botón de cola."
+
+L["AUTO_ENROLLMENT"]        = "Inscripción automática"
+L["AUTO_ENROLLMENT_DESC"]   = "Alternar para inscribirse automáticamente en eventos en función de si están activos o no."
+
+L["BREWFEST"]               = "Fiesta de la Cerveza"
+L["LOVE_IS_IN_THE_AIR"]     = "Amor en el aire"
+L["HALLOWS_END"]            = "Halloween"
+L["MIDSUMMER"]              = "Festival del Fuego del Solsticio de Verano"
+L["TIMEWALKING_CLASSIC"]    = "Paseo en el tiempo: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Paseo en el tiempo: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Paseo en el tiempo: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Paseo en el tiempo: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Paseo en el tiempo: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Paseo en el tiempo: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Paseo en el tiempo: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Paseo en el tiempo: " .. EXPANSION_NAME7
+
 local L = Locales.esMX
 local L = Locales.frFR
 local L = Locales.itIT
