@@ -199,5 +199,5 @@ local function SlashHandler(msg)
     end
 end
 
-SLASH_EVENTQ1 = "/eventq"
+SLASH_EVENTQ1 = "/" .. addonTable.Locales.EVENTQ
 SlashCmdList["EVENTQ"] = SlashHandler
