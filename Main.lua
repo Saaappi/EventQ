@@ -166,7 +166,7 @@ end
 
 local queueStatsFrame = CreateFrame("Frame")
 EventRegistry:RegisterCallback("QueueStatusButton.OnShow", function()
-    if not EventQ["QueueReportOut"] then return end
+    if not EventQDB["QueueReportOut"] then return end
     function GetQueueStats()
         local isInQueue, _, needTank, needHealer, needsDPS, _, _, _, _, _, _, averageWaitTime = GetLFGQueueStats(LE_LFG_CATEGORY_LFD)
         if isInQueue then
@@ -198,7 +198,7 @@ EventRegistry:RegisterCallback("QueueStatusButton.OnShow", function()
 end)
 
 EventRegistry:RegisterCallback("QueueStatusButton.OnHide", function()
-    if not EventQ["QueueReportOut"] then return end
+    if not EventQDB["QueueReportOut"] then return end
     queueStatsFrame = nil
 end)
 
