@@ -164,6 +164,44 @@ addonTable.UpdateActiveEvents = function()
     C_Timer.After(UPDATE_INTERVAL, addonTable.UpdateActiveEvents)
 end
 
+local queueStatsFrame = CreateFrame("Frame")
+EventRegistry:RegisterCallback("QueueStatusButton.OnShow", function()
+    if not EventQ["QueueReportOut"] then return end
+    function GetQueueStats()
+        local isInQueue, _, needTank, needHealer, needsDPS, _, _, _, _, _, _, averageWaitTime = GetLFGQueueStats(LE_LFG_CATEGORY_LFD)
+        if isInQueue then
+            local minutes = math.floor(averageWaitTime / 60)
+            local seconds = averageWaitTime % 60
+            local msg = string.format("Average wait time: %d min %02d sec", minutes, seconds)
+
+            local rolesMsg = string.format("Roles needed - Tank: %s, Healer: %s, DPS: %s",
+                needTank == 1 and YES or NO,
+                needHealer == 1 and YES or NO,
+                needsDPS >= 1 and YES or NO
+            )
+
+            DEFAULT_CHAT_FRAME:AddMessage(msg)
+            DEFAULT_CHAT_FRAME:AddMessage(rolesMsg)
+        end
+    end
+
+    if not queueStatsFrame then queueStatsFrame = CreateFrame("Frame") end
+    local elapsed = 0
+
+    queueStatsFrame:SetScript("OnUpdate", function(self, delta)
+        elapsed = elapsed + delta
+        if elapsed >= 30 then
+            GetQueueStats()
+            elapsed = 0
+        end
+    end)
+end)
+
+EventRegistry:RegisterCallback("QueueStatusButton.OnHide", function()
+    if not EventQ["QueueReportOut"] then return end
+    queueStatsFrame = nil
+end)
+
 eventFrame:RegisterEvent("LFG_PROPOSAL_SHOW")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:SetScript("OnEvent", function(_, event, ...)

@@ -151,6 +151,14 @@ local function CreateSettingsFrame()
         addonTable.UpdateActiveEvents()
     end)
 
+    local queueReportOutCheckbox = NewCheckbox({
+        parent = frame,
+        labelText = addonTable.Locales.QUEUE_REPORT_OUT,
+        savedVarKey = "QueueReportOut",
+        tooltipText = addonTable.Locales.QUEUE_REPORT_OUT_DESC
+    })
+    queueReportOutCheckbox:SetPoint("TOPLEFT", enabledCheckbox, "BOTTOMLEFT", 0, -5)
+
     local eventsDropdown = NewDropdown(frame, "Events", function(value)
         return EventQDB.Events[value] ~= false
     end, function(value)
@@ -160,7 +168,7 @@ local function CreateSettingsFrame()
     eventsDropdown.Dropdown:SetupMenu(function(_, rootDescription)
 
     end)
-    eventsDropdown.Dropdown:SetPoint("TOPLEFT", enabledCheckbox, "BOTTOMLEFT", 0, -40)
+    eventsDropdown.Dropdown:SetPoint("TOPLEFT", queueReportOutCheckbox, "BOTTOMLEFT", 0, -30)
 
     local paired = {}
     for _, evtID in ipairs(addonTable.RegionEventIDs[addonTable.Locale]) do
