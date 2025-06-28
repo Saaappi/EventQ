@@ -132,9 +132,162 @@ L["TIMEWALKING_LEGION"]     = "Paseo en el tiempo: " .. EXPANSION_NAME6
 L["TIMEWALKING_BFA"]        = "Paseo en el tiempo: " .. EXPANSION_NAME7
 
 local L = Locales.frFR
+
+L["EVENTQ"]         = "eventq"
+
+L["ENABLED"]        = "Activé"
+L["ENABLED_DESC"]   = "Basculer pour afficher ou masquer le bouton de file d'attente."
+
+L["AUTO_ENROLLMENT"]        = "Inscription automatique"
+L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+
+L["BREWFEST"]               = "Fête des Brasseurs"
+L["LOVE_IS_IN_THE_AIR"]     = "De l'amour dans l'air"
+L["HALLOWS_END"]            = "Sanssaint"
+L["MIDSUMMER"]              = "Fête du Feu du solstice d'été"
+L["TIMEWALKING_CLASSIC"]    = "Marcheur du temps: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Marcheur du temps: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Marcheur du temps: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Marcheur du temps: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Marcheur du temps: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Marcheur du temps: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Marcheur du temps: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Marcheur du temps: " .. EXPANSION_NAME7
+
 local L = Locales.itIT
+
+L["EVENTQ"]         = "eventq"
+
+L["ENABLED"]        = "Enabled"
+L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+
+L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
+L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+
+L["BREWFEST"]               = "Brewfest"
+L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
+L["HALLOWS_END"]            = "Hallow's End"
+L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Timewalking: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Timewalking: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Timewalking: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Timewalking: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
+
 local L = Locales.koKR
+
+L["EVENTQ"]         = "eventq"
+
+L["ENABLED"]        = "Enabled"
+L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+
+L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
+L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+
+L["BREWFEST"]               = "Brewfest"
+L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
+L["HALLOWS_END"]            = "Hallow's End"
+L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Timewalking: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Timewalking: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Timewalking: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Timewalking: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
+
 local L = Locales.ptBR
+
+L["EVENTQ"]         = "eventq"
+
+L["ENABLED"]        = "Enabled"
+L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+
+L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
+L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+
+L["BREWFEST"]               = "Brewfest"
+L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
+L["HALLOWS_END"]            = "Hallow's End"
+L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Timewalking: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Timewalking: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Timewalking: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Timewalking: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
+
 local L = Locales.ruRU
+
+L["EVENTQ"]         = "eventq"
+
+L["ENABLED"]        = "Enabled"
+L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+
+L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
+L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+
+L["BREWFEST"]               = "Brewfest"
+L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
+L["HALLOWS_END"]            = "Hallow's End"
+L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Timewalking: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Timewalking: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Timewalking: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Timewalking: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
+
 local L = Locales.zhCN
+
+L["EVENTQ"]         = "eventq"
+
+L["ENABLED"]        = "Enabled"
+L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+
+L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
+L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+
+L["BREWFEST"]               = "Brewfest"
+L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
+L["HALLOWS_END"]            = "Hallow's End"
+L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Timewalking: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Timewalking: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Timewalking: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Timewalking: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
+
 local L = Locales.zhTW
+
+L["EVENTQ"]         = "eventq"
+
+L["ENABLED"]        = "Enabled"
+L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+
+L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
+L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+
+L["BREWFEST"]               = "Brewfest"
+L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
+L["HALLOWS_END"]            = "Hallow's End"
+L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Timewalking: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Timewalking: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Timewalking: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Timewalking: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
