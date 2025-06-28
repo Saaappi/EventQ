@@ -4,6 +4,9 @@ local queueButton, leftChevron, rightChevron
 local currentEventIndex, previousEventIndex = 1, 1
 addonTable.activeEvents = {}
 
+local CreateFrame, UIParent, GameTooltip = CreateFrame, UIParent, GameTooltip
+local C_DateAndTime, C_Calendar, C_Timer = C_DateAndTime, C_Calendar, C_Timer
+
 -- Helper: Tooltip display
 local function ShowTooltip(self, text)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -41,14 +44,13 @@ addonTable.ShowButton = function()
         queueButton:RegisterForClicks("LeftButtonUp")
 
 
-        leftChevron = CreateFrame("Button", nil, button)
+        leftChevron = CreateFrame("Button", nil, queueButton)
         leftChevron:SetSize(16, 16)
         leftChevron:SetPoint("RIGHT", queueButton, "LEFT", -2, 0)
-        leftChevron.texture = leftChevron:CreateTexture()
-        leftChevron.texture:SetAtlas("common-icon-backarrow")
-        leftChevron:SetNormalTexture(leftChevron.texture)
+        local ltex = leftChevron:CreateTexture()
+        ltex:SetAtlas("common-icon-backarrow")
+        leftChevron:SetNormalTexture(ltex)
         leftChevron:SetHighlightAtlas("common-icon-backarrow", "ADD")
-
         leftChevron:SetScript("OnClick", function(self)
             if #events > 1 then
                 UpdateEventIndex("left", events)
@@ -63,14 +65,13 @@ addonTable.ShowButton = function()
         end)
         leftChevron:SetScript("OnLeave", HideTooltip)
 
-        rightChevron = CreateFrame("Button", nil, button)
+        rightChevron = CreateFrame("Button", nil, queueButton)
         rightChevron:SetSize(16, 16)
         rightChevron:SetPoint("LEFT", queueButton, "RIGHT", 2, 0)
-        rightChevron.texture = rightChevron:CreateTexture()
-        rightChevron.texture:SetAtlas("common-icon-forwardarrow")
-        rightChevron:SetNormalTexture(rightChevron.texture)
+        local rtex = rightChevron:CreateTexture()
+        rtex:SetAtlas("common-icon-forwardarrow")
+        rightChevron:SetNormalTexture(rtex)
         rightChevron:SetHighlightAtlas("common-icon-forwardarrow", "ADD")
-
         rightChevron:SetScript("OnClick", function(self)
             if #events > 1 then
                 UpdateEventIndex("right", events)
@@ -100,24 +101,24 @@ addonTable.ShowButton = function()
             self:StopMovingOrSizing()
             local anchor, parent, relativeAnchor, x, y = self:GetPoint(1)
             EventQDB.Position = {
-                Anchor = anchor, Parent = (parent and parent:GetName()) or "UIParent", Relative = relativeAnchor, X = x, Y = y
+                Anchor = anchor,
+                Parent = (parent and parent:GetName()) or "UIParent",
+                Relative = relativeAnchor,
+                X = x,
+                Y = y
             }
         end)
         if EventQDB.Position and EventQDB.Position.Anchor then
-            local position = EventQDB.Position
-            queueButton:SetPoint(position.Anchor, position.Parent, position.Relative, position.X, position.Y)
+            local p = EventQDB.Position
+            queueButton:SetPoint(p.Anchor, p.Parent, p.Relative, p.X, p.Y)
         end
     elseif queueButton then
-        if leftChevron then
-            leftChevron:Show()
-            rightChevron:Show()
-        end
+        if leftChevron then leftChevron:Show(); rightChevron:Show() end
     end
 
     if #events == 0 and queueButton then
         queueButton:Hide()
-        leftChevron:Hide()
-        rightChevron:Hide()
+        if leftChevron then leftChevron:Hide(); rightChevron:Hide() end
         return
     end
 
@@ -129,10 +130,7 @@ addonTable.ShowButton = function()
 
     if not EventQDB["Enabled"] and queueButton then
         queueButton:Hide()
-        if leftChevron then
-            leftChevron:Hide()
-            rightChevron:Hide()
-        end
+        if leftChevron then leftChevron:Hide(); rightChevron:Hide() end
         return
     end
 end
@@ -147,15 +145,14 @@ addonTable.UpdateActiveEvents = function()
     local numEvents = C_Calendar.GetNumDayEvents(0, day.monthDay)
     for index = 1, numEvents do
         local calendarEvent = C_Calendar.GetDayEvent(0, day.monthDay, index)
-        if C_DateAndTime.CompareCalendarTime(day, calendarEvent.startTime) == -1 and
-           C_DateAndTime.CompareCalendarTime(day, calendarEvent.endTime) == 1 then
+        if C_DateAndTime.CompareCalendarTime(day, calendarEvent.startTime) == -1 and C_DateAndTime.CompareCalendarTime(day, calendarEvent.endTime) == 1 then
             local evt = addonTable.Events and addonTable.Events[calendarEvent.eventID]
             if evt and EventQDB.Events[calendarEvent.eventID] then
-                table.insert(addonTable.activeEvents, {
+                addonTable.activeEvents[#addonTable.activeEvents+1] = {
                     Name = evt.Name,
                     LfgDungeonID = evt.LfgDungeonID,
                     TextureID = evt.TextureID
-                })
+                }
             end
         end
     end
@@ -188,5 +185,5 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 addonTable.ClickEventQButton = function()
-    queueButton:Click()
+    if queueButton then queueButton:Click() end
 end

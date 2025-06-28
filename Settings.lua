@@ -2,13 +2,8 @@ local addonName, addonTable = ...
 addonTable.SelectedEvents = {}
 local frame
 
-local CreateFrame = CreateFrame
-local C_AddOns = C_AddOns
-local C_DateAndTime = C_DateAndTime
-local C_Calendar = C_Calendar
-local C_Timer = C_Timer
-local UIParent = UIParent
-local GameTooltip = GameTooltip
+local CreateFrame, C_AddOns, C_DateAndTime = CreateFrame, C_AddOns, C_DateAndTime
+local C_Calendar, C_Timer, UIParent, GameTooltip = C_Calendar, C_Timer, UIParent, GameTooltip
 
 local function AttachTooltip(widget, text)
     widget:SetScript("OnEnter", function(self)
