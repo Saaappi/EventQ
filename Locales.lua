@@ -179,18 +179,18 @@ L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
 
 local L = Locales.koKR
 
-L["EVENTQ"]         = "eventq"
+L["EVENTQ"]         = "이벤트큐"
 
-L["ENABLED"]        = "Enabled"
-L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+L["ENABLED"]        = "활성화됨"
+L["ENABLED_DESC"]   = "대기열 버튼을 표시하거나 숨기려면 전환하세요."
 
-L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
-L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+L["AUTO_ENROLLMENT"]        = "자동 등록"
+L["AUTO_ENROLLMENT_DESC"]   = "이벤트가 활성 상태인지 여부에 따라 자동으로 등록하도록 전환합니다."
 
-L["BREWFEST"]               = "Brewfest"
-L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
-L["HALLOWS_END"]            = "Hallow's End"
-L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["BREWFEST"]               = "가을 축제"
+L["LOVE_IS_IN_THE_AIR"]     = "온누리에 사랑을"
+L["HALLOWS_END"]            = "할로윈 축제"
+L["MIDSUMMER"]              = "한여름 불꽃축제"
 L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
 L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
 L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
