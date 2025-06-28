@@ -76,14 +76,14 @@ L["BREWFEST"]               = "Braufest"
 L["LOVE_IS_IN_THE_AIR"]     = "Liebe liegt in der Luft"
 L["HALLOWS_END"]            = "Schlotternächte"
 L["MIDSUMMER"]              = "Sonnenwendfest"
-L["TIMEWALKING_CLASSIC"]    = "Zeitwanderung: " .. EXPANSION_NAME0
-L["TIMEWALKING_TBC"]        = "Zeitwanderung: " .. EXPANSION_NAME1
-L["TIMEWALKING_WOTLK"]      = "Zeitwanderung: " .. EXPANSION_NAME2
-L["TIMEWALKING_CATA"]       = "Zeitwanderung: " .. EXPANSION_NAME3
-L["TIMEWALKING_MOP"]        = "Zeitwanderung: " .. EXPANSION_NAME4
-L["TIMEWALKING_WOD"]        = "Zeitwanderung: " .. EXPANSION_NAME5
-L["TIMEWALKING_LEGION"]     = "Zeitwanderung: " .. EXPANSION_NAME6
-L["TIMEWALKING_BFA"]        = "Zeitwanderung: " .. EXPANSION_NAME7
+L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Timewalking: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Timewalking: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Timewalking: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Timewalking: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
 
 local L = Locales.esES
 
@@ -99,14 +99,14 @@ L["BREWFEST"]               = "Fiesta de la Cerveza"
 L["LOVE_IS_IN_THE_AIR"]     = "Amor en el aire"
 L["HALLOWS_END"]            = "Halloween"
 L["MIDSUMMER"]              = "Festival del Fuego del Solsticio de Verano"
-L["TIMEWALKING_CLASSIC"]    = "Paseo en el tiempo: " .. EXPANSION_NAME0
-L["TIMEWALKING_TBC"]        = "Paseo en el tiempo: " .. EXPANSION_NAME1
-L["TIMEWALKING_WOTLK"]      = "Paseo en el tiempo: " .. EXPANSION_NAME2
-L["TIMEWALKING_CATA"]       = "Paseo en el tiempo: " .. EXPANSION_NAME3
-L["TIMEWALKING_MOP"]        = "Paseo en el tiempo: " .. EXPANSION_NAME4
-L["TIMEWALKING_WOD"]        = "Paseo en el tiempo: " .. EXPANSION_NAME5
-L["TIMEWALKING_LEGION"]     = "Paseo en el tiempo: " .. EXPANSION_NAME6
-L["TIMEWALKING_BFA"]        = "Paseo en el tiempo: " .. EXPANSION_NAME7
+L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Timewalking: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Timewalking: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Timewalking: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Timewalking: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
 
 local L = Locales.esMX
 
@@ -122,14 +122,14 @@ L["BREWFEST"]               = "Fiesta de la Cerveza"
 L["LOVE_IS_IN_THE_AIR"]     = "Amor en el aire"
 L["HALLOWS_END"]            = "Halloween"
 L["MIDSUMMER"]              = "Festival de Fuego del Solsticio de Verano"
-L["TIMEWALKING_CLASSIC"]    = "Paseo en el tiempo: " .. EXPANSION_NAME0
-L["TIMEWALKING_TBC"]        = "Paseo en el tiempo: " .. EXPANSION_NAME1
-L["TIMEWALKING_WOTLK"]      = "Paseo en el tiempo: " .. EXPANSION_NAME2
-L["TIMEWALKING_CATA"]       = "Paseo en el tiempo: " .. EXPANSION_NAME3
-L["TIMEWALKING_MOP"]        = "Paseo en el tiempo: " .. EXPANSION_NAME4
-L["TIMEWALKING_WOD"]        = "Paseo en el tiempo: " .. EXPANSION_NAME5
-L["TIMEWALKING_LEGION"]     = "Paseo en el tiempo: " .. EXPANSION_NAME6
-L["TIMEWALKING_BFA"]        = "Paseo en el tiempo: " .. EXPANSION_NAME7
+L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Timewalking: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Timewalking: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Timewalking: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Timewalking: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
 
 local L = Locales.frFR
 
@@ -145,29 +145,29 @@ L["BREWFEST"]               = "Fête des Brasseurs"
 L["LOVE_IS_IN_THE_AIR"]     = "De l'amour dans l'air"
 L["HALLOWS_END"]            = "Sanssaint"
 L["MIDSUMMER"]              = "Fête du Feu du solstice d'été"
-L["TIMEWALKING_CLASSIC"]    = "Marcheur du temps: " .. EXPANSION_NAME0
-L["TIMEWALKING_TBC"]        = "Marcheur du temps: " .. EXPANSION_NAME1
-L["TIMEWALKING_WOTLK"]      = "Marcheur du temps: " .. EXPANSION_NAME2
-L["TIMEWALKING_CATA"]       = "Marcheur du temps: " .. EXPANSION_NAME3
-L["TIMEWALKING_MOP"]        = "Marcheur du temps: " .. EXPANSION_NAME4
-L["TIMEWALKING_WOD"]        = "Marcheur du temps: " .. EXPANSION_NAME5
-L["TIMEWALKING_LEGION"]     = "Marcheur du temps: " .. EXPANSION_NAME6
-L["TIMEWALKING_BFA"]        = "Marcheur du temps: " .. EXPANSION_NAME7
+L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
+L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
+L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
+L["TIMEWALKING_CATA"]       = "Timewalking: " .. EXPANSION_NAME3
+L["TIMEWALKING_MOP"]        = "Timewalking: " .. EXPANSION_NAME4
+L["TIMEWALKING_WOD"]        = "Timewalking: " .. EXPANSION_NAME5
+L["TIMEWALKING_LEGION"]     = "Timewalking: " .. EXPANSION_NAME6
+L["TIMEWALKING_BFA"]        = "Timewalking: " .. EXPANSION_NAME7
 
 local L = Locales.itIT
 
 L["EVENTQ"]         = "eventq"
 
-L["ENABLED"]        = "Enabled"
-L["ENABLED_DESC"]   = "Toggle to show or hide the queue button."
+L["ENABLED"]        = "Abilitato"
+L["ENABLED_DESC"]   = "Attiva per mostrare o nascondere il pulsante della coda."
 
-L["AUTO_ENROLLMENT"]        = "Auto Enrollment"
-L["AUTO_ENROLLMENT_DESC"]   = "Toggle to automatically enroll in events based on whether or not they're active or not."
+L["AUTO_ENROLLMENT"]        = "Iscrizione Automatica"
+L["AUTO_ENROLLMENT_DESC"]   = "Attiva per iscriversi automaticamente agli eventi in base al fatto che siano attivi o meno."
 
-L["BREWFEST"]               = "Brewfest"
-L["LOVE_IS_IN_THE_AIR"]     = "Love is in the Air"
-L["HALLOWS_END"]            = "Hallow's End"
-L["MIDSUMMER"]              = "Midsummer Fire Festival"
+L["BREWFEST"]               = "Festa della Birra"
+L["LOVE_IS_IN_THE_AIR"]     = "Amore nell'Aria"
+L["HALLOWS_END"]            = "Veglia delle Ombre"
+L["MIDSUMMER"]              = "Fuochi di Mezza Estate"
 L["TIMEWALKING_CLASSIC"]    = "Timewalking: " .. EXPANSION_NAME0
 L["TIMEWALKING_TBC"]        = "Timewalking: " .. EXPANSION_NAME1
 L["TIMEWALKING_WOTLK"]      = "Timewalking: " .. EXPANSION_NAME2
