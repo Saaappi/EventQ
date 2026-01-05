@@ -1,5 +1,5 @@
 -- EventQ/UI/MainFrame.lua
-local _, ns = ...
+local ADDON, ns = ...
 
 local MainFrame = ns.Class:Create("MainFrame")
 
@@ -98,7 +98,16 @@ function MainFrame:Constructor(app)
 
   local ver = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   ver:SetPoint("TOP", title, "BOTTOM", 0, -2)
-  ver:SetText("v0.1.49")
+  -- Pull from TOC metadata so the UI stays in sync with a single version source.
+  local metaVer
+  if C_AddOns and C_AddOns.GetAddOnMetadata then
+    metaVer = C_AddOns.GetAddOnMetadata(ADDON, "Version")
+  end
+  -- Fallback for safety (older clients); harmless on modern builds.
+  if (not metaVer or metaVer == "") and GetAddOnMetadata then
+    metaVer = GetAddOnMetadata(ADDON, "Version")
+  end
+  ver:SetText("v" .. (metaVer or ""))
   self.versionText = ver
 
   local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
@@ -226,6 +235,19 @@ f:Hide()
   f:SetScript("OnShow", function()
     self:UpdateLists()
   end)
+
+  -- If the main EventQ frame is closed while the role picker popup is open,
+  -- close the popup as well (this should not affect the main frame state).
+  if f.HookScript then
+    f:HookScript("OnHide", function()
+      local rp = ns and ns.RolePopup
+      if rp and rp.frame and rp.frame.IsShown and rp.frame:IsShown() then
+        rp.frame:Hide()
+      elseif _G.EventQRolePopup and _G.EventQRolePopup.IsShown and _G.EventQRolePopup:IsShown() then
+        _G.EventQRolePopup:Hide()
+      end
+    end)
+  end
 end
 
 

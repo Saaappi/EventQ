@@ -5,6 +5,31 @@ local Row = ns.Class:Create("Row")
 
 local MENU = CreateFrame("Frame", "EventQRowContextMenu", UIParent, "UIDropDownMenuTemplate")
 
+local function TryQueueLFD(dungeonID)
+  if not dungeonID then return false end
+
+  -- Queue directly using the provided dungeon ID.
+  -- (No add-on load checks; the caller supplies the ID and we just join.)
+  LFG_JoinDungeon(LE_LFG_CATEGORY_LFD, dungeonID, LFDDungeonList, LFDHiddenByCollapseList)
+  return true
+end
+
+local function IsOngoingEvent(data)
+  if not data or not data.startEpoch or not data.endEpoch then return false end
+  local now = time()
+  return data.startEpoch <= now and data.endEpoch >= now
+end
+
+local QUEUE_TITLE_R, QUEUE_TITLE_G, QUEUE_TITLE_B = 0.35, 0.85, 1.0 -- cool accent vs warm gold
+
+local function GetDefaultTitleColor()
+  if NORMAL_FONT_COLOR and NORMAL_FONT_COLOR.GetRGB then
+    return NORMAL_FONT_COLOR:GetRGB()
+  end
+  return 1, 0.82, 0
+end
+
+
 
 local function EnsureTexture(frame)
   if frame._eventqIcon and frame._eventqIcon.GetObjectType then
@@ -96,7 +121,7 @@ function Row:Constructor(frame, app)
       end
 
       -- Fetch the real calendar "event text" (description) lazily.
-      -- C_Calendar.GetEventInfo() is stateful and must be preceded by C_Calendar.OpenEvent. citeturn0search6
+      -- C_Calendar.GetEventInfo() is stateful and must be preceded by C_Calendar.OpenEvent.
       if (not data.description or data.description == "") and data.eventID and self.app and self.app.calendar then
         local desc = self.app.calendar:TryFetchDescription(data.eventID, data.monthOffset, data.monthDay, data.title, data.calendarType)
         if desc then
@@ -112,6 +137,12 @@ function Row:Constructor(frame, app)
         GameTooltip:AddLine("This event does not have a description or one could not be found.", 1, 0.55, 0, true)
       end
 
+
+      -- Tooltip queue hint only for ONGOING events.
+      if frame._eventqLfgDungeonID and IsOngoingEvent(data) then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Left-click: queue for event", 0.2, 1, 0.2, true)
+      end
       GameTooltip:Show()
     end)
 
@@ -121,6 +152,27 @@ function Row:Constructor(frame, app)
 
     frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     frame:SetScript("OnClick", function(_, btn)
+      if btn == "LeftButton" then
+        local data = frame._eventqData
+        -- Only allow queueing from the ONGOING section.
+        if self.LfgDungeonID and data and IsOngoingEvent(data) then
+          local _, tank, healer, dps = GetLFGRoles()
+          if tank or healer or dps then
+            TryQueueLFD(self.LfgDungeonID)
+          else
+            -- If no roles are selected, prompt the user with our role picker.
+            if ns.RolePopup and ns.RolePopup.Show then
+              ns.RolePopup:Show(self.LfgDungeonID, function()
+                TryQueueLFD(self.LfgDungeonID)
+              end)
+            else
+              UIErrorsFrame:AddMessage("You must select at least one role.", 1, 0.1, 0.1)
+            end
+          end
+        end
+        return
+      end
+
   if btn ~= "RightButton" then return end
   local data = frame._eventqData
   if not data or not data.isCustom then return end
@@ -174,6 +226,10 @@ function Row:SetEvent(event, dateUtil)
   self.data = event
   self.frame._eventqData = event
 
+  -- Optional: if this event maps to an LFD queue, store the dungeon ID so left-click can queue.
+  self.LfgDungeonID = (ns.DungeonQueue and ns.DungeonQueue:GetDungeonID(event)) or nil
+  self.frame._eventqLfgDungeonID = self.LfgDungeonID
+
   if not event then
     self.frame:Hide()
     return
@@ -182,6 +238,15 @@ function Row:SetEvent(event, dateUtil)
   self.frame:Show()
   self.name:SetText(event.title or "Event")
   self.range:SetText(dateUtil:FormatRange(event.startEpoch, event.endEpoch))
+
+  -- Highlight queue-able titles with a cool accent color.
+  -- Only ongoing events can be queued (upcoming cannot), so only tint those.
+  local dr, dg, db = GetDefaultTitleColor()
+  if self.LfgDungeonID and IsOngoingEvent(event) then
+    self.name:SetTextColor(QUEUE_TITLE_R, QUEUE_TITLE_G, QUEUE_TITLE_B)
+  else
+    self.name:SetTextColor(dr, dg, db)
+  end
 
   if event.icon then
     self.icon:SetTexture(event.icon)
