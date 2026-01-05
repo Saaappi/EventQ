@@ -3,7 +3,8 @@ local _, ns = ...
 
 local App = ns.Class:Create("App")
 
-local THREE_DAYS = 3 * 86400
+local UPCOMING_DAYS = 8
+local UPCOMING_WINDOW = UPCOMING_DAYS * 86400
 
 local function ApplyIconOverrides(app, e)
   if not e then return end
@@ -104,7 +105,7 @@ function App:RefreshAll()
   local now = time()
   self.customStore:PruneOld(now)
 
-  local cal = self.calendar:CollectWindow(3)
+  local cal = self.calendar:CollectWindow(UPCOMING_DAYS)
   local custom = self.customStore:GetAll()
 
   local all = {}
@@ -133,7 +134,7 @@ function App:RefreshAll()
   end
 
   local ongoing, upcoming = {}, {}
-  local horizon = now + THREE_DAYS
+  local horizon = now + UPCOMING_WINDOW
 
   for _, e in ipairs(all) do
     if e.endEpoch >= now and e.startEpoch <= now then

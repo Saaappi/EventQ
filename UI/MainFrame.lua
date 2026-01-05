@@ -98,7 +98,7 @@ function MainFrame:Constructor(app)
 
   local ver = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   ver:SetPoint("TOP", title, "BOTTOM", 0, -2)
-  ver:SetText("v0.1.47")
+  ver:SetText("v0.1.49")
   self.versionText = ver
 
   local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
@@ -127,7 +127,7 @@ function MainFrame:Constructor(app)
   self.right:SetWidth(370)
 
   CreateSectionHeader(self.left, "Ongoing", 8, -8)
-  CreateSectionHeader(self.right, "Upcoming (≤ 3 days)", 8, -8)
+  CreateSectionHeader(self.right, "Upcoming (≤ 8 days)", 8, -8)
 
   self.leftScrollBox, self.leftDP = CreateModernList(self.left, self.app)
   self.rightScrollBox, self.rightDP = CreateModernList(self.right, self.app)
@@ -269,13 +269,13 @@ function MainFrame:OnAddCustom()
   end
 
   local order = self.app.db.settings.dateOrder
-  local startEpoch, err1 = self.dateUtil:ParseUserDateTime(self.startBox:GetText() or "", order)
+  local startEpoch, err1 = self.dateUtil:ParseUserDateTime(self.startBox:GetText() or "", order, false)
   if not startEpoch then
     self:ShowTransientMessage(err1, 1, 0.25, 0.25, 10)
     return
   end
 
-  local endEpoch, err2 = self.dateUtil:ParseUserDateTime(self.endBox:GetText() or "", order)
+  local endEpoch, err2 = self.dateUtil:ParseUserDateTime(self.endBox:GetText() or "", order, true)
   if not endEpoch then
     self:ShowTransientMessage(err2, 1, 0.25, 0.25, 10)
     return
