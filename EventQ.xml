@@ -1,0 +1,6 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+  <Button name="EventQEventRowTemplate" virtual="true" inherits="BackdropTemplate">
+    <Size x="340" y="40"/>
+    <HighlightTexture file="Interface/QuestFrame/UI-QuestTitleHighlight" alphaMode="ADD"/>
+  </Button>
+</Ui>
