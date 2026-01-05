@@ -236,18 +236,11 @@ f:Hide()
     self:UpdateLists()
   end)
 
-  -- If the main EventQ frame is closed while the role picker popup is open,
-  -- close the popup as well (this should not affect the main frame state).
-  if f.HookScript then
-    f:HookScript("OnHide", function()
-      local rp = ns and ns.RolePopup
-      if rp and rp.frame and rp.frame.IsShown and rp.frame:IsShown() then
-        rp.frame:Hide()
-      elseif _G.EventQRolePopup and _G.EventQRolePopup.IsShown and _G.EventQRolePopup:IsShown() then
-        _G.EventQRolePopup:Hide()
-      end
-    end)
-  end
+  f:SetScript("OnHide", function()
+    if ns.RolePopup and ns.RolePopup.Hide then
+      ns.RolePopup:Hide()
+    end
+  end)
 end
 
 

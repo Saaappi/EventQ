@@ -11,6 +11,7 @@ Core/Logger.lua
 Core/DateUtil.lua
 Config/IconOverrides.lua
 Config/DungeonQueue.lua
+Config/PVPQueue.lua
 UI/RolePopup.lua
 UI/Row.lua
 UI/MainFrame.lua

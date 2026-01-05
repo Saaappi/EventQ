@@ -6,19 +6,7 @@ local RolePopup = ns.Class:Create("RolePopup")
 local ROLE_TEXTURE = "Interface\\LFGFrame\\UI-LFG-ICON-ROLES"
 
 local function GetRoleTexCoords(role)
-  -- Modern Retail: The role icon sheet uses padded cells; explicit grid
-  -- coordinates are the most stable way to get the correct icons.
-  if type(GetTexCoordsByGrid) == "function" then
-    -- UI-LFG-ICON-ROLES is a 256x256 sheet; role glyphs sit in 67x67 cells.
-    if role == "DAMAGER" then
-      return GetTexCoordsByGrid(2, 2, 256, 256, 67, 67)
-    elseif role == "HEALER" then
-      return GetTexCoordsByGrid(2, 1, 256, 256, 67, 67)
-    else -- "TANK"
-      return GetTexCoordsByGrid(1, 2, 256, 256, 67, 67)
-    end
-  end
-
+  -- Use the canonical role texcoords for the standard roles texture.
   if type(GetTexCoordsForRole) == "function" then
     local left, right, top, bottom = GetTexCoordsForRole(role)
     if left and right and top and bottom then
@@ -26,13 +14,13 @@ local function GetRoleTexCoords(role)
     end
   end
 
-  -- Fallback (64px icons on a 256px sheet).
+  -- Safe fallback.
   if role == "TANK" then
-    return 0, 0.25, 0, 0.25
+    return 0, 0.25, 0.25, 0.5
   elseif role == "HEALER" then
     return 0.25, 0.5, 0, 0.25
-  else -- "DAMAGER"
-    return 0.5, 0.75, 0, 0.25
+  else -- DAMAGER
+    return 0.25, 0.5, 0.25, 0.5
   end
 end
 
@@ -147,18 +135,16 @@ local function EnsureFrame(self)
   local cancel = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   cancel:SetSize(110, 24)
   cancel:SetText(CANCEL)
-  cancel:SetPoint("BOTTOM", f, "BOTTOM", -60, 16)
 
   local queue = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   queue:SetSize(110, 24)
   queue:SetText("Queue")
-  queue:SetPoint("LEFT", cancel, "RIGHT", 20, 0)
 
-  -- Center the pair regardless of locale sizing
+  local gap = 20
   cancel:ClearAllPoints()
-  cancel:SetPoint("BOTTOM", f, "BOTTOM", -(cancel:GetWidth() / 2 + 10), 16)
+  cancel:SetPoint("BOTTOM", f, "BOTTOM", -(cancel:GetWidth() / 2 + gap / 2), 16)
   queue:ClearAllPoints()
-  queue:SetPoint("LEFT", cancel, "RIGHT", 20, 0)
+  queue:SetPoint("LEFT", cancel, "RIGHT", gap, 0)
 
   f._eventqCancel = cancel
   f._eventqQueue = queue
@@ -168,17 +154,28 @@ local function EnsureFrame(self)
   end)
 
   queue:SetScript("OnClick", function()
-    local leader, tank, healer, dps = GetLFGRoles()
-    tank = f._eventqRoleButtons.TANK:IsShown() and f._eventqRoleButtons.TANK:GetChecked() or false
-    healer = f._eventqRoleButtons.HEALER:IsShown() and f._eventqRoleButtons.HEALER:GetChecked() or false
-    dps = f._eventqRoleButtons.DAMAGER:IsShown() and f._eventqRoleButtons.DAMAGER:GetChecked() or false
+    local tank = f._eventqRoleButtons.TANK:IsShown() and f._eventqRoleButtons.TANK:GetChecked() or false
+    local healer = f._eventqRoleButtons.HEALER:IsShown() and f._eventqRoleButtons.HEALER:GetChecked() or false
+    local dps = f._eventqRoleButtons.DAMAGER:IsShown() and f._eventqRoleButtons.DAMAGER:GetChecked() or false
 
     if not (tank or healer or dps) then
       UIErrorsFrame:AddMessage("You must select at least one role.", 1, 0.1, 0.1)
       return
     end
 
-    SetLFGRoles(leader or false, tank, healer, dps)
+    if f._eventqMode == "PVP" then
+      if SetPVPRoles then
+        SetPVPRoles(tank, healer, dps)
+      end
+    else
+      local leader = false
+      if GetLFGRoles then
+        leader = (select(1, GetLFGRoles())) or false
+      end
+      if SetLFGRoles then
+        SetLFGRoles(leader, tank, healer, dps)
+      end
+    end
 
     local cb = f._eventqCallback
     f._eventqCallback = nil
@@ -202,9 +199,16 @@ local function EnsureFrame(self)
   return f
 end
 
-function RolePopup:Show(dungeonID, callback)
+function RolePopup:Hide()
+  if self.frame then
+    self.frame:Hide()
+  end
+end
+
+---@param mode '"PVE"'|'"PVP"'
+function RolePopup:Show(mode, callback)
   local f = EnsureFrame(self)
-  f._eventqDungeonID = dungeonID
+  f._eventqMode = (mode == "PVP") and "PVP" or "PVE"
   f._eventqCallback = callback
 
   -- Determine available roles for the player and show only those.
@@ -215,13 +219,28 @@ function RolePopup:Show(dungeonID, callback)
   buttons.HEALER:SetShown(canHealer)
   buttons.DAMAGER:SetShown(canDPS)
 
+  -- Seed from current role selection for the chosen mode.
+  local tank0, healer0, dps0 = false, false, false
+  if f._eventqMode == "PVP" and GetPVPRoles then
+    tank0, healer0, dps0 = GetPVPRoles()
+  elseif GetLFGRoles then
+    local _, tank, healer, dps = GetLFGRoles()
+    tank0, healer0, dps0 = tank, healer, dps
+  end
+
   -- Layout visible role buttons centered.
   local shown = {}
   for _, role in ipairs({ "TANK", "HEALER", "DAMAGER" }) do
     local b = buttons[role]
-    b:SetChecked(false)
-    b._eventqBorder:SetAlpha(0.0)
-    b._eventqBack:SetAlpha(0.25)
+    local checked = false
+    if role == "TANK" then checked = tank0
+    elseif role == "HEALER" then checked = healer0
+    else checked = dps0 end
+
+    b:SetChecked(checked)
+    b._eventqBorder:SetAlpha(checked and 0.9 or 0.0)
+    b._eventqBack:SetAlpha(checked and 0.45 or 0.25)
+
     if b:IsShown() then
       table.insert(shown, b)
     end

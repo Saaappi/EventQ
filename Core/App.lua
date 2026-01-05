@@ -55,6 +55,28 @@ local function ApplyIconOverrides(app, e)
   end
 end
 
+
+local function PickActiveSoundKit()
+  if not SOUNDKIT then return nil end
+  local candidates = {
+    SOUNDKIT.UI_QUEST_ROLLING_FORWARD_01,
+    SOUNDKIT.UI_QUEST_ROLLING_FORWARD_02,
+    SOUNDKIT.UI_WORLDQUEST_COMPLETE,
+    SOUNDKIT.IG_QUEST_LOG_OPEN,
+  }
+  for _, kit in ipairs(candidates) do
+    if type(kit) == "number" then
+      return kit
+    end
+  end
+  return nil
+end
+
+local function FormatActiveMessage(name)
+  local cyan = "|cff66ccff"
+  local green = "|cff33ff33"
+  return cyan .. "[EventQ]|r: " .. (name or "Event") .. " event is now " .. green .. "ACTIVE|r!"
+end
 function App:Constructor(db)
   self.db = db
   -- Robust construction: some client environments or stale-file situations can
@@ -88,6 +110,8 @@ function App:Constructor(db)
 
   self.ongoing = {}
   self.upcoming = {}
+
+  self._bucketById = {} -- id -> 'upcoming'|'ongoing'
 
   self.db.notify = self.db.notify or { enabled = true, sound = true }
   self.db.notified = self.db.notified or {} -- id -> epoch
@@ -158,12 +182,49 @@ function App:RefreshAll()
     return a.startEpoch < b.startEpoch
   end)
 
+  -- Notify when an event transitions from UPCOMING -> ONGOING.
+  local prev = self._bucketById or {}
+  local cur = {}
+  for _, e in ipairs(ongoing) do
+    if e and e.id then cur[e.id] = "ongoing" end
+  end
+  for _, e in ipairs(upcoming) do
+    if e and e.id then cur[e.id] = "upcoming" end
+  end
+  for _, e in ipairs(ongoing) do
+    if e and e.id and prev[e.id] == "upcoming" then
+      self:NotifyBecameActive(e)
+    end
+  end
+  self._bucketById = cur
+
   self.ongoing = ongoing
   self.upcoming = upcoming
 
   self:NotifyNew(now)
   if self.ui.frame:IsShown() then
     self.ui:UpdateLists()
+  end
+end
+
+
+function App:NotifyBecameActive(event)
+  if not (self.db and self.db.notify and self.db.notify.enabled) then return end
+  if not event then return end
+
+  -- Sound + chat fire together.
+  if self.db.notify.sound then
+    self._activeSoundKit = self._activeSoundKit or PickActiveSoundKit()
+    if self._activeSoundKit then
+      PlaySound(self._activeSoundKit, "Master")
+    end
+  end
+
+  if self.log and self.log.Info then
+    -- Use the logger so it respects the user's chat frame formatting, but we control the colors.
+    DEFAULT_CHAT_FRAME:AddMessage(FormatActiveMessage(event.title))
+  else
+    DEFAULT_CHAT_FRAME:AddMessage(FormatActiveMessage(event.title))
   end
 end
 
