@@ -135,21 +135,24 @@ local function EnsureFontStrings(frame, holder)
 end
 
 local function EnsureUrgencyBackground(frame)
-  if frame._eventqUrgencyBg then
+  -- Smooth urgency tint that fades out at the right edge.
+  -- We can't rely on SetGradientAlpha on older clients, so we use a tiny texture
+  -- with an embedded alpha ramp (see Media/urgency_fade.tga).
+  if frame._eventqUrgencyBg and frame._eventqUrgencyBg.GetObjectType then
     return frame._eventqUrgencyBg
   end
 
-  -- Slight red background for events nearing expiry.
-  local bg = frame:CreateTexture(nil, "BACKGROUND")
+  -- Use a slightly higher layer than the backdrop so it is visible, but still below
+  -- icon/text (ARTWORK/OVERLAY).
+  local bg = frame:CreateTexture(nil, "BORDER")
   bg:SetAllPoints(frame)
-  if bg.SetColorTexture then
-    bg:SetColorTexture(1, 0, 0, 0.14)
+  bg:SetTexture("Interface/AddOns/EventQ/Media/urgency_fade.tga")
+
+  -- Texture is white with alpha ramp to 0 near the right edge; tint red here.
+  if bg.SetVertexColor then
+    bg:SetVertexColor(1, 0, 0, 0.18)
   else
-    -- Older clients: emulate a solid color texture.
-    bg:SetTexture("Interface/Buttons/WHITE8X8")
-    if bg.SetVertexColor then
-      bg:SetVertexColor(1, 0, 0, 0.14)
-    end
+    bg:SetAlpha(0.18)
   end
   bg:Hide()
 
@@ -313,9 +316,7 @@ function Row:SetEvent(event, dateUtil)
   self.frame._eventqIsBrawl = self.IsBrawl
 
   if not event then
-    if self.urgencyBg then
-      self.urgencyBg:Hide()
-    end
+    if self.urgencyBg then self.urgencyBg:Hide() end
     self.frame:Hide()
     return
   end
@@ -323,22 +324,6 @@ function Row:SetEvent(event, dateUtil)
   self.frame:Show()
   self.name:SetText(event.title or "Event")
   self.range:SetText(dateUtil:FormatRange(event.startEpoch, event.endEpoch))
-
-  -- Urgency: lightly tint rows with <24 hours remaining.
-  do
-    local bg = self.urgencyBg
-    if bg and type(event.endEpoch) == "number" then
-      local now = time()
-      local remaining = event.endEpoch - now
-      if remaining > 0 and remaining <= 24 * 60 * 60 then
-        bg:Show()
-      else
-        bg:Hide()
-      end
-    elseif bg then
-      bg:Hide()
-    end
-  end
 
   if event.icon then
     self.icon:SetTexture(event.icon)
@@ -398,6 +383,17 @@ function Row:SetEvent(event, dateUtil)
     self.name:SetTextColor(QUEUEABLE_TITLE_R, QUEUEABLE_TITLE_G, QUEUEABLE_TITLE_B)
   else
     self.name:SetTextColor(DEFAULT_TITLE_R, DEFAULT_TITLE_G, DEFAULT_TITLE_B)
+  end
+
+  -- Urgency background: < 24 hours remaining.
+  if self.urgencyBg and event.endEpoch then
+    local now = time()
+    local remaining = event.endEpoch - now
+    if remaining > 0 and remaining <= 24 * 60 * 60 then
+      self.urgencyBg:Show()
+    else
+      self.urgencyBg:Hide()
+    end
   end
 end
 
