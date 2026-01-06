@@ -6,6 +6,8 @@ local MainFrame = ns.Class:Create("MainFrame")
 local ROW_HEIGHT = 40
 local LIST_PADDING_TOP = 34
 
+local DEFAULT_CUSTOM_ICON = "Interface/Icons/INV_Misc_Note_01"
+
 local function CreateSectionHeader(parent, text, x, y)
   local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   fs:SetPoint("TOPLEFT", x, y)
@@ -66,6 +68,181 @@ local function CreateModernList(parent, app)
   end
 
   return scrollBox, dp
+end
+
+
+-- Description popup for custom events (step 2 of the custom event editor).
+local function EnsureDescriptionPopup(self)
+  if self._descPopup and self._descPopup.GetObjectType then
+    return self._descPopup
+  end
+
+  local f = CreateFrame("Frame", "EventQCustomDescriptionPopup", UIParent, "BackdropTemplate")
+  f:SetSize(440, 280)
+  f:SetFrameStrata("DIALOG")
+  f:SetClampedToScreen(true)
+  f:SetPoint("CENTER")
+  f:Hide()
+
+  f:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 32,
+    insets = { left = 8, right = 8, top = 8, bottom = 8 },
+  })
+
+  -- Placeholder icon (not user-changeable yet)
+  local iconHolder = CreateFrame("Frame", nil, f)
+  iconHolder:SetSize(40, 40)
+  iconHolder:SetPoint("TOP", f, "TOP", 0, -18)
+  f._eventqIconHolder = iconHolder
+
+  local icon = iconHolder:CreateTexture(nil, "ARTWORK")
+  icon:SetAllPoints(iconHolder)
+  icon:SetTexture(DEFAULT_CUSTOM_ICON)
+  if icon.SetTexCoord then
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  end
+  f._eventqIcon = icon
+
+  local border = iconHolder:CreateTexture(nil, "OVERLAY")
+  border:SetTexture("Interface/Common/WhiteIconFrame")
+  border:SetAllPoints(iconHolder)
+  if border.SetTexCoord then
+    border:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  end
+  border:SetAlpha(0.95)
+  f._eventqIconBorder = border
+
+  -- Scrollable multiline edit box
+  local scrollBg = CreateFrame("Frame", nil, f, "BackdropTemplate")
+  scrollBg:SetPoint("TOPLEFT", 18, -86)
+  scrollBg:SetPoint("BOTTOMRIGHT", -18, 58)
+  scrollBg:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+  })
+  scrollBg:SetBackdropColor(0, 0, 0, 0.35)
+
+  -- Optional helper text just above the edit box
+  local sub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  sub:SetPoint("BOTTOM", scrollBg, "TOP", 0, 6)
+  sub:SetJustifyH("CENTER")
+  sub:SetWidth(400)
+  sub:SetText("Optional — leave blank to use the default description.")
+  f._eventqSub = sub
+
+  local scrollFrame = CreateFrame("ScrollFrame", nil, scrollBg, "UIPanelScrollFrameTemplate")
+  scrollFrame:SetPoint("TOPLEFT", 6, -6)
+  scrollFrame:SetPoint("BOTTOMRIGHT", -26, 6)
+
+  local function ShowDescTooltip(owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Enter your custom event's description here.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end
+
+  local function HideDescTooltip()
+    GameTooltip:Hide()
+  end
+
+  -- Some regions of a ScrollFrame aren't covered by the EditBox when the text is short.
+  -- Add scripts to both so the tooltip always appears.
+  scrollFrame:EnableMouse(true)
+  scrollFrame:SetScript("OnEnter", function() ShowDescTooltip(scrollFrame) end)
+  scrollFrame:SetScript("OnLeave", HideDescTooltip)
+
+  local editBox = CreateFrame("EditBox", nil, scrollFrame)
+  editBox:SetMultiLine(true)
+  editBox:SetAutoFocus(false)
+  editBox:SetFontObject("ChatFontNormal")
+  editBox:SetTextInsets(4, 4, 4, 4)
+  editBox:SetWidth(360)
+  editBox:SetHeight(120)
+  -- IMPORTANT: without explicit anchors, frames default to CENTER.
+  -- That left large parts of the visible scroll viewport *not* being the EditBox,
+  -- so clicks wouldn't focus the field. Anchor it to the viewport.
+  editBox:ClearAllPoints()
+  editBox:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", 0, 0)
+  editBox:SetScript("OnEscapePressed", function() editBox:ClearFocus() end)
+  editBox:SetScript("OnTextChanged", function(_, user)
+    if user then
+      scrollFrame:UpdateScrollChildRect()
+    end
+  end)
+  editBox:SetScript("OnCursorChanged", function()
+    scrollFrame:UpdateScrollChildRect()
+  end)
+  editBox:SetScript("OnEnter", function() ShowDescTooltip(editBox) end)
+  editBox:SetScript("OnLeave", HideDescTooltip)
+
+  scrollFrame:SetScrollChild(editBox)
+  f._eventqScrollFrame = scrollFrame
+  f._eventqEditBox = editBox
+
+  -- If the user clicks in the scroll viewport where the EditBox isn't covering
+  -- (common before the first size/layout pass), treat it as a click into the
+  -- EditBox so focus behaves naturally.
+  scrollFrame:HookScript("OnMouseDown", function()
+    if editBox and editBox.SetFocus then
+      editBox:SetFocus()
+    end
+  end)
+
+  -- Keep the scroll child sized to the viewport so it fully covers the edit area for mouseover.
+  local function ResizeDescEditBox()
+    if not editBox or not scrollFrame then
+      return
+    end
+    local w = scrollFrame:GetWidth() or 0
+    local h = scrollFrame:GetHeight() or 0
+    if w > 1 then
+      editBox:SetWidth(w)
+    end
+    if h > 1 and editBox:GetHeight() < h then
+      editBox:SetHeight(h)
+    end
+    scrollFrame:UpdateScrollChildRect()
+  end
+
+  scrollFrame:HookScript("OnSizeChanged", ResizeDescEditBox)
+  scrollFrame:HookScript("OnShow", ResizeDescEditBox)
+  -- Run once immediately too; some clients won't fire OnSizeChanged until later.
+  ResizeDescEditBox()
+
+  -- Buttons
+  local back = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  back:SetSize(110, 24)
+  back:SetText("Back")
+
+  local ok = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  ok:SetSize(110, 24)
+  ok:SetText("Add")
+
+  local gap = 20
+  back:SetPoint("BOTTOM", f, "BOTTOM", -(back:GetWidth() / 2 + gap / 2), 16)
+  ok:SetPoint("LEFT", back, "RIGHT", gap, 0)
+
+  f._eventqBack = back
+  f._eventqOK = ok
+
+  back:SetScript("OnClick", function()
+    f:Hide()
+  end)
+
+  ok:SetScript("OnClick", function()
+    if self and self._CommitCustomFromDescriptionPopup then
+      self:_CommitCustomFromDescriptionPopup()
+    end
+  end)
+
+  -- Escape closes only the popup.
+  tinsert(UISpecialFrames, "EventQCustomDescriptionPopup")
+
+  self._descPopup = f
+  return f
 end
 
 
@@ -200,9 +377,9 @@ function MainFrame:Constructor(app)
   local addBtn = CreateFrame("Button", nil, editor, "UIPanelButtonTemplate")
   addBtn:SetSize(160, 24)
   addBtn:SetPoint("TOP", editor, "TOP", 0, -82)
-  addBtn:SetText("Add")
+  addBtn:SetText("Next")
   self.addBtn = addBtn
-  addBtn:SetScript("OnClick", function() self:OnAddCustom() end)
+  addBtn:SetScript("OnClick", function() self:OnNextCustom() end)
 local credit = editor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 credit:SetPoint("TOP", addBtn, "BOTTOM", 0, -2)
 credit:SetText("Crafted with |TInterface/AddOns/EventQ/Media/heart.tga:12:12:0:0|t by LightskyGG")
@@ -266,6 +443,9 @@ f:Hide()
     if ns.RolePopup and ns.RolePopup.Hide then
       ns.RolePopup:Hide()
     end
+    if self._descPopup and self._descPopup.Hide then
+      self._descPopup:Hide()
+    end
   end)
 end
 
@@ -274,20 +454,30 @@ function MainFrame:BeginEditCustom(e)
   if not e or not e.isCustom then return end
   self.editingId = e.id
 
+  -- Seed the description popup. If the saved description is the default, treat it as blank.
+  local d = (type(e.description) == "string") and e.description or ""
+  local trimmed = d:gsub("^%s+", ""):gsub("%s+$", "")
+  if trimmed == "" or trimmed == "Custom event" then
+    self._editingDescSeed = ""
+  else
+    self._editingDescSeed = trimmed
+  end
+
   local order = self.app.db.settings.dateOrder
   self.nameBox:SetText(e.title or "")
   self.startBox:SetText(self.dateUtil:FormatUserDateTime(e.startEpoch, order))
   self.endBox:SetText(self.dateUtil:FormatUserDateTime(e.endEpoch, order))
 
   if self.edTitle then self.edTitle:SetText("Edit Custom Event") end
-  if self.addBtn then self.addBtn:SetText("Save") end
-  self:ShowTransientMessage("Editing custom event — click Save to apply changes.", 1, 1, 1, 4)
+  if self.addBtn then self.addBtn:SetText("Next") end
+  self:ShowTransientMessage("Editing custom event — click Next to edit description and save.", 1, 1, 1, 4)
 end
 
 function MainFrame:ClearEdit()
   self.editingId = nil
+  self._editingDescSeed = nil
   if self.edTitle then self.edTitle:SetText("Add Custom Event") end
-  if self.addBtn then self.addBtn:SetText("Add") end
+  if self.addBtn then self.addBtn:SetText("Next") end
 
   local hint = self.dateUtil:FormatHint(self.app.db.settings.dateOrder)
   self.nameBox:SetText("")
@@ -302,7 +492,7 @@ function MainFrame:SetStatus(msg)
   self.status:SetText(msg or "")
 end
 
-function MainFrame:OnAddCustom()
+function MainFrame:OnNextCustom()
   local title = (self.nameBox:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
   if title == "" then
     self:ShowTransientMessage("Name is required.", 1, 0.25, 0.25, 10)
@@ -341,18 +531,75 @@ function MainFrame:OnAddCustom()
     endEpoch = endEpoch,
   }
 
+  self._pendingCustomPayload = payload
+  local popup = EnsureDescriptionPopup(self)
+  popup._eventqPayload = payload
+  if popup._eventqOK then
+    popup._eventqOK:SetText(self.editingId and "Save" or "Add")
+  end
+
+  -- Seed text: keep whatever the user typed if they backed out, else use current saved value (edit mode).
+  local seed = ""
+  if popup._eventqEditBox and popup._eventqEditBox.GetText then
+    local existing = popup._eventqEditBox:GetText() or ""
+    if existing ~= "" then
+      seed = existing
+    elseif self.editingId then
+      seed = self._editingDescSeed or ""
+    end
+    popup._eventqEditBox:SetText(seed)
+    if popup._eventqEditBox.SetCursorPosition then
+      popup._eventqEditBox:SetCursorPosition(0)
+    end
+  end
+
+  popup:Show()
+  if popup._eventqEditBox and popup._eventqEditBox.SetFocus then
+    popup._eventqEditBox:SetFocus()
+  end
+end
+
+-- Backward compatibility: older code paths may still call OnAddCustom.
+function MainFrame:OnAddCustom()
+  self:OnNextCustom()
+end
+
+function MainFrame:_CommitCustomFromDescriptionPopup()
+  local popup = self._descPopup
+  if not popup or not popup._eventqEditBox then return end
+
+  local payload = popup._eventqPayload or self._pendingCustomPayload
+  if not payload then
+    popup:Hide()
+    return
+  end
+
+  local desc = (popup._eventqEditBox:GetText() or "")
+  desc = desc:gsub("^%s+", ""):gsub("%s+$", "")
+  if desc == "" then desc = nil end
+  payload.description = desc
+
   if self.editingId then
     self.app:ReplaceCustomEvent(self.editingId, payload)
     self.editingId = nil
+    self._editingDescSeed = nil
     if self.edTitle then self.edTitle:SetText("Add Custom Event") end
-    if self.addBtn then self.addBtn:SetText("Add") end
+    if self.addBtn then self.addBtn:SetText("Next") end
     self:ShowTransientMessage("Updated.", 0.4, 1, 0.4, 4)
   else
     self.app:ReplaceCustomEvent(nil, payload)
     self:ShowTransientMessage("Added.", 0.4, 1, 0.4, 4)
   end
 
-  -- Clear inputs back to hint after action
+  self._pendingCustomPayload = nil
+  popup._eventqPayload = nil
+  if popup._eventqEditBox then
+    popup._eventqEditBox:SetText("")
+    popup._eventqEditBox:ClearFocus()
+  end
+  popup:Hide()
+
+  -- Clear inputs back to hint after action (same as the previous single-step flow)
   local hint = self.dateUtil:FormatHint(self.app.db.settings.dateOrder)
   self.nameBox:SetText("")
   self.startBox:SetText(hint)

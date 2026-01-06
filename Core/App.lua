@@ -158,11 +158,24 @@ function App:RefreshAll()
   end
 
   for _, e in ipairs(custom) do
+    local desc = e.description
+    if type(desc) ~= "string" then
+      desc = nil
+    else
+      -- Treat whitespace-only as empty.
+      local trimmed = desc:gsub("^%s+", ""):gsub("%s+$", "")
+      if trimmed == "" then
+        desc = nil
+      else
+        desc = trimmed
+      end
+    end
+
     local ce = {
       id = e.id,
       eventID = nil,
       title = e.title,
-      description = "Custom event",
+      description = desc or "Custom event",
       startEpoch = e.startEpoch,
       endEpoch = e.endEpoch,
       icon = e.icon,

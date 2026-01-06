@@ -10,13 +10,14 @@ function CustomStore:Constructor(db)
   self.db.customEvents = self.db.customEvents or {}
 end
 
----@param e table {title,startEpoch,endEpoch,icon?}
+---@param e table {title,startEpoch,endEpoch,icon?,description?}
 ---@return string id
 function CustomStore:Add(e)
   local id = ("custom:%d:%d:%s"):format(e.startEpoch, e.endEpoch, e.title)
   table.insert(self.db.customEvents, {
     id = id,
     title = e.title,
+    description = e.description,
     startEpoch = e.startEpoch,
     endEpoch = e.endEpoch,
     icon = e.icon or DEFAULT_ICON,
