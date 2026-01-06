@@ -141,6 +141,33 @@ function MainFrame:Constructor(app)
   self.leftScrollBox, self.leftDP = CreateModernList(self.left, self.app)
   self.rightScrollBox, self.rightDP = CreateModernList(self.right, self.app)
 
+  -- Indicator for custom events that fall outside the 8-day Upcoming filter.
+  local moreCustom = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  moreCustom:SetPoint("TOP", self.right, "BOTTOM", 0, -2)
+  moreCustom:SetPoint("LEFT", self.right, "LEFT", 10, 0)
+  moreCustom:SetPoint("RIGHT", self.right, "RIGHT", -10, 0)
+  moreCustom:SetJustifyH("CENTER")
+  if moreCustom.SetWordWrap then moreCustom:SetWordWrap(true) end
+  moreCustom:SetTextColor(0.6, 0.6, 0.6, 0.85)
+  moreCustom:SetText("")
+  moreCustom:Hide()
+  moreCustom:EnableMouse(true)
+
+  moreCustom:SetScript("OnEnter", function()
+    local n = moreCustom._eventqCount or 0
+    if n <= 0 then return end
+
+    local r, g, b = NORMAL_FONT_COLOR:GetRGB()
+    GameTooltip:SetOwner(moreCustom, "ANCHOR_TOP")
+    local suffix = (n == 1) and "" or "s"
+    GameTooltip:SetText(("You have %d upcoming custom event%s scheduled beyond the 8-day upcoming filter."):format(n, suffix), r, g, b)
+    GameTooltip:AddLine("They will appear in the Upcoming list as the date approaches.", r, g, b, true)
+    GameTooltip:Show()
+  end)
+  moreCustom:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+  self.moreCustom = moreCustom
+
   -- Editor fields
   local function MakeLabel(text, anchorTo, dx, dy)
     local l = editor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -296,6 +323,14 @@ function MainFrame:OnAddCustom()
     return
   end
 
+  -- Sanity check: end must not already be in the past.
+  -- Note: date-only end values default to 23:59, so "today" remains valid until then.
+  local nowEpoch = time()
+  if endEpoch < nowEpoch then
+    self:ShowTransientMessage("End date/time has already passed.", 1, 0.25, 0.25, 10)
+    return
+  end
+
   if endEpoch <= startEpoch then
     self:ShowTransientMessage("End must be after start.", 1, 0.25, 0.25, 10)
     return
@@ -341,6 +376,31 @@ function MainFrame:UpdateLists()
     self.rightDP:Insert(e)
   end
   self.rightScrollBox:SetDataProvider(self.rightDP)
+
+  -- Update the "more custom events" indicator (custom events that start beyond the 8-day window).
+  if self.moreCustom and self.app and self.app.customStore and self.app.customStore.GetAll then
+    local now = time()
+    local horizon = now + 8 * 86400
+    local n = 0
+    for _, e in ipairs(self.app.customStore:GetAll() or {}) do
+      if e and e.startEpoch and e.startEpoch > horizon and (e.endEpoch or 0) >= now then
+        n = n + 1
+      end
+    end
+
+    self.moreCustom._eventqCount = n
+    if n > 0 then
+      if n == 1 then
+        self.moreCustom:SetText("1 custom event is on its way!")
+      else
+        self.moreCustom:SetText(("%d custom events are on their way!"):format(n))
+      end
+      self.moreCustom:Show()
+    else
+      self.moreCustom:SetText("")
+      self.moreCustom:Hide()
+    end
+  end
 end
 
 ns.UIMainFrame = MainFrame

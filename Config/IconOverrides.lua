@@ -15,21 +15,10 @@ ns.IconOverrides.byTitle = {
 
 -- Substring rules (ordered)
 ns.IconOverrides.byTitleContains = {
-  { "PvP Brawl", 1322720 },
+  -- Substring rules (ordered; first match wins)
+  { "PvP Brawl", { icon = "Interface/AddOns/EventQ/Media/pvp_brawl.tga", texCoord = { 0, 1, 0, 1 } } },
 }
 
--- Timewalking expansion icon mapping (fileIDs you provided).
-ns.IconOverrides.timewalkingByExpansion = {
-  ["Classic"] = 236761,
-  ["The Burning Crusade"] = 630783,
-  ["Wrath of the Lich King"] = 630787,
-  ["Cataclysm"] = 630784,
-  ["Mists of Pandaria"] = 630786,
-  ["Warlords of Draenor"] = 2838050,
-  ["Legion"] = 1408999,
-  ["Battle for Azeroth"] = 2065640,
-  ["Shadowlands"] = 3395746,
-}
 
 -- EventID overrides.
 -- War Within Dungeon Event (custom icon)
@@ -37,10 +26,10 @@ ns.IconOverrides.timewalkingByExpansion = {
 -- NOTE: Blizzard uses different HolidayNameID/event IDs for some regions/locales.
 -- These are the known Timewalking HolidayNameID/event IDs across regions.
 ns.IconOverrides.byId = ns.IconOverrides.byId or {
-  [1558] = "Interface/AddOns/EventQ/Media/warwithin_dungeon.tga",
-  [1563] = "Interface/AddOns/EventQ/Media/warwithin_dungeon.tga",
-  [1564] = "Interface/AddOns/EventQ/Media/warwithin_dungeon.tga",
-  [1565] = "Interface/AddOns/EventQ/Media/warwithin_dungeon.tga",
+  [1558] = { icon = "Interface/AddOns/EventQ/Media/warwithin_dungeon_event.tga", texCoord = { 0, 1, 0, 1 } },
+  [1563] = { icon = "Interface/AddOns/EventQ/Media/warwithin_dungeon_event.tga", texCoord = { 0, 1, 0, 1 } },
+  [1564] = { icon = "Interface/AddOns/EventQ/Media/warwithin_dungeon_event.tga", texCoord = { 0, 1, 0, 1 } },
+  [1565] = { icon = "Interface/AddOns/EventQ/Media/warwithin_dungeon_event.tga", texCoord = { 0, 1, 0, 1 } },
   -- Timewalking: The Burning Crusade
   [559] = 630783, [616] = 630783, [617] = 630783, [618] = 630783,
   -- Timewalking: Wrath of the Lich King
@@ -59,5 +48,11 @@ ns.IconOverrides.byId = ns.IconOverrides.byId or {
   [1669] = 2065640, [1667] = 2065640, [1666] = 2065640, [1668] = 2065640,
   -- Timewalking: Shadowlands
   [1703] = 3395746, [1705] = 3395746, [1707] = 3395746, [1709] = 3395746,
+
+  -- Arena Skirmish Bonus Event (region-specific event IDs)
+  [561] = 132349,
+  [610] = 132349,
+  [611] = 132349,
+  [612] = 132349,
 }
 

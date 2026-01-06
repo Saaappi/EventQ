@@ -49,7 +49,19 @@ end
 
 local function EnsureTexture(frame)
   if frame._eventqIcon and frame._eventqIcon.GetObjectType then
-    return frame._eventqIconHolder, frame._eventqIcon
+    -- Enforce our layout even if this row was created by an older version.
+    local holder, icon = frame._eventqIconHolder, frame._eventqIcon
+    if holder and icon and icon.ClearAllPoints and icon.SetPoint and icon.SetSize then
+      icon:ClearAllPoints()
+      icon:SetPoint("CENTER", holder, "CENTER", 0, 0)
+      local w, h = holder:GetSize()
+      if not w or w <= 0 then w, h = 32, 32 end
+      icon:SetSize(w, h)
+      if icon.SetTexCoord then
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+      end
+    end
+    return holder, icon
   end
 
   -- Fixed-size icon holder so every icon is identical size regardless of source.
@@ -58,7 +70,12 @@ local function EnsureTexture(frame)
   holder:SetPoint("LEFT", 4, 0)
 
   local icon = holder:CreateTexture(nil, "ARTWORK")
-  icon:SetAllPoints(holder)
+  -- IMPORTANT:
+  -- Some calendar textures behave poorly if we rely only on anchors; they can appear
+  -- "latched" to the top-left and get clipped by the mask. Force a fixed size + center.
+  icon:ClearAllPoints()
+  icon:SetPoint("CENTER", holder, "CENTER", 0, 0)
+  icon:SetSize(32, 32)
 
   -- Standard crop (removes common padding).
   if icon.SetTexCoord then
@@ -71,8 +88,13 @@ local function EnsureTexture(frame)
     if not ok then
       mask = holder:CreateMaskTexture()
     end
-    mask:SetTexture("Interface/CharacterFrame/TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    mask:SetAllPoints(holder)
+    -- Prefer the modern squircle icon mask; fall back if missing on this client.
+    pcall(mask.SetTexture, mask, "Interface/Common/common-iconmask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    local mt = mask.GetTexture and mask:GetTexture()
+    if not mt then
+      mask:SetTexture("Interface/CharacterFrame/TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    end
+    mask:SetAllPoints(icon)
     icon:AddMaskTexture(mask)
     frame._eventqIconMask = mask
   end
@@ -112,6 +134,29 @@ local function EnsureFontStrings(frame, holder)
   return name, range
 end
 
+local function EnsureUrgencyBackground(frame)
+  if frame._eventqUrgencyBg then
+    return frame._eventqUrgencyBg
+  end
+
+  -- Slight red background for events nearing expiry.
+  local bg = frame:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(frame)
+  if bg.SetColorTexture then
+    bg:SetColorTexture(1, 0, 0, 0.14)
+  else
+    -- Older clients: emulate a solid color texture.
+    bg:SetTexture("Interface/Buttons/WHITE8X8")
+    if bg.SetVertexColor then
+      bg:SetVertexColor(1, 0, 0, 0.14)
+    end
+  end
+  bg:Hide()
+
+  frame._eventqUrgencyBg = bg
+  return bg
+end
+
 ---@param frame Button
 ---@param app table
 function Row:Constructor(frame, app)
@@ -119,6 +164,7 @@ function Row:Constructor(frame, app)
   self.app = app
   self.iconHolder, self.icon = EnsureTexture(frame)
   self.name, self.range = EnsureFontStrings(frame, self.iconHolder)
+  self.urgencyBg = EnsureUrgencyBackground(frame)
   self.data = nil
   self.LfgDungeonID = nil
   self.IsBrawl = false
@@ -267,6 +313,9 @@ function Row:SetEvent(event, dateUtil)
   self.frame._eventqIsBrawl = self.IsBrawl
 
   if not event then
+    if self.urgencyBg then
+      self.urgencyBg:Hide()
+    end
     self.frame:Hide()
     return
   end
@@ -275,11 +324,74 @@ function Row:SetEvent(event, dateUtil)
   self.name:SetText(event.title or "Event")
   self.range:SetText(dateUtil:FormatRange(event.startEpoch, event.endEpoch))
 
+  -- Urgency: lightly tint rows with <24 hours remaining.
+  do
+    local bg = self.urgencyBg
+    if bg and type(event.endEpoch) == "number" then
+      local now = time()
+      local remaining = event.endEpoch - now
+      if remaining > 0 and remaining <= 24 * 60 * 60 then
+        bg:Show()
+      else
+        bg:Hide()
+      end
+    elseif bg then
+      bg:Hide()
+    end
+  end
+
   if event.icon then
     self.icon:SetTexture(event.icon)
   else
     self.icon:SetTexture("Interface/Icons/INV_Misc_QuestionMark")
   end
+
+  -- Icon layout + cropping:
+  -- 1) Always keep the texture centered and forced to our holder size.
+  -- 2) Only apply calendar *sheet* quadrant cropping when we know the icon actually
+  --    came from textureIndex -> EventGetTextures(eventType).
+  if self.icon and self.iconHolder and self.icon.ClearAllPoints and self.icon.SetPoint and self.icon.SetSize then
+    self.icon:ClearAllPoints()
+    self.icon:SetPoint("CENTER", self.iconHolder, "CENTER", 0, 0)
+    local w, h = self.iconHolder:GetSize()
+    if not w or w <= 0 then w, h = 32, 32 end
+    self.icon:SetSize(w, h)
+
+    if self.icon.SetTexCoord then
+      local tc = event._eventqTexCoord
+      if type(tc) == "table" and tc[1] and tc[2] and tc[3] and tc[4] then
+        self.icon:SetTexCoord(tc[1], tc[2], tc[3], tc[4])
+      else
+        local useSheetCrop = (event.iconIsCalendarSheet == true) and (event._eventqIconOverride ~= true)
+      if useSheetCrop and type(event.textureIndex) == "number" then
+        -- 2x2 sheet; textureIndex selects the quadrant.
+        -- Index mapping is assumed to be left-to-right, top-to-bottom.
+        local idx = event.textureIndex
+        local u0, u1, v0, v1
+        if idx == 1 then
+          u0, u1, v0, v1 = 0.04, 0.46, 0.04, 0.46
+        elseif idx == 2 then
+          u0, u1, v0, v1 = 0.54, 0.96, 0.04, 0.46
+        elseif idx == 3 then
+          u0, u1, v0, v1 = 0.04, 0.46, 0.54, 0.96
+        elseif idx == 4 then
+          u0, u1, v0, v1 = 0.54, 0.96, 0.54, 0.96
+        end
+
+        if u0 then
+          self.icon:SetTexCoord(u0, u1, v0, v1)
+        else
+          -- Unknown index; fall back to normal crop.
+          self.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        end
+      else
+        -- Normal icon crop (removes common padding).
+        self.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+      end
+      end
+    end
+  end
+
 
   -- Queueable ONGOING events get a cyan title for quick scanning.
   if IsQueueable(self.frame, event) then

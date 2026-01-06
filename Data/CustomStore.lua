@@ -51,13 +51,21 @@ function CustomStore:Replace(oldId, e)
 end
 
 function CustomStore:PruneOld(nowEpoch)
-  local kept = {}
-  for _, e in ipairs(self.db.customEvents) do
-    if (e.endEpoch or 0) >= (nowEpoch - 7 * 86400) then
-      kept[#kept + 1] = e
+  local events = self.db.customEvents
+  if not events or #events == 0 then return end
+
+  local cutoff = (nowEpoch or 0) - 7 * 86400
+  local write = 0
+  for i = 1, #events do
+    local e = events[i]
+    if (e and (e.endEpoch or 0) >= cutoff) then
+      write = write + 1
+      events[write] = e
     end
   end
-  self.db.customEvents = kept
+  for i = #events, write + 1, -1 do
+    events[i] = nil
+  end
 end
 
 ns.CustomStore = CustomStore

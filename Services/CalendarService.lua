@@ -7,7 +7,8 @@ function CalendarService:Constructor(logger, dateUtil)
   self.log = logger
   self.dateUtil = dateUtil
   self._descCache = {} -- eventID -> string | false
-  self._iconCache = {} -- eventID -> fileID | false
+  -- eventID -> { icon=fileID, textureIndex=number } | false
+  self._iconCache = {}
 end
 
 function CalendarService:RequestRefresh()
@@ -54,7 +55,7 @@ end
 
 local function holidayDescByName(monthOffset, monthDay, title)
   if not title or not monthOffset or not monthDay then return nil end
-  -- GetHolidayInfo only accepts offset 0 or 1. citeturn0search1
+  -- GetHolidayInfo only accepts offset 0 or 1.
   if monthOffset ~= 0 and monthOffset ~= 1 then return nil end
   for i = 1, 50 do
     local h = C_Calendar.GetHolidayInfo(monthOffset, monthDay, i)
@@ -94,7 +95,14 @@ function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
 
   local cached = self._iconCache[key]
   if cached ~= nil then
-    return cached or nil
+    if cached == false then
+      return nil
+    end
+    if type(cached) == "table" then
+      return cached.icon, cached.textureIndex
+    end
+    -- Back-compat if a previous session stored a raw fileID.
+    return cached, nil
   end
 
   -- Resolve event index from eventID; if missing, don't cache failure (data may not be loaded yet).
@@ -106,21 +114,21 @@ function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
     end
   end
 
-  -- OpenEvent is required before GetEventInfo (stateful API). citeturn0search0
+  -- OpenEvent is required before GetEventInfo (stateful API).
   local ok = C_Calendar.OpenEvent(idx.offsetMonths, idx.monthDay, idx.eventIndex)
   if ok == false then
     return nil
   end
 
   local info = C_Calendar.GetEventInfo()
-  -- GetEventInfo exposes textureIndex referencing EventGetTextures(eventType). citeturn0search0turn0search5
+  -- GetEventInfo exposes textureIndex referencing EventGetTextures(eventType).
   if info and info.eventType and info.textureIndex then
     local textures = C_Calendar.EventGetTextures(info.eventType)
     local t = textures and textures[info.textureIndex]
     local icon = t and t.iconTexture
     if icon then
-      self._iconCache[key] = icon
-      return icon
+      self._iconCache[key] = { icon = icon, textureIndex = info.textureIndex }
+      return icon, info.textureIndex
     end
   end
 
@@ -146,7 +154,7 @@ function CalendarService:TryFetchDescription(eventID, monthOffset, monthDay, tit
     end
   end
 
-  -- Resolve event index from eventID. citeturn1search1
+  -- Resolve event index from eventID.
   local idx = C_Calendar.GetEventIndexInfo(eventID, monthOffset, monthDay)
   if not idx then
     -- Fallback: scan the day list for the matching eventID.
@@ -157,7 +165,7 @@ function CalendarService:TryFetchDescription(eventID, monthOffset, monthDay, tit
     end
   end
 
-  -- OpenEvent is required before GetEventInfo (stateful API). citeturn1search0
+  -- OpenEvent is required before GetEventInfo (stateful API).
   local ok = C_Calendar.OpenEvent(idx.offsetMonths, idx.monthDay, idx.eventIndex)
   if ok == false then
     -- Don't cache; could be transient.
@@ -241,6 +249,8 @@ function CalendarService:EnhanceEventIcon(e)
     local htex = holidayTextureByName(e.monthOffset, e.monthDay, e.title)
     if htex then
       e.icon = htex
+      e.iconIsCalendar = false
+      e.iconIsCalendarSheet = nil
       return
     end
   end
@@ -253,15 +263,22 @@ function CalendarService:EnhanceEventIcon(e)
     end
     if twIcon then
       e.icon = twIcon
+      e.iconIsCalendar = false
+      e.iconIsCalendarSheet = nil
       return
     end
   end
 
   -- Next best: textureIndex -> EventGetTextures(eventType) via GetEventInfo (stateful).
   if e.eventID then
-    local icon = self:TryFetchBestIcon(e.eventID, e.monthOffset, e.monthDay)
+    local icon, textureIndex = self:TryFetchBestIcon(e.eventID, e.monthOffset, e.monthDay)
     if icon then
       e.icon = icon
+      e.textureIndex = textureIndex
+      e.iconIsCalendar = true
+      -- Icons coming from textureIndex -> EventGetTextures(eventType) are typically icon sheets
+      -- that need quadrant cropping in the UI.
+      e.iconIsCalendarSheet = true
     end
   end
 end
@@ -287,9 +304,9 @@ function CalendarService:CollectWindow(maxDaysAhead)
     local dayEpoch = startDayEpoch + dayOffset * 86400
     local monthOffset, monthDay = self.dateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
 
-    local n = C_Calendar.GetNumDayEvents(monthOffset, monthDay) -- citeturn0search2
+    local n = C_Calendar.GetNumDayEvents(monthOffset, monthDay) --
     for i = 1, n do
-      local ev = C_Calendar.GetDayEvent(monthOffset, monthDay, i) -- citeturn0search2
+      local ev = C_Calendar.GetDayEvent(monthOffset, monthDay, i) --
       if ev and ev.startTime and ev.endTime then
         local s = self.dateUtil:CalendarTimeToEpoch(ev.startTime)
         local e = self.dateUtil:CalendarTimeToEpoch(ev.endTime)
@@ -302,6 +319,7 @@ function CalendarService:CollectWindow(maxDaysAhead)
           startEpoch = s,
           endEpoch = e,
           icon = ev.iconTexture,
+          iconIsCalendar = true,
           source = ("Calendar (%s)"):format(ev.calendarType or "UNKNOWN"),
           calendarType = ev.calendarType,
           monthOffset = monthOffset,
@@ -310,7 +328,7 @@ function CalendarService:CollectWindow(maxDaysAhead)
       end
     end
 
-    -- Holidays (already include description field). citeturn0search1
+    -- Holidays (already include description field).
     if monthOffset == 0 or monthOffset == 1 then
       for i = 1, 50 do
         local h = C_Calendar.GetHolidayInfo(monthOffset, monthDay, i)
@@ -327,6 +345,7 @@ function CalendarService:CollectWindow(maxDaysAhead)
           startEpoch = s,
           endEpoch = e,
           icon = h.texture,
+          iconIsCalendar = false,
           source = "Holiday",
           calendarType = "HOLIDAY",
           monthOffset = monthOffset,

@@ -14,12 +14,26 @@ local function ApplyIconOverrides(app, e)
   local idNum = type(eventID) == "number" and eventID or tonumber(eventID)
   local idStr = eventID ~= nil and tostring(eventID) or nil
 
+  local function setIcon(override)
+    -- override can be a numeric fileID, a texture path string, or a table:
+    -- { icon = <id|path>, texCoord = {u0,u1,v0,v1} }
+    if type(override) == "table" then
+      e.icon = override.icon or override[1]
+      e._eventqTexCoord = override.texCoord
+    else
+      e.icon = override
+      e._eventqTexCoord = nil
+    end
+    e.iconIsCalendar = false
+    e._eventqIconOverride = true
+  end
+
   -- 0) SavedVariables per-user override by eventID (persists to disk)
   if app and app.db and app.db.iconOverridesById and eventID ~= nil then
     local sv = app.db.iconOverridesById
     local ico = (idNum and sv[idNum]) or (idStr and sv[idStr])
     if ico then
-      e.icon = ico
+      setIcon(ico)
       return
     end
   end
@@ -31,14 +45,14 @@ local function ApplyIconOverrides(app, e)
   if eventID ~= nil and ov.byId then
     local ico = (idNum and ov.byId[idNum]) or (idStr and ov.byId[idStr])
     if ico then
-      e.icon = ico
+      setIcon(ico)
       return
     end
   end
 
   -- 2) Exact title override
   if e.title and ov.byTitle and ov.byTitle[e.title] then
-    e.icon = ov.byTitle[e.title]
+    setIcon(ov.byTitle[e.title])
     return
   end
 
@@ -48,13 +62,15 @@ local function ApplyIconOverrides(app, e)
       local needle = rule and rule[1]
       local icon = rule and rule[2]
       if needle and icon and e.title:find(needle, 1, true) then
-        e.icon = icon
+        setIcon(icon)
         return
       end
     end
   end
 end
 
+
+local NOTIFIED_TTL = 60 * 86400 -- cap notified history to reduce SavedVariables growth
 
 local function PickActiveSoundKit()
   if not SOUNDKIT then return nil end
@@ -253,8 +269,20 @@ function App:ReplaceCustomEvent(oldId, e)
   self:RefreshAll()
 end
 
+function App:_PruneNotified(now)
+  local t = self.db.notified
+  if not t then return end
+  local cutoff = (now or 0) - NOTIFIED_TTL
+  for id, ts in pairs(t) do
+    if type(ts) ~= "number" or ts < cutoff then
+      t[id] = nil
+    end
+  end
+end
+
 function App:NotifyNew(now)
   if not self.db.notify.enabled then return end
+  self:_PruneNotified(now)
 
   local function notifyList(list)
     for _, e in ipairs(list) do
