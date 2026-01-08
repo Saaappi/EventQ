@@ -537,7 +537,7 @@ function MainFrame:BeginEditCustom(e)
 
   -- Seed the description popup. If the saved description is the default, treat it as blank.
   local d = (type(e.description) == "string") and e.description or ""
-  local trimmed = d:gsub("^%s+", ""):gsub("%s+$", "")
+  local trimmed = strtrim(d)
   if trimmed == "" or trimmed == "Custom event" then
     self._editingDescSeed = ""
   else
@@ -590,7 +590,7 @@ function MainFrame:SetStatus(msg)
 end
 
 function MainFrame:OnNextCustom()
-  local title = (self.nameBox:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  local title = strtrim(self.nameBox:GetText() or "")
   if title == "" then
     self:ShowTransientMessage("Name is required.", 1, 0.25, 0.25, 10)
     return
@@ -672,7 +672,7 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
   end
 
   local desc = (popup._eventqEditBox:GetText() or "")
-  desc = desc:gsub("^%s+", ""):gsub("%s+$", "")
+  desc = strtrim(desc)
   if desc == "" then desc = nil end
   payload.description = desc
 

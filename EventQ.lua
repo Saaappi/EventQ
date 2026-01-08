@@ -1,6 +1,11 @@
 -- EventQ/EventQ.lua
 local ADDON, ns = ...
 
+local _G = _G
+local strtrim = _G.strtrim or function(s)
+  return (s and s:match("^%s*(.-)%s*$")) or ""
+end
+
 -- SavedVariables are guaranteed to be populated by the time ADDON_LOADED fires for this addon.
 -- We intentionally *delay* constructing the App until then to ensure we bind to the persisted table.
 local app
@@ -61,7 +66,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
 
     SLASH_EVENTQ1 = "/eventq"
     SlashCmdList.EVENTQ = function(msg)
-      msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+      msg = strtrim((msg or ""):lower())
       if msg == "config" or msg == "settings" then
         if ns.Settings and ns.Settings.Open then
           ns.Settings:Open()

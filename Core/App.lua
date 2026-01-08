@@ -6,6 +6,48 @@ local App = ns.Class:Create("App")
 local UPCOMING_DAYS = 8
 local UPCOMING_WINDOW = UPCOMING_DAYS * 86400
 
+-- Hot-path locals
+local _G = _G
+local strtrim = _G.strtrim or function(s)
+  return (s and s:match("^%s*(.-)%s*$")) or ""
+end
+local wipe = _G.wipe or function(t)
+  for k in pairs(t) do t[k] = nil end
+end
+local function wipeArray(t)
+  for i = #t, 1, -1 do
+    t[i] = nil
+  end
+end
+
+local function ApplyOverrideToEvent(e, override)
+  -- override can be a numeric fileID, a texture path string, or a table:
+  -- { icon = <id|path>, texCoord = {u0,u1,v0,v1} }
+  if type(override) == "table" then
+    e.icon = override.icon or override[1]
+    e._eventqTexCoord = override.texCoord
+  else
+    e.icon = override
+    e._eventqTexCoord = nil
+  end
+  e.iconIsCalendar = false
+  e._eventqIconOverride = true
+end
+
+local function SortOngoing(a, b)
+  if a.endEpoch == b.endEpoch then
+    return (a.title or "") < (b.title or "")
+  end
+  return a.endEpoch < b.endEpoch
+end
+
+local function SortUpcoming(a, b)
+  if a.startEpoch == b.startEpoch then
+    return (a.title or "") < (b.title or "")
+  end
+  return a.startEpoch < b.startEpoch
+end
+
 local function ApplyIconOverrides(app, e)
   if not e then return end
   local eventID = e.eventID
@@ -14,26 +56,12 @@ local function ApplyIconOverrides(app, e)
   local idNum = type(eventID) == "number" and eventID or tonumber(eventID)
   local idStr = eventID ~= nil and tostring(eventID) or nil
 
-  local function setIcon(override)
-    -- override can be a numeric fileID, a texture path string, or a table:
-    -- { icon = <id|path>, texCoord = {u0,u1,v0,v1} }
-    if type(override) == "table" then
-      e.icon = override.icon or override[1]
-      e._eventqTexCoord = override.texCoord
-    else
-      e.icon = override
-      e._eventqTexCoord = nil
-    end
-    e.iconIsCalendar = false
-    e._eventqIconOverride = true
-  end
-
   -- 0) SavedVariables per-user override by eventID (persists to disk)
   if app and app.db and app.db.iconOverridesById and eventID ~= nil then
     local sv = app.db.iconOverridesById
     local ico = (idNum and sv[idNum]) or (idStr and sv[idStr])
     if ico then
-      setIcon(ico)
+      ApplyOverrideToEvent(e, ico)
       return
     end
   end
@@ -45,14 +73,14 @@ local function ApplyIconOverrides(app, e)
   if eventID ~= nil and ov.byId then
     local ico = (idNum and ov.byId[idNum]) or (idStr and ov.byId[idStr])
     if ico then
-      setIcon(ico)
+      ApplyOverrideToEvent(e, ico)
       return
     end
   end
 
   -- 2) Exact title override
   if e.title and ov.byTitle and ov.byTitle[e.title] then
-    setIcon(ov.byTitle[e.title])
+    ApplyOverrideToEvent(e, ov.byTitle[e.title])
     return
   end
 
@@ -62,7 +90,7 @@ local function ApplyIconOverrides(app, e)
       local needle = rule and rule[1]
       local icon = rule and rule[2]
       if needle and icon and e.title:find(needle, 1, true) then
-        setIcon(icon)
+        ApplyOverrideToEvent(e, icon)
         return
       end
     end
@@ -142,6 +170,13 @@ function App:Constructor(db)
   if self.db.notify.sound == nil then
     self.db.notify.sound = true
   end
+
+  -- Reusable scratch tables to reduce GC churn during periodic refreshes.
+  self._allEvents = self._allEvents or {}
+  self.ongoing = self.ongoing or {}
+  self.upcoming = self.upcoming or {}
+  self._bucketById = self._bucketById or {}
+  self._bucketByIdScratch = self._bucketByIdScratch or {}
   -- Keep legacy alias in sync.
   self.db.notify.enabled = not not self.db.notify.chat
   self.db.notified = self.db.notified or {} -- id -> epoch
@@ -162,7 +197,13 @@ function App:RefreshAll()
   local cal = self.calendar:CollectWindow(UPCOMING_DAYS)
   local custom = self.customStore:GetAll()
 
-  local all = {}
+  local all = self._allEvents
+  if not all then
+    all = {}
+    self._allEvents = all
+  else
+    wipeArray(all)
+  end
   for _, e in ipairs(cal) do
     -- Try to upgrade calendar icons dynamically (textureIndex -> EventGetTextures).
     self.calendar:EnhanceEventIcon(e)
@@ -177,7 +218,7 @@ function App:RefreshAll()
       desc = nil
     else
       -- Treat whitespace-only as empty.
-      local trimmed = desc:gsub("^%s+", ""):gsub("%s+$", "")
+      local trimmed = strtrim(desc)
       if trimmed == "" then
         desc = nil
       else
@@ -200,7 +241,21 @@ function App:RefreshAll()
     all[#all + 1] = ce
   end
 
-  local ongoing, upcoming = {}, {}
+  local ongoing = self.ongoing
+  if not ongoing then
+    ongoing = {}
+    self.ongoing = ongoing
+  else
+    wipeArray(ongoing)
+  end
+
+  local upcoming = self.upcoming
+  if not upcoming then
+    upcoming = {}
+    self.upcoming = upcoming
+  else
+    wipeArray(upcoming)
+  end
   local horizon = now + UPCOMING_WINDOW
 
   for _, e in ipairs(all) do
@@ -211,23 +266,14 @@ function App:RefreshAll()
     end
   end
 
-  table.sort(ongoing, function(a, b)
-    if a.endEpoch == b.endEpoch then
-      return (a.title or "") < (b.title or "")
-    end
-    return a.endEpoch < b.endEpoch
-  end)
+  table.sort(ongoing, SortOngoing)
 
-  table.sort(upcoming, function(a, b)
-    if a.startEpoch == b.startEpoch then
-      return (a.title or "") < (b.title or "")
-    end
-    return a.startEpoch < b.startEpoch
-  end)
+  table.sort(upcoming, SortUpcoming)
 
   -- Notify when an event transitions from UPCOMING -> ONGOING.
   local prev = self._bucketById or {}
-  local cur = {}
+  local cur = self._bucketByIdScratch or {}
+  wipe(cur)
   for _, e in ipairs(ongoing) do
     if e and e.id then cur[e.id] = "ongoing" end
   end
@@ -240,6 +286,7 @@ function App:RefreshAll()
     end
   end
   self._bucketById = cur
+  self._bucketByIdScratch = prev
 
   self.ongoing = ongoing
   self.upcoming = upcoming

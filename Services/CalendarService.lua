@@ -3,12 +3,38 @@ local _, ns = ...
 
 local CalendarService = ns.Class:Create("CalendarService")
 
+-- Hot-path locals
+local _G = _G
+local strtrim = _G.strtrim or function(s)
+  return (s and s:match("^%s*(.-)%s*$")) or ""
+end
+local wipe = _G.wipe or function(t)
+  for k in pairs(t) do t[k] = nil end
+end
+local function wipeArray(t)
+  for i = #t, 1, -1 do
+    t[i] = nil
+  end
+end
+
+local function SortByStartThenTitle(a, b)
+  if a.startEpoch == b.startEpoch then
+    return (a.title or "") < (b.title or "")
+  end
+  return a.startEpoch < b.startEpoch
+end
+
 function CalendarService:Constructor(logger, dateUtil)
   self.log = logger
   self.dateUtil = dateUtil
   self._descCache = {} -- eventID -> string | false
   -- eventID -> { icon=fileID, textureIndex=number } | false
   self._iconCache = {}
+
+  -- Scratch tables to reduce GC churn during periodic refreshes.
+  self._tmpByKey = {}
+  self._tmpOrder = {}
+  self._tmpFiltered = {}
 end
 
 function CalendarService:RequestRefresh()
@@ -18,7 +44,7 @@ function CalendarService:RequestRefresh()
 end
 
 local function mkKey(title, startEpoch, endEpoch)
-  return ("%s|%d|%d"):format(title or "?", startEpoch or 0, endEpoch or 0)
+  return (title or "?") .. "|" .. (startEpoch or 0) .. "|" .. (endEpoch or 0)
 end
 
 local function prefer(a, b)
@@ -37,7 +63,7 @@ local function prefer(a, b)
 end
 
 local function isBlank(s)
-  return (not s) or s:gsub("%s+", "") == ""
+  return (not s) or strtrim(s) == ""
 end
 
 local function holidayTextureByName(monthOffset, monthDay, title)
@@ -284,32 +310,42 @@ function CalendarService:EnhanceEventIcon(e)
 end
 
 function CalendarService:CollectWindow(maxDaysAhead)
+  local C = C_Calendar
+  local GetNumDayEvents = C.GetNumDayEvents
+  local GetDayEvent = C.GetDayEvent
+  local GetHolidayInfo = C.GetHolidayInfo
+  local dateUtil = self.dateUtil
   local now = time()
   local startDayEpoch = time(date("*t", now))
   local endEpoch = now + maxDaysAhead * 86400
 
-  local byKey, order = {}, {}
+  local byKey = self._tmpByKey
+  wipe(byKey)
+
+  local order = self._tmpOrder
+  wipeArray(order)
 
   local function upsert(e)
     local key = mkKey(e.title, e.startEpoch, e.endEpoch)
-    if not byKey[key] then
+    local existing = byKey[key]
+    if not existing then
       byKey[key] = e
       order[#order + 1] = key
     else
-      byKey[key] = prefer(byKey[key], e)
+      byKey[key] = prefer(existing, e)
     end
   end
 
   for dayOffset = 0, maxDaysAhead do
     local dayEpoch = startDayEpoch + dayOffset * 86400
-    local monthOffset, monthDay = self.dateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
+    local monthOffset, monthDay = dateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
 
-    local n = C_Calendar.GetNumDayEvents(monthOffset, monthDay) --
+    local n = GetNumDayEvents(monthOffset, monthDay) --
     for i = 1, n do
-      local ev = C_Calendar.GetDayEvent(monthOffset, monthDay, i) --
+      local ev = GetDayEvent(monthOffset, monthDay, i) --
       if ev and ev.startTime and ev.endTime then
-        local s = self.dateUtil:CalendarTimeToEpoch(ev.startTime)
-        local e = self.dateUtil:CalendarTimeToEpoch(ev.endTime)
+        local s = dateUtil:CalendarTimeToEpoch(ev.startTime)
+        local e = dateUtil:CalendarTimeToEpoch(ev.endTime)
 
         upsert({
           id = ev.eventID or mkKey(ev.title, s, e),
@@ -320,7 +356,7 @@ function CalendarService:CollectWindow(maxDaysAhead)
           endEpoch = e,
           icon = ev.iconTexture,
           iconIsCalendar = true,
-          source = ("Calendar (%s)"):format(ev.calendarType or "UNKNOWN"),
+          source = "Calendar (" .. (ev.calendarType or "UNKNOWN") .. ")",
           calendarType = ev.calendarType,
           monthOffset = monthOffset,
           monthDay = monthDay,
@@ -331,14 +367,14 @@ function CalendarService:CollectWindow(maxDaysAhead)
     -- Holidays (already include description field).
     if monthOffset == 0 or monthOffset == 1 then
       for i = 1, 50 do
-        local h = C_Calendar.GetHolidayInfo(monthOffset, monthDay, i)
+        local h = GetHolidayInfo(monthOffset, monthDay, i)
         if not h then break end
 
-        local s = h.startTime and self.dateUtil:CalendarTimeToEpoch(h.startTime) or dayEpoch
-        local e = h.endTime and self.dateUtil:CalendarTimeToEpoch(h.endTime) or (dayEpoch + 86399)
+        local s = h.startTime and dateUtil:CalendarTimeToEpoch(h.startTime) or dayEpoch
+        local e = h.endTime and dateUtil:CalendarTimeToEpoch(h.endTime) or (dayEpoch + 86399)
 
         upsert({
-          id = ("holiday:%s"):format(mkKey(h.name, s, e)),
+          id = "holiday:" .. mkKey(h.name, s, e),
           eventID = nil,
           title = h.name,
           description = h.description,
@@ -355,7 +391,8 @@ function CalendarService:CollectWindow(maxDaysAhead)
     end
   end
 
-  local filtered = {}
+  local filtered = self._tmpFiltered
+  wipeArray(filtered)
   for _, key in ipairs(order) do
     local e = byKey[key]
     if e and e.endEpoch >= now and e.startEpoch <= endEpoch then
@@ -363,12 +400,7 @@ function CalendarService:CollectWindow(maxDaysAhead)
     end
   end
 
-  table.sort(filtered, function(a, b)
-    if a.startEpoch == b.startEpoch then
-      return (a.title or "") < (b.title or "")
-    end
-    return a.startEpoch < b.startEpoch
-  end)
+  table.sort(filtered, SortByStartThenTitle)
 
   return filtered
 end
