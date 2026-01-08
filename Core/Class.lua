@@ -21,9 +21,9 @@ function ns.Class:Create(name, base)
   })
 
   function cls:New(...)
-    local o = setmetatable({}, cls)
-    if o.Constructor then o:Constructor(...) end
-    return o
+    local instance = setmetatable({}, cls)
+    if instance.Constructor then instance:Constructor(...) end
+    return instance
   end
 
   return cls

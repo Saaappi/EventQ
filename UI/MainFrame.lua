@@ -32,9 +32,9 @@ local function PickCogwheelAtlas()
 end
 
 
-local function CreateSectionHeader(parent, text, x, y)
+local function CreateSectionHeader(parent, text, offsetX, offsetY)
   local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  fs:SetPoint("TOPLEFT", x, y)
+  fs:SetPoint("TOPLEFT", offsetX, offsetY)
   fs:SetText(text)
   return fs
 end
@@ -61,14 +61,14 @@ local function CreateModernList(parent, app)
   view:SetElementExtent(ROW_HEIGHT)
   view:SetElementInitializer("EventQEventRowTemplate", function(button, elementData)
     -- Ensure a usable element width. scrollBox:GetWidth() can be 0 during early layout.
-    local w = scrollBox:GetWidth() or 0
-    if w < 50 then
-      w = (parent:GetWidth() or 0) - 20
+    local elementWidth = scrollBox:GetWidth() or 0
+    if elementWidth < 50 then
+      elementWidth = (parent:GetWidth() or 0) - 20
     end
-    if w < 50 then
-      w = 340
+    if elementWidth < 50 then
+      elementWidth = 340
     end
-    button:SetWidth(w)
+    button:SetWidth(elementWidth)
     button:SetHeight(ROW_HEIGHT)
 
     if not button._eventqRow then
@@ -101,23 +101,23 @@ local function EnsureDescriptionPopup(self)
     return self._descPopup
   end
 
-  local f = CreateFrame("Frame", "EventQCustomDescriptionPopup", UIParent, "BackdropTemplate")
-  f:SetSize(440, 280)
-  f:SetFrameStrata("DIALOG")
-  f:SetClampedToScreen(true)
-  f:SetPoint("CENTER")
-  f:Hide()
+  local popupFrame = CreateFrame("Frame", "EventQCustomDescriptionPopup", UIParent, "BackdropTemplate")
+  popupFrame:SetSize(440, 280)
+  popupFrame:SetFrameStrata("DIALOG")
+  popupFrame:SetClampedToScreen(true)
+  popupFrame:SetPoint("CENTER")
+  popupFrame:Hide()
 
-  f:SetBackdrop({
+  popupFrame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
     edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
     tile = true, tileSize = 32, edgeSize = 32,
     insets = { left = 8, right = 8, top = 8, bottom = 8 },
   })
-  local iconHolder = CreateFrame("Frame", nil, f)
+  local iconHolder = CreateFrame("Frame", nil, popupFrame)
   iconHolder:SetSize(40, 40)
-  iconHolder:SetPoint("TOP", f, "TOP", 0, -18)
-  f._eventqIconHolder = iconHolder
+  iconHolder:SetPoint("TOP", popupFrame, "TOP", 0, -18)
+  popupFrame._eventqIconHolder = iconHolder
 
   local icon = iconHolder:CreateTexture(nil, "ARTWORK")
   icon:SetAllPoints(iconHolder)
@@ -125,7 +125,7 @@ local function EnsureDescriptionPopup(self)
   if icon.SetTexCoord then
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   end
-  f._eventqIcon = icon
+  popupFrame._eventqIcon = icon
 
   local border = iconHolder:CreateTexture(nil, "OVERLAY")
   border:SetTexture("Interface/Common/WhiteIconFrame")
@@ -134,8 +134,8 @@ local function EnsureDescriptionPopup(self)
     border:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   end
   border:SetAlpha(0.95)
-  f._eventqIconBorder = border
-  local scrollBg = CreateFrame("Frame", nil, f, "BackdropTemplate")
+  popupFrame._eventqIconBorder = border
+  local scrollBg = CreateFrame("Frame", nil, popupFrame, "BackdropTemplate")
   scrollBg:SetPoint("TOPLEFT", 18, -86)
   scrollBg:SetPoint("BOTTOMRIGHT", -18, 58)
   scrollBg:SetBackdrop({
@@ -145,12 +145,12 @@ local function EnsureDescriptionPopup(self)
     insets = { left = 4, right = 4, top = 4, bottom = 4 },
   })
   scrollBg:SetBackdropColor(0, 0, 0, 0.35)
-  local sub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local sub = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   sub:SetPoint("BOTTOM", scrollBg, "TOP", 0, 6)
   sub:SetJustifyH("CENTER")
   sub:SetWidth(400)
   sub:SetText("Optional — leave blank to use the default description.")
-  f._eventqSub = sub
+  popupFrame._eventqSub = sub
 
   local scrollFrame = CreateFrame("ScrollFrame", nil, scrollBg, "UIPanelScrollFrameTemplate")
   scrollFrame:SetPoint("TOPLEFT", 6, -6)
@@ -197,8 +197,8 @@ local function EnsureDescriptionPopup(self)
   editBox:SetScript("OnLeave", HideDescTooltip)
 
   scrollFrame:SetScrollChild(editBox)
-  f._eventqScrollFrame = scrollFrame
-  f._eventqEditBox = editBox
+  popupFrame._eventqScrollFrame = scrollFrame
+  popupFrame._eventqEditBox = editBox
 
   -- If the user clicks in the scroll viewport where the EditBox isn't covering
   -- (common before the first size/layout pass), treat it as a click into the
@@ -214,13 +214,13 @@ local function EnsureDescriptionPopup(self)
     if not editBox or not scrollFrame then
       return
     end
-    local w = scrollFrame:GetWidth() or 0
-    local h = scrollFrame:GetHeight() or 0
-    if w > 1 then
-      editBox:SetWidth(w)
+    local viewportWidth = scrollFrame:GetWidth() or 0
+    local viewportHeight = scrollFrame:GetHeight() or 0
+    if viewportWidth > 1 then
+      editBox:SetWidth(viewportWidth)
     end
-    if h > 1 and editBox:GetHeight() < h then
-      editBox:SetHeight(h)
+    if viewportHeight > 1 and editBox:GetHeight() < viewportHeight then
+      editBox:SetHeight(viewportHeight)
     end
     scrollFrame:UpdateScrollChildRect()
   end
@@ -231,23 +231,23 @@ local function EnsureDescriptionPopup(self)
   ResizeDescEditBox()
 
   -- Buttons
-  local back = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  local back = CreateFrame("Button", nil, popupFrame, "UIPanelButtonTemplate")
   back:SetSize(110, 24)
   back:SetText("Back")
 
-  local ok = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  local ok = CreateFrame("Button", nil, popupFrame, "UIPanelButtonTemplate")
   ok:SetSize(110, 24)
   ok:SetText("Add")
 
   local gap = 20
-  back:SetPoint("BOTTOM", f, "BOTTOM", -(back:GetWidth() / 2 + gap / 2), 16)
+  back:SetPoint("BOTTOM", popupFrame, "BOTTOM", -(back:GetWidth() / 2 + gap / 2), 16)
   ok:SetPoint("LEFT", back, "RIGHT", gap, 0)
 
-  f._eventqBack = back
-  f._eventqOK = ok
+  popupFrame._eventqBack = back
+  popupFrame._eventqOK = ok
 
   back:SetScript("OnClick", function()
-    f:Hide()
+    popupFrame:Hide()
   end)
 
   ok:SetScript("OnClick", function()
@@ -259,8 +259,8 @@ local function EnsureDescriptionPopup(self)
   -- Escape closes only the popup.
   tinsert(UISpecialFrames, "EventQCustomDescriptionPopup")
 
-  self._descPopup = f
-  return f
+  self._descPopup = popupFrame
+  return popupFrame
 end
 
 
@@ -268,30 +268,30 @@ function MainFrame:Constructor(app)
   self.app = app
   self.dateUtil = app.dateUtil
 
-  local f = CreateFrame("Frame", "EventQFrame", UIParent, "BackdropTemplate")
-  self.frame = f
-  f:Hide()
-  f:SetSize(780, 485)
-  f:SetPoint("CENTER")
-  f:SetMovable(true)
-  f:EnableMouse(true)
-  f:RegisterForDrag("LeftButton")
-  f:SetScript("OnDragStart", f.StartMoving)
-  f:SetScript("OnDragStop", f.StopMovingOrSizing)
+  local mainFrame = CreateFrame("Frame", "EventQFrame", UIParent, "BackdropTemplate")
+  self.frame = mainFrame
+  mainFrame:Hide()
+  mainFrame:SetSize(780, 485)
+  mainFrame:SetPoint("CENTER")
+  mainFrame:SetMovable(true)
+  mainFrame:EnableMouse(true)
+  mainFrame:RegisterForDrag("LeftButton")
+  mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
+  mainFrame:SetScript("OnDragStop", mainFrame.StopMovingOrSizing)
 
-  f:SetBackdrop({
+  mainFrame:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
     edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 16,
     insets = { left = 4, right = 4, top = 4, bottom = 4 },
   })
-  f:SetBackdropColor(0, 0, 0, 0.85)
+  mainFrame:SetBackdropColor(0, 0, 0, 0.85)
 
-  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  local title = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -10)
   title:SetText("EventQ")
 
-  local ver = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local ver = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   ver:SetPoint("TOP", title, "BOTTOM", 0, -2)
   -- Pull from TOC metadata so the UI stays in sync with a single version source.
   local metaVer
@@ -305,11 +305,11 @@ function MainFrame:Constructor(app)
   ver:SetText("v" .. (metaVer or ""))
   self.versionText = ver
 
-  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+  local close = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -6, -6)
 
   -- Config (cogwheel) button: bottom-left of the main frame.
-  local cfgBtn = CreateFrame("Button", nil, f)
+  local cfgBtn = CreateFrame("Button", nil, mainFrame)
   cfgBtn:SetSize(18, 18)
   cfgBtn:SetPoint("BOTTOMLEFT", 10, 10)
 
@@ -349,7 +349,7 @@ function MainFrame:Constructor(app)
 
 
   -- Editor
-  local editor = CreateFrame("Frame", nil, f, "BackdropTemplate")
+  local editor = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
   self.editor = editor
   editor:SetPoint("BOTTOMLEFT", 12, 12)
   editor:SetPoint("BOTTOMRIGHT", -12, 12)
@@ -360,12 +360,12 @@ function MainFrame:Constructor(app)
   self.edTitle:SetText("Add Custom Event")
 
   -- Lists anchored to editor (no overlap)
-  self.left = CreateFrame("Frame", nil, f, "BackdropTemplate")
+  self.left = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
   self.left:SetPoint("TOPLEFT", 12, -40)
   self.left:SetPoint("BOTTOMLEFT", editor, "TOPLEFT", 0, 12)
   self.left:SetWidth(370)
 
-  self.right = CreateFrame("Frame", nil, f, "BackdropTemplate")
+  self.right = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
   self.right:SetPoint("TOPRIGHT", -12, -40)
   self.right:SetPoint("BOTTOMRIGHT", editor, "TOPRIGHT", 0, 12)
   self.right:SetWidth(370)
@@ -377,7 +377,7 @@ function MainFrame:Constructor(app)
   self.rightScrollBox, self.rightDP = CreateModernList(self.right, self.app)
 
   -- Indicator for custom events that fall outside the 8-day Upcoming filter.
-  local moreCustom = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local moreCustom = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   moreCustom:SetPoint("TOP", self.right, "BOTTOM", 0, -2)
   moreCustom:SetPoint("LEFT", self.right, "LEFT", 10, 0)
   moreCustom:SetPoint("RIGHT", self.right, "RIGHT", -10, 0)
@@ -389,13 +389,13 @@ function MainFrame:Constructor(app)
   moreCustom:EnableMouse(true)
 
   moreCustom:SetScript("OnEnter", function()
-    local n = moreCustom._eventqCount or 0
-    if n <= 0 then return end
+    local upcomingCustomCount = moreCustom._eventqCount or 0
+    if upcomingCustomCount <= 0 then return end
 
     local r, g, b = NORMAL_FONT_COLOR:GetRGB()
     GameTooltip:SetOwner(moreCustom, "ANCHOR_TOP")
-    local suffix = (n == 1) and "" or "s"
-    GameTooltip:SetText(("You have %d upcoming custom event%s scheduled beyond the 8-day upcoming filter.\nThey will appear in the Upcoming list above as their date approaches."):format(n, suffix), r, g, b, true)
+    local suffix = (upcomingCustomCount == 1) and "" or "s"
+    GameTooltip:SetText(("You have %d upcoming custom event%s scheduled beyond the 8-day upcoming filter.\nThey will appear in the Upcoming list above as their date approaches."):format(upcomingCustomCount, suffix), r, g, b, true)
     GameTooltip:Show()
   end)
   moreCustom:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -404,10 +404,10 @@ function MainFrame:Constructor(app)
 
   -- Editor fields
   local function MakeLabel(text, anchorTo, dx, dy)
-    local l = editor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    l:SetPoint("TOPLEFT", anchorTo, dx, dy)
-    l:SetText(text)
-    return l
+    local label = editor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("TOPLEFT", anchorTo, dx, dy)
+    label:SetText(text)
+    return label
   end
 
   local function MakeEditBox(width, anchorTo, dx, dy)
@@ -505,13 +505,13 @@ function self:SetStatus(msg)
   self.status:SetText(msg or "")
   self:_SetStatusVisible(msg and msg ~= "")
 end
-f:Hide()
+mainFrame:Hide()
 
-  f:SetScript("OnShow", function()
+  mainFrame:SetScript("OnShow", function()
     self:UpdateLists()
   end)
 
-  f:SetScript("OnHide", function()
+  mainFrame:SetScript("OnHide", function()
     if ns.RolePopup and ns.RolePopup.Hide then
       ns.RolePopup:Hide()
     end
@@ -522,13 +522,13 @@ f:Hide()
 end
 
 
-function MainFrame:BeginEditCustom(e)
-  if not e or not e.isCustom then return end
-  self.editingId = e.id
+function MainFrame:BeginEditCustom(event)
+  if not event or not event.isCustom then return end
+  self.editingId = event.id
 
   -- Seed the description popup. If the saved description is the default, treat it as blank.
-  local d = (type(e.description) == "string") and e.description or ""
-  local trimmed = strtrim(d)
+  local rawDescription = (type(event.description) == "string") and event.description or ""
+  local trimmed = strtrim(rawDescription)
   if trimmed == "" or trimmed == "Custom event" then
     self._editingDescSeed = ""
   else
@@ -536,9 +536,9 @@ function MainFrame:BeginEditCustom(e)
   end
 
   local order = self.app.db.settings.dateOrder
-  self.nameBox:SetText(e.title or "")
-  self.startBox:SetText(self.dateUtil:FormatUserDateTime(e.startEpoch, order))
-  self.endBox:SetText(self.dateUtil:FormatUserDateTime(e.endEpoch, order))
+  self.nameBox:SetText(event.title or "")
+  self.startBox:SetText(self.dateUtil:FormatUserDateTime(event.startEpoch, order))
+  self.endBox:SetText(self.dateUtil:FormatUserDateTime(event.endEpoch, order))
 
   if self.edTitle then self.edTitle:SetText("Edit Custom Event") end
   if self.addBtn then self.addBtn:SetText("Next") end
@@ -723,19 +723,19 @@ function MainFrame:UpdateLists()
   if self.moreCustom and self.app and self.app.customStore and self.app.customStore.GetAll then
     local now = time()
     local horizon = now + 8 * 86400
-    local n = 0
-    for _, e in ipairs(self.app.customStore:GetAll() or {}) do
-      if e and e.startEpoch and e.startEpoch > horizon and (e.endEpoch or 0) >= now then
-        n = n + 1
+    local upcomingCustomCount = 0
+    for _, customEvent in ipairs(self.app.customStore:GetAll() or {}) do
+      if customEvent and customEvent.startEpoch and customEvent.startEpoch > horizon and (customEvent.endEpoch or 0) >= now then
+        upcomingCustomCount = upcomingCustomCount + 1
       end
     end
 
-    self.moreCustom._eventqCount = n
-    if n > 0 then
-      if n == 1 then
+    self.moreCustom._eventqCount = upcomingCustomCount
+    if upcomingCustomCount > 0 then
+      if upcomingCustomCount == 1 then
         self.moreCustom:SetText("1 custom event is on its way!")
       else
-        self.moreCustom:SetText(("%d custom events are on their way!"):format(n))
+        self.moreCustom:SetText(("%d custom events are on their way!"):format(upcomingCustomCount))
       end
       self.moreCustom:Show()
     else

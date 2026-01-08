@@ -13,24 +13,24 @@ end
 local wipe = _G.wipe or function(t)
   for k in pairs(t) do t[k] = nil end
 end
-local function wipeArray(t)
-  for i = #t, 1, -1 do
-    t[i] = nil
+local function wipeArray(array)
+  for i = #array, 1, -1 do
+    array[i] = nil
   end
 end
 
-local function ApplyOverrideToEvent(e, override)
+local function ApplyOverrideToEvent(event, override)
   -- override can be a numeric fileID, a texture path string, or a table:
   -- { icon = <id|path>, texCoord = {u0,u1,v0,v1} }
   if type(override) == "table" then
-    e.icon = override.icon or override[1]
-    e._eventqTexCoord = override.texCoord
+    event.icon = override.icon or override[1]
+    event._eventqTexCoord = override.texCoord
   else
-    e.icon = override
-    e._eventqTexCoord = nil
+    event.icon = override
+    event._eventqTexCoord = nil
   end
-  e.iconIsCalendar = false
-  e._eventqIconOverride = true
+  event.iconIsCalendar = false
+  event._eventqIconOverride = true
 end
 
 local function SortOngoing(a, b)
@@ -47,9 +47,9 @@ local function SortUpcoming(a, b)
   return a.startEpoch < b.startEpoch
 end
 
-local function ApplyIconOverrides(app, e)
-  if not e then return end
-  local eventID = e.eventID
+local function ApplyIconOverrides(app, event)
+  if not event then return end
+  local eventID = event.eventID
 
   -- Normalize eventID keys: some APIs return numbers, some return strings.
   local idNum = type(eventID) == "number" and eventID or tonumber(eventID)
@@ -60,7 +60,7 @@ local function ApplyIconOverrides(app, e)
     local sv = app.db.iconOverridesById
     local ico = (idNum and sv[idNum]) or (idStr and sv[idStr])
     if ico then
-      ApplyOverrideToEvent(e, ico)
+      ApplyOverrideToEvent(event, ico)
       return
     end
   end
@@ -72,24 +72,24 @@ local function ApplyIconOverrides(app, e)
   if eventID ~= nil and ov.byId then
     local ico = (idNum and ov.byId[idNum]) or (idStr and ov.byId[idStr])
     if ico then
-      ApplyOverrideToEvent(e, ico)
+      ApplyOverrideToEvent(event, ico)
       return
     end
   end
 
   -- 2) Exact title override
-  if e.title and ov.byTitle and ov.byTitle[e.title] then
-    ApplyOverrideToEvent(e, ov.byTitle[e.title])
+  if event.title and ov.byTitle and ov.byTitle[event.title] then
+    ApplyOverrideToEvent(event, ov.byTitle[event.title])
     return
   end
 
   -- 3) Substring/title-contains rules (ordered; first match wins)
-  if e.title and ov.byTitleContains then
+  if event.title and ov.byTitleContains then
     for _, rule in ipairs(ov.byTitleContains) do
       local needle = rule and rule[1]
       local icon = rule and rule[2]
-      if needle and icon and e.title:find(needle, 1, true) then
-        ApplyOverrideToEvent(e, icon)
+      if needle and icon and event.title:find(needle, 1, true) then
+        ApplyOverrideToEvent(event, icon)
         return
       end
     end
@@ -346,11 +346,11 @@ end
 
 ---@param oldId string
 ---@param e table
-function App:ReplaceCustomEvent(oldId, e)
+function App:ReplaceCustomEvent(oldId, event)
   if not oldId then
-    self.customStore:Add(e)
+    self.customStore:Add(event)
   else
-    self.customStore:Replace(oldId, e)
+    self.customStore:Replace(oldId, event)
     if self.db.notified then
       self.db.notified[oldId] = nil
     end
@@ -359,12 +359,12 @@ function App:ReplaceCustomEvent(oldId, e)
 end
 
 function App:_PruneNotified(now)
-  local t = self.db.notified
-  if not t then return end
+  local notifiedTimestampsById = self.db.notified
+  if not notifiedTimestampsById then return end
   local cutoff = (now or 0) - NOTIFIED_TTL
-  for id, ts in pairs(t) do
+  for id, ts in pairs(notifiedTimestampsById) do
     if type(ts) ~= "number" or ts < cutoff then
-      t[id] = nil
+      notifiedTimestampsById[id] = nil
     end
   end
 end

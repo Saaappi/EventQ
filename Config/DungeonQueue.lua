@@ -92,13 +92,13 @@ function DungeonQueue:GetDungeonID(event)
   -- Fast path: explicit mapping by calendar eventID.
   local eid = event.eventID
   if eid ~= nil and self.ByEventID then
-    local n = type(eid) == "number" and eid or tonumber(eid)
-    if n and self.ByEventID[n] then
-      return self.ByEventID[n]
+    local eventIDNumber = type(eid) == "number" and eid or tonumber(eid)
+    if eventIDNumber and self.ByEventID[eventIDNumber] then
+      return self.ByEventID[eventIDNumber]
     end
-    local s = tostring(eid)
-    if self.ByEventID[s] then
-      return self.ByEventID[s]
+    local eventIDString = tostring(eid)
+    if self.ByEventID[eventIDString] then
+      return self.ByEventID[eventIDString]
     end
   end
 

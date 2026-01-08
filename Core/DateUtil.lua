@@ -31,17 +31,17 @@ end
 ---@return integer|nil epoch
 function DateUtil:CalendarTimeToEpoch(cal)
   if not cal then return nil end
-  local y = tonumber(cal.year)
-  local mo = tonumber(cal.month)
-  local d = tonumber(cal.monthDay or cal.day)
-  local h = tonumber(cal.hour) or 0
-  local mi = tonumber(cal.minute or cal.min) or 0
-  local s = tonumber(cal.second or cal.sec) or 0
-  if not (y and mo and d) then return nil end
+  local year = tonumber(cal.year)
+  local month = tonumber(cal.month)
+  local day = tonumber(cal.monthDay or cal.day)
+  local hour = tonumber(cal.hour) or 0
+  local minute = tonumber(cal.minute or cal.min) or 0
+  local second = tonumber(cal.second or cal.sec) or 0
+  if not (year and month and day) then return nil end
 
   return time({
-    year = y, month = mo, day = d,
-    hour = h, min = mi, sec = s,
+    year = year, month = month, day = day,
+    hour = hour, min = minute, sec = second,
     isdst = false,
   })
 end
@@ -51,17 +51,17 @@ end
 ---@return string
 function DateUtil:FormatUserDateTime(epoch, order)
   order = order or self:GetDefaultDateOrder()
-  local t = date("*t", epoch or time())
-  local y = t.year
-  local mo = pad2(t.month)
-  local d = pad2(t.day)
-  local hh = pad2(t.hour)
-  local mm = pad2(t.min)
+  local dateParts = date("*t", epoch or time())
+  local year = dateParts.year
+  local monthPadded = pad2(dateParts.month)
+  local dayPadded = pad2(dateParts.day)
+  local hourPadded = pad2(dateParts.hour)
+  local minutePadded = pad2(dateParts.min)
 
   if order == "DMY" then
-    return string.format("%s/%s/%d %s:%s", d, mo, y, hh, mm)
+    return string.format("%s/%s/%d %s:%s", dayPadded, monthPadded, year, hourPadded, minutePadded)
   end
-  return string.format("%s/%s/%d %s:%s", mo, d, y, hh, mm)
+  return string.format("%s/%s/%d %s:%s", monthPadded, dayPadded, year, hourPadded, minutePadded)
 end
 
 ---@param startEpoch integer
@@ -70,40 +70,40 @@ end
 function DateUtil:FormatRange(startEpoch, endEpoch)
   startEpoch = tonumber(startEpoch) or 0
   endEpoch = tonumber(endEpoch) or startEpoch
-  local a = date("*t", startEpoch)
-  local b = date("*t", endEpoch)
+  local startParts = date("*t", startEpoch)
+  local endParts = date("*t", endEpoch)
 
-  local sameYear = a.year == b.year
+  local sameYear = startParts.year == endParts.year
 
-  local function fmt(t, withYear)
-    local mo = pad2(t.month)
-    local d = pad2(t.day)
-    local hh = pad2(t.hour)
-    local mm = pad2(t.min)
-    if withYear then
-      return string.format("%s/%s/%d %s:%s", mo, d, t.year, hh, mm)
+  local function fmt(parts, includeYear)
+    local monthPadded = pad2(parts.month)
+    local dayPadded = pad2(parts.day)
+    local hourPadded = pad2(parts.hour)
+    local minutePadded = pad2(parts.min)
+    if includeYear then
+      return string.format("%s/%s/%d %s:%s", monthPadded, dayPadded, parts.year, hourPadded, minutePadded)
     end
-    return string.format("%s/%s %s:%s", mo, d, hh, mm)
+    return string.format("%s/%s %s:%s", monthPadded, dayPadded, hourPadded, minutePadded)
   end
 
-  local withYear = not sameYear
-  return fmt(a, withYear) .. " - " .. fmt(b, withYear)
+  local includeYear = not sameYear
+  return fmt(startParts, includeYear) .. " - " .. fmt(endParts, includeYear)
 end
 
 ---@param dayEpoch integer
 ---@return integer monthOffset, integer monthDay
 function DateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
-  local nowCal
+  local currentCal
   if C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime then
-    nowCal = C_DateAndTime.GetCurrentCalendarTime()
+    currentCal = C_DateAndTime.GetCurrentCalendarTime()
   end
-  local now = nowCal or date("*t")
-  local t = date("*t", dayEpoch)
+  local currentParts = currentCal or date("*t")
+  local targetParts = date("*t", dayEpoch)
 
-  local nowIndex = (now.year * 12) + now.month
-  local tIndex = (t.year * 12) + t.month
-  local monthOffset = tIndex - nowIndex
-  return monthOffset, t.day
+  local currentIndex = (currentParts.year * 12) + currentParts.month
+  local targetIndex = (targetParts.year * 12) + targetParts.month
+  local monthOffset = targetIndex - currentIndex
+  return monthOffset, targetParts.day
 end
 
 ---@param s string

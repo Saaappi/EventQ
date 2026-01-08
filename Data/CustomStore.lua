@@ -11,16 +11,16 @@ end
 
 ---@param e table {title,startEpoch,endEpoch,icon?,description?}
 ---@return string id
-function CustomStore:Add(e)
+function CustomStore:Add(event)
   -- Stable per-event identifier used as a key in SavedVariables/UI state.
-  local id = ("custom:%d:%d:%s"):format(e.startEpoch, e.endEpoch, e.title)
+  local id = ("custom:%d:%d:%s"):format(event.startEpoch, event.endEpoch, event.title)
   table.insert(self.db.customEvents, {
     id = id,
-    title = e.title,
-    description = e.description,
-    startEpoch = e.startEpoch,
-    endEpoch = e.endEpoch,
-    icon = e.icon or DEFAULT_ICON,
+    title = event.title,
+    description = event.description,
+    startEpoch = event.startEpoch,
+    endEpoch = event.endEpoch,
+    icon = event.icon or DEFAULT_ICON,
   })
   return id
 end
@@ -46,9 +46,9 @@ end
 ---@param oldId string
 ---@param e table
 ---@return string newId
-function CustomStore:Replace(oldId, e)
+function CustomStore:Replace(oldId, event)
   self:Remove(oldId)
-  return self:Add(e)
+  return self:Add(event)
 end
 
 function CustomStore:PruneOld(nowEpoch)
@@ -59,10 +59,10 @@ function CustomStore:PruneOld(nowEpoch)
   -- In-place compaction: avoids allocating a new table while preserving relative order.
   local write = 0
   for i = 1, #events do
-    local e = events[i]
-    if (e and (e.endEpoch or 0) >= cutoff) then
+    local event = events[i]
+    if (event and (event.endEpoch or 0) >= cutoff) then
       write = write + 1
-      events[write] = e
+      events[write] = event
     end
   end
   for i = #events, write + 1, -1 do

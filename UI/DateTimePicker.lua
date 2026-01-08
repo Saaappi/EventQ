@@ -16,14 +16,14 @@ end
 
 local function DaysInMonth(year, month)
   -- Lua date trick: day=0 gives last day of previous month.
-  local t = date("*t", time({ year = year, month = month + 1, day = 0, hour = 12 }))
-  return t.day or 30
+  local dateParts = date("*t", time({ year = year, month = month + 1, day = 0, hour = 12 }))
+  return dateParts.day or 30
 end
 
 local function FirstWeekdayOfMonth(year, month)
   -- 1=Sunday..7=Saturday
-  local t = date("*t", time({ year = year, month = month, day = 1, hour = 12 }))
-  return t.wday or 1
+  local dateParts = date("*t", time({ year = year, month = month, day = 1, hour = 12 }))
+  return dateParts.wday or 1
 end
 
 local function MonthName(month)
@@ -45,9 +45,9 @@ end
 local function To12h(hour24)
   hour24 = tonumber(hour24) or 0
   local ampm = (hour24 >= 12) and "PM" or "AM"
-  local h = hour24 % 12
-  if h == 0 then h = 12 end
-  return h, ampm
+  local hour12 = hour24 % 12
+  if hour12 == 0 then hour12 = 12 end
+  return hour12, ampm
 end
 
 local function From12h(h12, ampm)
@@ -77,9 +77,9 @@ end
 local function GetCalendarDayNumber()
   -- Prefer the player's local (client) date for the calendar icon.
   -- This avoids server/realm timezone differences (e.g. West coast vs East coast).
-  local t = date("*t", time())
-  if t and t.day then
-    return t.day
+  local localTimeParts = date("*t", time())
+  if localTimeParts and localTimeParts.day then
+    return localTimeParts.day
   end
 
   -- Fallback: realm calendar time (server/realm timezone).
@@ -126,9 +126,9 @@ function DateTimePicker:UpdateCalendarButtonIcons()
   end
 end
 
-local function CreateSpinnerColumn(parent, w, label)
+local function CreateSpinnerColumn(parent, width, label)
   local col = CreateFrame("Frame", nil, parent)
-  col:SetSize(w, 130)
+  col:SetSize(width, 130)
 
   if label then
     col.Label = col:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -163,17 +163,17 @@ local function CreateSpinnerColumn(parent, w, label)
   end
 
   col.Up = CreateFrame("Button", nil, col, "UIPanelButtonTemplate")
-  col.Up:SetSize(w, 20)
+  col.Up:SetSize(width, 20)
   col.Up:SetPoint("TOP", 0, label and -14 or -2)
   StyleChevron(col.Up, true)
 
   col.Value = CreateFrame("Button", nil, col, "UIPanelButtonTemplate")
-  col.Value:SetSize(w, 28)
+  col.Value:SetSize(width, 28)
   col.Value:SetPoint("TOP", col.Up, "BOTTOM", 0, -2)
   col.Value:SetText("")
 
   col.Down = CreateFrame("Button", nil, col, "UIPanelButtonTemplate")
-  col.Down:SetSize(w, 20)
+  col.Down:SetSize(width, 20)
   col.Down:SetPoint("TOP", col.Value, "BOTTOM", 0, -2)
   StyleChevron(col.Down, false)
 
@@ -183,21 +183,21 @@ end
 function DateTimePicker:Ensure()
   if self.frame then return self.frame end
 
-  local f = CreateFrame("Frame", "EventQDateTimePicker", UIParent, "BackdropTemplate")
-  self.frame = f
-  f:Hide()
-  f:SetFrameStrata("DIALOG")
-  f:SetToplevel(true)
-  f:EnableMouse(true)
-  f:SetClampedToScreen(true)
-  f:SetSize(520, 270)
-  f:SetBackdrop({
+  local pickerFrame = CreateFrame("Frame", "EventQDateTimePicker", UIParent, "BackdropTemplate")
+  self.frame = pickerFrame
+  pickerFrame:Hide()
+  pickerFrame:SetFrameStrata("DIALOG")
+  pickerFrame:SetToplevel(true)
+  pickerFrame:EnableMouse(true)
+  pickerFrame:SetClampedToScreen(true)
+  pickerFrame:SetSize(520, 270)
+  pickerFrame:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
     edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 16,
     insets = { left = 4, right = 4, top = 4, bottom = 4 },
   })
-  f:SetBackdropColor(0, 0, 0, 0.95)
+  pickerFrame:SetBackdropColor(0, 0, 0, 0.95)
 
   -- Dismiss overlay: clicking anywhere outside the picker closes it.
   -- Note: this intentionally blocks clicks to underlying UI while the picker is open.
@@ -205,8 +205,8 @@ function DateTimePicker:Ensure()
   DateTimePicker.dismiss = dismiss
   dismiss:Hide()
   dismiss:SetAllPoints(UIParent)
-  dismiss:SetFrameStrata(f:GetFrameStrata())
-  dismiss:SetFrameLevel(math.max(f:GetFrameLevel() - 1, 0))
+  dismiss:SetFrameStrata(pickerFrame:GetFrameStrata())
+  dismiss:SetFrameLevel(math.max(pickerFrame:GetFrameLevel() - 1, 0))
   dismiss:EnableMouse(true)
   dismiss:RegisterForClicks("AnyUp")
   dismiss:SetScript("OnClick", function()
@@ -216,76 +216,76 @@ function DateTimePicker:Ensure()
     dismiss:EnableMouse(false)
   end)
 
-  f:HookScript("OnShow", function()
+  pickerFrame:HookScript("OnShow", function()
     if DateTimePicker.dismiss then
-      DateTimePicker.dismiss:SetFrameStrata(f:GetFrameStrata())
-      DateTimePicker.dismiss:SetFrameLevel(math.max(f:GetFrameLevel() - 1, 0))
+      DateTimePicker.dismiss:SetFrameStrata(pickerFrame:GetFrameStrata())
+      DateTimePicker.dismiss:SetFrameLevel(math.max(pickerFrame:GetFrameLevel() - 1, 0))
       DateTimePicker.dismiss:EnableMouse(true)
       DateTimePicker.dismiss:Show()
     end
   end)
 
-  f:HookScript("OnHide", function()
+  pickerFrame:HookScript("OnHide", function()
     if DateTimePicker.dismiss then
       DateTimePicker.dismiss:Hide()
       DateTimePicker.dismiss:EnableMouse(false)
     end
   end)
-  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+  local close = CreateFrame("Button", nil, pickerFrame, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -6, -6)
 
   -- Month header
-  f.MonthText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  f.MonthText:SetPoint("TOPLEFT", 16, -14)
-  f.MonthText:SetText("")
+  pickerFrame.MonthText = pickerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  pickerFrame.MonthText:SetPoint("TOPLEFT", 16, -14)
+  pickerFrame.MonthText:SetText("")
 
-  f.Prev = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  f.Prev:SetSize(26, 20)
-  f.Prev:SetPoint("LEFT", f.MonthText, "RIGHT", 10, 0)
-  f.Prev:SetText("<")
+  pickerFrame.Prev = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+  pickerFrame.Prev:SetSize(26, 20)
+  pickerFrame.Prev:SetPoint("LEFT", pickerFrame.MonthText, "RIGHT", 10, 0)
+  pickerFrame.Prev:SetText("<")
 
-  f.Next = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  f.Next:SetSize(26, 20)
-  f.Next:SetPoint("LEFT", f.Prev, "RIGHT", 4, 0)
-  f.Next:SetText(">")
+  pickerFrame.Next = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+  pickerFrame.Next:SetSize(26, 20)
+  pickerFrame.Next:SetPoint("LEFT", pickerFrame.Prev, "RIGHT", 4, 0)
+  pickerFrame.Next:SetText(">")
 
   -- Weekday labels
   local weekdays = { "S", "M", "T", "W", "T", "F", "S" }
-  f.Weekday = {}
+  pickerFrame.Weekday = {}
   for i = 1, 7 do
-    local fs = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local fs = pickerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT", 16 + (i - 1) * 44, -42)
     fs:SetJustifyH("CENTER")
     fs:SetWidth(44)
     fs:SetText(weekdays[i])
-    f.Weekday[i] = fs
+    pickerFrame.Weekday[i] = fs
   end
 
   -- Day buttons
-  f.Days = {}
+  pickerFrame.Days = {}
   for r = 1, 6 do
     for c = 1, 7 do
       local idx = (r - 1) * 7 + c
-      local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-      b:SetSize(44, 24)
-      b:SetPoint("TOPLEFT", 16 + (c - 1) * 44, -60 - (r - 1) * 26)
-      b:SetText("")
-      b:SetScript("OnClick", function()
-        if not f.state then return end
-        local s = f.state
-        if b._year and b._month and b._day then
-          s.year, s.month, s.day = b._year, b._month, b._day
+      local dayButton = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+      dayButton:SetSize(44, 24)
+      dayButton:SetPoint("TOPLEFT", 16 + (c - 1) * 44, -60 - (r - 1) * 26)
+      dayButton:SetText("")
+      dayButton:SetScript("OnClick", function()
+        if not pickerFrame.state then return end
+        local state = pickerFrame.state
+        if dayButton._year and dayButton._month and dayButton._day then
+          state.year, state.month, state.day = dayButton._year, dayButton._month, dayButton._day
           DateTimePicker:RefreshCalendar()
           DateTimePicker:ApplyToEditBox()
         end
       end)
-      f.Days[idx] = b
+      pickerFrame.Days[idx] = dayButton
     end
   end
 
   -- Time picker area (right side)
-  local timeArea = CreateFrame("Frame", nil, f)
-  f.TimeArea = timeArea
+  local timeArea = CreateFrame("Frame", nil, pickerFrame)
+  pickerFrame.TimeArea = timeArea
   timeArea:SetPoint("TOPLEFT", 340, -18)
   timeArea:SetSize(170, 170)
 
@@ -293,192 +293,192 @@ function DateTimePicker:Ensure()
   timeTitle:SetPoint("TOP", 0, 0)
   timeTitle:SetText("Time")
 
-  f.HourCol = CreateSpinnerColumn(timeArea, 52, "HH")
-  f.HourCol:SetPoint("TOPLEFT", 0, -18)
+  pickerFrame.HourCol = CreateSpinnerColumn(timeArea, 52, "HH")
+  pickerFrame.HourCol:SetPoint("TOPLEFT", 0, -18)
 
-  f.MinCol = CreateSpinnerColumn(timeArea, 52, "MM")
-  f.MinCol:SetPoint("TOPLEFT", f.HourCol, "TOPRIGHT", 6, 0)
+  pickerFrame.MinCol = CreateSpinnerColumn(timeArea, 52, "MM")
+  pickerFrame.MinCol:SetPoint("TOPLEFT", pickerFrame.HourCol, "TOPRIGHT", 6, 0)
 
-  f.AmCol = CreateSpinnerColumn(timeArea, 52, "")
-  f.AmCol:SetPoint("TOPLEFT", f.MinCol, "TOPRIGHT", 6, 0)
-  f.ClearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  f.ClearBtn:SetSize(90, 22)
-  f.ClearBtn:SetPoint("BOTTOMLEFT", 14, 12)
-  f.ClearBtn:SetText("Clear")
+  pickerFrame.AmCol = CreateSpinnerColumn(timeArea, 52, "")
+  pickerFrame.AmCol:SetPoint("TOPLEFT", pickerFrame.MinCol, "TOPRIGHT", 6, 0)
+  pickerFrame.ClearBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+  pickerFrame.ClearBtn:SetSize(90, 22)
+  pickerFrame.ClearBtn:SetPoint("BOTTOMLEFT", 14, 12)
+  pickerFrame.ClearBtn:SetText("Clear")
 
-  f.NowBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  f.NowBtn:SetSize(90, 22)
-  f.NowBtn:SetPoint("LEFT", f.ClearBtn, "RIGHT", 8, 0)
-  f.NowBtn:SetText("Now")
+  pickerFrame.NowBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+  pickerFrame.NowBtn:SetSize(90, 22)
+  pickerFrame.NowBtn:SetPoint("LEFT", pickerFrame.ClearBtn, "RIGHT", 8, 0)
+  pickerFrame.NowBtn:SetText("Now")
 
-  f.TodayBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  f.TodayBtn:SetSize(90, 22)
-  f.TodayBtn:SetPoint("LEFT", f.NowBtn, "RIGHT", 8, 0)
-  f.TodayBtn:SetText("Start")
+  pickerFrame.TodayBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+  pickerFrame.TodayBtn:SetSize(90, 22)
+  pickerFrame.TodayBtn:SetPoint("LEFT", pickerFrame.NowBtn, "RIGHT", 8, 0)
+  pickerFrame.TodayBtn:SetText("Start")
 
-  f.DoneBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  f.DoneBtn:SetSize(90, 22)
-  f.DoneBtn:SetPoint("BOTTOMRIGHT", -14, 12)
-  f.DoneBtn:SetText("Done")
+  pickerFrame.DoneBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+  pickerFrame.DoneBtn:SetSize(90, 22)
+  pickerFrame.DoneBtn:SetPoint("BOTTOMRIGHT", -14, 12)
+  pickerFrame.DoneBtn:SetText("Done")
 
   -- Wire month nav
-  f.Prev:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    s.month = s.month - 1
-    if s.month < 1 then s.month = 12; s.year = s.year - 1 end
+  pickerFrame.Prev:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    state.month = state.month - 1
+    if state.month < 1 then state.month = 12; state.year = state.year - 1 end
     DateTimePicker:RefreshCalendar()
     DateTimePicker:ApplyToEditBox()
   end)
-  f.Next:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    s.month = s.month + 1
-    if s.month > 12 then s.month = 1; s.year = s.year + 1 end
+  pickerFrame.Next:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    state.month = state.month + 1
+    if state.month > 12 then state.month = 1; state.year = state.year + 1 end
     DateTimePicker:RefreshCalendar()
     DateTimePicker:ApplyToEditBox()
   end)
 
   -- Wire time columns
   local function setTimeUI()
-    if not f.state then return end
-    local s = f.state
-    local h12, ap = To12h(s.hour)
-    f.HourCol.Value:SetText(pad2(h12))
-    f.MinCol.Value:SetText(pad2(s.min))
-    f.AmCol.Value:SetText(ap)
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    local h12, ap = To12h(state.hour)
+    pickerFrame.HourCol.Value:SetText(pad2(h12))
+    pickerFrame.MinCol.Value:SetText(pad2(state.min))
+    pickerFrame.AmCol.Value:SetText(ap)
   end
 
   local function commitTimeFromUI()
-    if not f.state then return end
-    local s = f.state
-    local h12 = tonumber(f.HourCol.Value:GetText() or "12") or 12
-    local m = tonumber(f.MinCol.Value:GetText() or "0") or 0
-    local ap = f.AmCol.Value:GetText()
-    s.min = Clamp(m, 0, 59)
-    s.hour = From12h(h12, ap)
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    local h12 = tonumber(pickerFrame.HourCol.Value:GetText() or "12") or 12
+    local minuteValue = tonumber(pickerFrame.MinCol.Value:GetText() or "0") or 0
+    local ap = pickerFrame.AmCol.Value:GetText()
+    state.min = Clamp(minuteValue, 0, 59)
+    state.hour = From12h(h12, ap)
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end
 
-  f.HourCol.Up:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    local h12, ap = To12h(s.hour)
+  pickerFrame.HourCol.Up:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    local h12, ap = To12h(state.hour)
     h12 = h12 + 1; if h12 > 12 then h12 = 1 end
-    s.hour = From12h(h12, ap)
+    state.hour = From12h(h12, ap)
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
-  f.HourCol.Down:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    local h12, ap = To12h(s.hour)
+  pickerFrame.HourCol.Down:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    local h12, ap = To12h(state.hour)
     h12 = h12 - 1; if h12 < 1 then h12 = 12 end
-    s.hour = From12h(h12, ap)
+    state.hour = From12h(h12, ap)
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
 
-  f.MinCol.Up:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    s.min = (s.min + 1) % 60
+  pickerFrame.MinCol.Up:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    state.min = (state.min + 1) % 60
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
-  f.MinCol.Down:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    s.min = (s.min - 1) % 60
+  pickerFrame.MinCol.Down:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    state.min = (state.min - 1) % 60
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
 
-  f.AmCol.Up:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    s.hour = (s.hour + 12) % 24
+  pickerFrame.AmCol.Up:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    state.hour = (state.hour + 12) % 24
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
-  f.AmCol.Down:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    s.hour = (s.hour + 12) % 24
+  pickerFrame.AmCol.Down:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    state.hour = (state.hour + 12) % 24
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
-  f.HourCol.Value:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-  f.MinCol.Value:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-  f.AmCol.Value:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  pickerFrame.HourCol.Value:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  pickerFrame.MinCol.Value:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  pickerFrame.AmCol.Value:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
   -- Clicking the time values: left-click increments, right-click decrements.
-  f.HourCol.Value:SetScript("OnClick", function(_, button)
-    if not f.state then return end
-    local s = f.state
-    local h12, ap = To12h(s.hour)
+  pickerFrame.HourCol.Value:SetScript("OnClick", function(_, button)
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    local h12, ap = To12h(state.hour)
     if button == "RightButton" then
       h12 = h12 - 1; if h12 < 1 then h12 = 12 end
     else
       h12 = h12 + 1; if h12 > 12 then h12 = 1 end
     end
-    s.hour = From12h(h12, ap)
+    state.hour = From12h(h12, ap)
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
 
-  f.MinCol.Value:SetScript("OnClick", function(_, button)
-    if not f.state then return end
-    local s = f.state
+  pickerFrame.MinCol.Value:SetScript("OnClick", function(_, button)
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
     if button == "RightButton" then
-      s.min = (s.min - 1) % 60
+      state.min = (state.min - 1) % 60
     else
-      s.min = (s.min + 1) % 60
+      state.min = (state.min + 1) % 60
     end
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
 
-  f.AmCol.Value:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    s.hour = (s.hour + 12) % 24
+  pickerFrame.AmCol.Value:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    state.hour = (state.hour + 12) % 24
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
-  f.DoneBtn:SetScript("OnClick", function() DateTimePicker:Close() end)
+  pickerFrame.DoneBtn:SetScript("OnClick", function() DateTimePicker:Close() end)
 
-  f.ClearBtn:SetScript("OnClick", function()
-    if f.targetEditBox then
-      f.targetEditBox:SetText("")
-      f.targetEditBox:ClearFocus()
+  pickerFrame.ClearBtn:SetScript("OnClick", function()
+    if pickerFrame.targetEditBox then
+      pickerFrame.targetEditBox:SetText("")
+      pickerFrame.targetEditBox:ClearFocus()
     end
     DateTimePicker:Close()
   end)
 
-  f.NowBtn:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    local t = date("*t", time())
-    s.year, s.month, s.day = t.year, t.month, t.day
-    s.hour, s.min = t.hour, t.min
+  pickerFrame.NowBtn:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    local todayParts = date("*t", time())
+    state.year, state.month, state.day = todayParts.year, todayParts.month, todayParts.day
+    state.hour, state.min = todayParts.hour, todayParts.min
 
     DateTimePicker:RefreshCalendar()
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
 
-  f.TodayBtn:SetScript("OnClick", function()
-    if not f.state then return end
-    local s = f.state
-    local t = date("*t", time())
-    s.year, s.month, s.day = t.year, t.month, t.day
+  pickerFrame.TodayBtn:SetScript("OnClick", function()
+    if not pickerFrame.state then return end
+    local state = pickerFrame.state
+    local todayParts = date("*t", time())
+    state.year, state.month, state.day = todayParts.year, todayParts.month, todayParts.day
 
-    if f.isEnd then
-      s.hour, s.min = 23, 59
+    if pickerFrame.isEnd then
+      state.hour, state.min = 23, 59
     else
-      s.hour, s.min = 0, 0
+      state.hour, state.min = 0, 0
     end
 
     DateTimePicker:RefreshCalendar()
@@ -486,15 +486,15 @@ function DateTimePicker:Ensure()
     DateTimePicker:ApplyToEditBox()
   end)
 
-  f:SetScript("OnHide", function()
-    f.targetEditBox = nil
-    f.state = nil
-    f.order = nil
-    f.dateUtil = nil
+  pickerFrame:SetScript("OnHide", function()
+    pickerFrame.targetEditBox = nil
+    pickerFrame.state = nil
+    pickerFrame.order = nil
+    pickerFrame.dateUtil = nil
   end)
-  f._SetTimeUI = setTimeUI
+  pickerFrame._SetTimeUI = setTimeUI
 
-  return f
+  return pickerFrame
 end
 
 function DateTimePicker:Close()
@@ -502,88 +502,88 @@ function DateTimePicker:Close()
     self.dismiss:Hide()
     self.dismiss:EnableMouse(false)
   end
-  local f = self.frame
-  if f and f:IsShown() then
-    f:Hide()
+  local pickerFrame = self.frame
+  if pickerFrame and pickerFrame:IsShown() then
+    pickerFrame:Hide()
   end
 end
 
 
 function DateTimePicker:RefreshCalendar()
-  local f = self:Ensure()
-  if not f.state then return end
+  local pickerFrame = self:Ensure()
+  if not pickerFrame.state then return end
 
-  local s = f.state
-  f.MonthText:SetText(string.format("%s %d", MonthName(s.month), s.year))
+  local state = pickerFrame.state
+  pickerFrame.MonthText:SetText(string.format("%s %d", MonthName(state.month), state.year))
 
-  local firstWday = FirstWeekdayOfMonth(s.year, s.month) -- 1..7
+  local firstWday = FirstWeekdayOfMonth(state.year, state.month) -- 1..7
   local offset = firstWday - 1 -- 0..6, number of cells before day 1
-  local dim = DaysInMonth(s.year, s.month)
+  local dim = DaysInMonth(state.year, state.month)
 
   -- Render a fixed 6x7 grid (42 cells). Cells before day 1 are populated from the
   -- previous month; cells after the last day are populated from the next month.
   -- Each day button stores its true Y/M/D so selection works across month boundaries.
-  local prevYear, prevMonth = s.year, s.month - 1
+  local prevYear, prevMonth = state.year, state.month - 1
   if prevMonth < 1 then prevMonth = 12; prevYear = prevYear - 1 end
   local dimPrev = DaysInMonth(prevYear, prevMonth)
 
-  local nextYear, nextMonth = s.year, s.month + 1
+  local nextYear, nextMonth = state.year, state.month + 1
   if nextMonth > 12 then nextMonth = 1; nextYear = nextYear + 1 end
 
   for i = 1, 42 do
-    local b = f.Days[i]
+    local dayButton = pickerFrame.Days[i]
     local dayIndex = i - offset
-    local y, m, d
+    local cellYear, cellMonth, cellDay
     local inMonth = true
 
     if dayIndex < 1 then
       inMonth = false
-      y, m, d = prevYear, prevMonth, dimPrev + dayIndex
+      cellYear, cellMonth, cellDay = prevYear, prevMonth, dimPrev + dayIndex
     elseif dayIndex > dim then
       inMonth = false
-      y, m, d = nextYear, nextMonth, dayIndex - dim
+      cellYear, cellMonth, cellDay = nextYear, nextMonth, dayIndex - dim
     else
-      y, m, d = s.year, s.month, dayIndex
+      cellYear, cellMonth, cellDay = state.year, state.month, dayIndex
     end
 
-    b._year, b._month, b._day = y, m, d
-    b:SetText(tostring(d))
+    dayButton._year, dayButton._month, dayButton._day = cellYear, cellMonth, cellDay
+    dayButton:SetText(tostring(cellDay))
 
     if not inMonth then
-      b:SetEnabled(true)
-      if b.GetFontString then
-        local fs = b:GetFontString()
+      dayButton:SetEnabled(true)
+      if dayButton.GetFontString then
+        local fs = dayButton:GetFontString()
         if fs then fs:SetTextColor(0.6, 0.6, 0.6) end
       end
     else
-      if b.GetFontString then
-        local fs = b:GetFontString()
+      if dayButton.GetFontString then
+        local fs = dayButton:GetFontString()
         if fs then fs:SetTextColor(1, 1, 1) end
       end
     end
 
-    if y == s.year and m == s.month and d == s.day then
-      b:LockHighlight()
+    if cellYear == state.year and cellMonth == state.month and cellDay == state.day then
+      dayButton:LockHighlight()
     else
-      b:UnlockHighlight()
+      dayButton:UnlockHighlight()
     end
   end
 end
 
 function DateTimePicker:ApplyToEditBox()
-  local f = self.frame
-  if not f or not f.targetEditBox or not f.state or not f.dateUtil then return end
+  local pickerFrame = self.frame
+  if not pickerFrame or not pickerFrame.targetEditBox or not pickerFrame.state or not pickerFrame.dateUtil then return end
 
-  local s = f.state
+  local state = pickerFrame.state
   local epoch = time({
-    year = s.year, month = s.month, day = s.day,
-    hour = s.hour, min = s.min, sec = 0,
+    year = state.year, month = state.month, day = state.day,
+    hour = state.hour, min = state.min, sec = 0,
     isdst = false,
   })
   if not epoch then return end
 
-  local text = f.dateUtil:FormatUserDateTime(epoch, f.order)
-  f.targetEditBox:SetText(text)
+  local text = pickerFrame.dateUtil:FormatUserDateTime(epoch, pickerFrame.order)
+  pickerFrame.targetEditBox:SetText(text)
 end
 
 ---@param editBox EditBox
@@ -592,21 +592,21 @@ end
 ---@param dateUtil any
 function DateTimePicker:Open(editBox, order, isEnd, dateUtil)
   if not editBox then return end
-  local f = self:Ensure()
+  local pickerFrame = self:Ensure()
 
   -- Toggle behavior: clicking again closes.
-  if f:IsShown() and f.targetEditBox == editBox then
+  if pickerFrame:IsShown() and pickerFrame.targetEditBox == editBox then
     self:Close()
     return
   end
 
-  f.targetEditBox = editBox
-  f.order = order
-  f.dateUtil = dateUtil
+  pickerFrame.targetEditBox = editBox
+  pickerFrame.order = order
+  pickerFrame.dateUtil = dateUtil
 
-  f.isEnd = not not isEnd
-  if f.TodayBtn then
-    f.TodayBtn:SetText(f.isEnd and "End" or "Start")
+  pickerFrame.isEnd = not not isEnd
+  if pickerFrame.TodayBtn then
+    pickerFrame.TodayBtn:SetText(pickerFrame.isEnd and "End" or "Start")
   end
 
   -- Resolve initial state from the editbox value, if parseable.
@@ -622,23 +622,23 @@ function DateTimePicker:Open(editBox, order, isEnd, dateUtil)
     epoch = time()
   end
 
-  local t = date("*t", epoch)
-  f.state = {
-    year = t.year,
-    month = t.month,
-    day = t.day,
-    hour = t.hour,
-    min = t.min,
+  local dateParts = date("*t", epoch)
+  pickerFrame.state = {
+    year = dateParts.year,
+    month = dateParts.month,
+    day = dateParts.day,
+    hour = dateParts.hour,
+    min = dateParts.min,
   }
 
   -- Anchor
-  f:ClearAllPoints()
-  f:SetPoint("TOPLEFT", editBox, "BOTTOMLEFT", 0, -6)
+  pickerFrame:ClearAllPoints()
+  pickerFrame:SetPoint("TOPLEFT", editBox, "BOTTOMLEFT", 0, -6)
 
   self:RefreshCalendar()
-  if f._SetTimeUI then f._SetTimeUI() end
+  if pickerFrame._SetTimeUI then pickerFrame._SetTimeUI() end
 
-  f:Show()
+  pickerFrame:Show()
 end
 
 function DateTimePicker:AttachCalendarButton(editBox, onClick)
@@ -652,19 +652,19 @@ function DateTimePicker:AttachCalendarButton(editBox, onClick)
     editBox:SetTextInsets(6, 26, 0, 0)
   end
 
-  local b = CreateFrame("Button", nil, editBox)
-  editBox._eventqCalendarButton = b
-  b:SetSize(18, 18)
+  local calendarButton = CreateFrame("Button", nil, editBox)
+  editBox._eventqCalendarButton = calendarButton
+  calendarButton:SetSize(18, 18)
   -- Nudge down 1px so the calendar atlas sits visually centered within the editbox.
-  b:SetPoint("RIGHT", editBox, "RIGHT", -6, -1)
+  calendarButton:SetPoint("RIGHT", editBox, "RIGHT", -6, -1)
 
-  b.Icon = b:CreateTexture(nil, "ARTWORK")
-  b.Icon:SetAllPoints()
+  calendarButton.Icon = calendarButton:CreateTexture(nil, "ARTWORK")
+  calendarButton.Icon:SetAllPoints()
 
-  b:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
-  local hl = b:GetHighlightTexture()
+  calendarButton:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+  local hl = calendarButton:GetHighlightTexture()
   if hl then
-    hl:SetAllPoints(b)
+    hl:SetAllPoints(calendarButton)
     hl:SetAlpha(0.85)
   end
 
@@ -672,7 +672,7 @@ function DateTimePicker:AttachCalendarButton(editBox, onClick)
   if not DateTimePicker._calendarButtons then
     DateTimePicker._calendarButtons = setmetatable({}, { __mode = "k" })
   end
-  DateTimePicker._calendarButtons[b] = true
+  DateTimePicker._calendarButtons[calendarButton] = true
 
   DateTimePicker:UpdateCalendarButtonIcons()
 
@@ -682,16 +682,16 @@ function DateTimePicker:AttachCalendarButton(editBox, onClick)
     end)
   end
 
-  b:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+  calendarButton:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(calendarButton, "ANCHOR_RIGHT")
     GameTooltip:SetText("Pick date & time")
     GameTooltip:AddLine("Opens a calendar/time picker.", 1, 1, 1, true)
     GameTooltip:Show()
   end)
-  b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  calendarButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
   if onClick then
-    b:SetScript("OnClick", onClick)
+    calendarButton:SetScript("OnClick", onClick)
   end
 
   return b

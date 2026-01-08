@@ -10,9 +10,9 @@ end
 local wipe = _G.wipe or function(t)
   for k in pairs(t) do t[k] = nil end
 end
-local function wipeArray(t)
-  for i = #t, 1, -1 do
-    t[i] = nil
+local function wipeArray(array)
+  for i = #array, 1, -1 do
+    array[i] = nil
   end
 end
 
@@ -72,10 +72,10 @@ local function holidayTextureByName(monthOffset, monthDay, title)
   if not title or not monthOffset or not monthDay then return nil end
   if monthOffset ~= 0 and monthOffset ~= 1 then return nil end
   for i = 1, 50 do
-    local h = C_Calendar.GetHolidayInfo(monthOffset, monthDay, i)
-    if not h then break end
-    if h.name == title and h.texture then
-      return h.texture
+    local holidayInfo = C_Calendar.GetHolidayInfo(monthOffset, monthDay, i)
+    if not holidayInfo then break end
+    if holidayInfo.name == title and holidayInfo.texture then
+      return holidayInfo.texture
     end
   end
   return nil
@@ -86,10 +86,10 @@ local function holidayDescByName(monthOffset, monthDay, title)
   -- GetHolidayInfo only accepts offset 0 or 1.
   if monthOffset ~= 0 and monthOffset ~= 1 then return nil end
   for i = 1, 50 do
-    local h = C_Calendar.GetHolidayInfo(monthOffset, monthDay, i)
-    if not h then break end
-    if h.name == title and not isBlank(h.description) then
-      return h.description
+    local holidayInfo = C_Calendar.GetHolidayInfo(monthOffset, monthDay, i)
+    if not holidayInfo then break end
+    if holidayInfo.name == title and not isBlank(holidayInfo.description) then
+      return holidayInfo.description
     end
   end
   return nil
@@ -97,8 +97,8 @@ end
 
 local function findEventIndexByScan(eventID, monthOffset, monthDay)
   if not eventID or monthOffset == nil or monthDay == nil then return nil end
-  local n = C_Calendar.GetNumDayEvents(monthOffset, monthDay)
-  for i = 1, n do
+  local numDayEvents = C_Calendar.GetNumDayEvents(monthOffset, monthDay)
+  for i = 1, numDayEvents do
     local ev = C_Calendar.GetDayEvent(monthOffset, monthDay, i)
     if ev and ev.eventID == eventID then
       return { offsetMonths = monthOffset, monthDay = monthDay, eventIndex = i }
@@ -133,7 +133,7 @@ function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
     return cached, nil
   end
 
-  -- Resolve event index from eventID; if missing, don't cache failure (data may not be loaded yet).
+  -- Resolve event index from eventID; if missing, don'textureInfo cache failure (data may not be loaded yet).
   local idx = C_Calendar.GetEventIndexInfo(eventID, monthOffset, monthDay)
   if not idx then
     idx = findEventIndexByScan(eventID, monthOffset, monthDay)
@@ -152,8 +152,8 @@ function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
   -- GetEventInfo exposes textureIndex referencing EventGetTextures(eventType).
   if info and info.eventType and info.textureIndex then
     local textures = C_Calendar.EventGetTextures(info.eventType)
-    local t = textures and textures[info.textureIndex]
-    local icon = t and t.iconTexture
+    local textureInfo = textures and textures[info.textureIndex]
+    local icon = textureInfo and textureInfo.iconTexture
     if icon then
       self._iconCache[key] = { icon = icon, textureIndex = info.textureIndex }
       return icon, info.textureIndex
@@ -267,55 +267,55 @@ function CalendarService:_TryTimewalkingExpansionIcon(monthOffset, monthDay, eve
   end
   return nil
 end
-function CalendarService:EnhanceEventIcon(e)
-  if not e then return end
+function CalendarService:EnhanceEventIcon(event)
+  if not event then return end
 
   -- Best dynamic path for many system events: the Holidays DB2 icon is exposed via
   -- C_Calendar.GetHolidayInfo() for the given day. We can't query DB2 directly from addons,
   -- but we *can* scan the holiday list for that day and match by name.
-  if e.title and e.monthOffset ~= nil and e.monthDay ~= nil then
-    local htex = holidayTextureByName(e.monthOffset, e.monthDay, e.title)
+  if event.title and event.monthOffset ~= nil and event.monthDay ~= nil then
+    local htex = holidayTextureByName(event.monthOffset, event.monthDay, event.title)
     if htex then
-      e.icon = htex
-      e.iconIsCalendar = false
-      e.iconIsCalendarSheet = nil
+      event.icon = htex
+      event.iconIsCalendar = false
+      event.iconIsCalendarSheet = nil
       return
     end
   end
 
   -- Timewalking: try to select the expansion logo from the event description.
-  if e.eventID and e.title and e.title:find("Timewalking", 1, true) then
-    local twIcon = self:_TryTimewalkingIconFromMapping(e.monthOffset, e.monthDay, e.eventID, e.title)
+  if event.eventID and event.title and event.title:find("Timewalking", 1, true) then
+    local twIcon = self:_TryTimewalkingIconFromMapping(event.monthOffset, event.monthDay, event.eventID, event.title)
     if not twIcon then
-      twIcon = self:_TryTimewalkingExpansionIcon(e.monthOffset, e.monthDay, e.eventID, e.title)
+      twIcon = self:_TryTimewalkingExpansionIcon(event.monthOffset, event.monthDay, event.eventID, event.title)
     end
     if twIcon then
-      e.icon = twIcon
-      e.iconIsCalendar = false
-      e.iconIsCalendarSheet = nil
+      event.icon = twIcon
+      event.iconIsCalendar = false
+      event.iconIsCalendarSheet = nil
       return
     end
   end
 
   -- Next best: textureIndex -> EventGetTextures(eventType) via GetEventInfo (stateful).
-  if e.eventID then
-    local icon, textureIndex = self:TryFetchBestIcon(e.eventID, e.monthOffset, e.monthDay)
+  if event.eventID then
+    local icon, textureIndex = self:TryFetchBestIcon(event.eventID, event.monthOffset, event.monthDay)
     if icon then
-      e.icon = icon
-      e.textureIndex = textureIndex
-      e.iconIsCalendar = true
+      event.icon = icon
+      event.textureIndex = textureIndex
+      event.iconIsCalendar = true
       -- Icons coming from textureIndex -> EventGetTextures(eventType) are typically icon sheets
       -- that need quadrant cropping in the UI.
-      e.iconIsCalendarSheet = true
+      event.iconIsCalendarSheet = true
     end
   end
 end
 
 function CalendarService:CollectWindow(maxDaysAhead)
-  local C = C_Calendar
-  local GetNumDayEvents = C.GetNumDayEvents
-  local GetDayEvent = C.GetDayEvent
-  local GetHolidayInfo = C.GetHolidayInfo
+  local CalendarAPI = C_Calendar
+  local GetNumDayEvents = CalendarAPI.GetNumDayEvents
+  local GetDayEvent = CalendarAPI.GetDayEvent
+  local GetHolidayInfo = CalendarAPI.GetHolidayInfo
   local dateUtil = self.dateUtil
   local now = time()
   local startDayEpoch = time(date("*t", now))
@@ -327,14 +327,14 @@ function CalendarService:CollectWindow(maxDaysAhead)
   local order = self._tmpOrder
   wipeArray(order)
 
-  local function upsert(e)
-    local key = mkKey(e.title, e.startEpoch, e.endEpoch)
+  local function upsert(event)
+    local key = mkKey(event.title, event.startEpoch, event.endEpoch)
     local existing = byKey[key]
     if not existing then
-      byKey[key] = e
+      byKey[key] = event
       order[#order + 1] = key
     else
-      byKey[key] = prefer(existing, e)
+      byKey[key] = prefer(existing, event)
     end
   end
 
@@ -342,20 +342,20 @@ function CalendarService:CollectWindow(maxDaysAhead)
     local dayEpoch = startDayEpoch + dayOffset * 86400
     local monthOffset, monthDay = dateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
 
-    local n = GetNumDayEvents(monthOffset, monthDay) --
-    for i = 1, n do
-      local ev = GetDayEvent(monthOffset, monthDay, i) --
+    local numDayEvents = GetNumDayEvents(monthOffset, monthDay)
+    for i = 1, numDayEvents do
+      local ev = GetDayEvent(monthOffset, monthDay, i)
       if ev and ev.startTime and ev.endTime then
-        local s = dateUtil:CalendarTimeToEpoch(ev.startTime)
-        local e = dateUtil:CalendarTimeToEpoch(ev.endTime)
+        local startEpoch = dateUtil:CalendarTimeToEpoch(ev.startTime)
+        local endEpoch = dateUtil:CalendarTimeToEpoch(ev.endTime)
 
         upsert({
-          id = ev.eventID or mkKey(ev.title, s, e),
+          id = ev.eventID or mkKey(ev.title, startEpoch, endEpoch),
           eventID = ev.eventID,
           title = ev.title,
           description = nil, -- fetched lazily on tooltip
-          startEpoch = s,
-          endEpoch = e,
+          startEpoch = startEpoch,
+          endEpoch = endEpoch,
           icon = ev.iconTexture,
           iconIsCalendar = true,
           source = "Calendar (" .. (ev.calendarType or "UNKNOWN") .. ")",
@@ -369,20 +369,21 @@ function CalendarService:CollectWindow(maxDaysAhead)
     -- Holidays (already include description field).
     if monthOffset == 0 or monthOffset == 1 then
       for i = 1, 50 do
-        local h = GetHolidayInfo(monthOffset, monthDay, i)
-        if not h then break end
+        local holidayInfo = GetHolidayInfo(monthOffset, monthDay, i)
+        if not holidayInfo then break end
 
-        local s = h.startTime and dateUtil:CalendarTimeToEpoch(h.startTime) or dayEpoch
-        local e = h.endTime and dateUtil:CalendarTimeToEpoch(h.endTime) or (dayEpoch + 86399)
+        local startEpoch = holidayInfo.startTime and dateUtil:CalendarTimeToEpoch(holidayInfo.startTime) or dayEpoch
+        local endEpoch = holidayInfo.endTime and dateUtil:CalendarTimeToEpoch(holidayInfo.endTime) or (dayEpoch + 86399)
+        local holidayTexture = holidayTextureByName(monthOffset, monthDay, holidayInfo.name) or holidayInfo.texture
 
         upsert({
-          id = "holiday:" .. mkKey(h.name, s, e),
+          id = "holiday:" .. mkKey(holidayInfo.name, startEpoch, endEpoch),
           eventID = nil,
-          title = h.name,
-          description = h.description,
-          startEpoch = s,
-          endEpoch = e,
-          icon = h.texture,
+          title = holidayInfo.name,
+          description = holidayInfo.description,
+          startEpoch = startEpoch,
+          endEpoch = endEpoch,
+          icon = holidayTexture,
           iconIsCalendar = false,
           source = "Holiday",
           calendarType = "HOLIDAY",
@@ -396,9 +397,9 @@ function CalendarService:CollectWindow(maxDaysAhead)
   local filtered = self._tmpFiltered
   wipeArray(filtered)
   for _, key in ipairs(order) do
-    local e = byKey[key]
-    if e and e.endEpoch >= now and e.startEpoch <= endEpoch then
-      filtered[#filtered + 1] = e
+    local event = byKey[key]
+    if event and event.endEpoch >= now and event.startEpoch <= endEpoch then
+      filtered[#filtered + 1] = event
     end
   end
 
