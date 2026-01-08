@@ -8,6 +8,31 @@ local LIST_PADDING_TOP = 34
 
 local DEFAULT_CUSTOM_ICON = "Interface/Icons/INV_Misc_Note_01"
 
+local function PickCogwheelAtlas()
+  if not (C_Texture and C_Texture.GetAtlasInfo) then return nil end
+
+  -- Try a few common cog/gear atlases across modern builds.
+  local candidates = {
+    "common-icon-settings",
+    "common-icon-gear",
+    "communities-icon-settings",
+    "communities-icon-gear",
+    "QuestLog-Settings",
+    "QuestLogIcon-Settings",
+    "chatframe-button-icon-options",
+    "chatframe-button-icon-settings",
+  }
+
+  for _, name in ipairs(candidates) do
+    if C_Texture.GetAtlasInfo(name) then
+      return name
+    end
+  end
+
+  return nil
+end
+
+
 local function CreateSectionHeader(parent, text, x, y)
   local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   fs:SetPoint("TOPLEFT", x, y)
@@ -289,6 +314,46 @@ function MainFrame:Constructor(app)
 
   local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -6, -6)
+
+  -- Config (cogwheel) button: bottom-left of the main frame.
+  local cfgBtn = CreateFrame("Button", nil, f)
+  cfgBtn:SetSize(18, 18)
+  cfgBtn:SetPoint("BOTTOMLEFT", 10, 10)
+
+  cfgBtn.Icon = cfgBtn:CreateTexture(nil, "ARTWORK")
+  cfgBtn.Icon:SetAllPoints()
+
+  -- Hover highlight / glow.
+  cfgBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+  local hl = cfgBtn:GetHighlightTexture()
+  if hl then
+    hl:SetAllPoints(cfgBtn)
+    hl:SetAlpha(0.85)
+  end
+
+
+  local atlas = PickCogwheelAtlas()
+  if atlas then
+    cfgBtn.Icon:SetAtlas(atlas, true)
+  else
+    -- Fallback: should rarely happen, but keeps the button visible.
+    cfgBtn.Icon:SetTexture("Interface/Buttons/UI-OptionsButton")
+  end
+
+  cfgBtn:SetScript("OnClick", function()
+    if ns.Settings and ns.Settings.Open then
+      ns.Settings:Open()
+    end
+  end)
+
+  cfgBtn:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(cfgBtn, "ANCHOR_RIGHT")
+    GameTooltip:SetText("EventQ Settings")
+    GameTooltip:AddLine("Open /eventq config.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  cfgBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 
   -- Editor
   local editor = CreateFrame("Frame", nil, f, "BackdropTemplate")

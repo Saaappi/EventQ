@@ -12,7 +12,22 @@ ev:RegisterEvent("CALENDAR_UPDATE_EVENT_LIST")
 
 local function EnsureDB()
   EventQDB = EventQDB or {}
-  EventQDB.notify = EventQDB.notify or { enabled = true, sound = true }
+  EventQDB.notify = EventQDB.notify or {}
+
+  -- Migration: older builds used notify.enabled for chat output.
+  if EventQDB.notify.chat == nil then
+    if EventQDB.notify.enabled ~= nil then
+      EventQDB.notify.chat = not not EventQDB.notify.enabled
+    else
+      EventQDB.notify.chat = true
+    end
+  end
+  if EventQDB.notify.sound == nil then
+    EventQDB.notify.sound = true
+  end
+  -- Keep legacy alias in sync.
+  EventQDB.notify.enabled = not not EventQDB.notify.chat
+
   return EventQDB
 end
 
@@ -20,6 +35,11 @@ local function EnsureApp()
   if app then return app end
   local db = EnsureDB()
   app = ns.App(db)
+
+  if ns.Settings and ns.Settings.Init then
+    ns.Settings:Init(db)
+  end
+
   return app
 end
 
@@ -40,7 +60,14 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     EnsureApp()
 
     SLASH_EVENTQ1 = "/eventq"
-    SlashCmdList.EVENTQ = function()
+    SlashCmdList.EVENTQ = function(msg)
+      msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+      if msg == "config" or msg == "settings" then
+        if ns.Settings and ns.Settings.Open then
+          ns.Settings:Open()
+        end
+        return
+      end
       app:ToggleUI()
     end
 

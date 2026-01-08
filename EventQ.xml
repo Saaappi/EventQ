@@ -3,4 +3,21 @@
     <Size x="340" y="40"/>
     <HighlightTexture file="Interface/QuestFrame/UI-QuestTitleHighlight" alphaMode="ADD"/>
   </Button>
+
+  <!-- Compact section header used in the Settings panel to reduce vertical spacing. -->
+  <Frame name="EventQSettingsSectionHeaderTemplate" mixin="SettingsListSectionHeaderMixin" virtual="true">
+    <Size y="26"/>
+    <Layers>
+      <Layer level="OVERLAY">
+        <FontString parentKey="Title" inherits="GameFontHighlightLarge" justifyH="LEFT" justifyV="TOP">
+          <Anchors>
+            <Anchor point="TOPLEFT" x="7" y="-8"/>
+          </Anchors>
+        </FontString>
+      </Layer>
+    </Layers>
+    <Scripts>
+      <OnLoad method="OnLoad"/>
+    </Scripts>
+  </Frame>
 </Ui>

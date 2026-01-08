@@ -3,7 +3,7 @@
 ## Notes: Calendar event queue (ongoing + upcoming)
 ## SavedVariables: EventQDB
 ## Author: You
-## Version: 0.1.50
+## Version: 0.1.53
 
 EventQ.xml
 Core/Class.lua
@@ -12,6 +12,7 @@ Core/DateUtil.lua
 Config/IconOverrides.lua
 Config/DungeonQueue.lua
 Config/PVPQueue.lua
+UI/Settings.lua
 UI/RolePopup.lua
 UI/Row.lua
 UI/MainFrame.lua

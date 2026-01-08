@@ -129,7 +129,21 @@ function App:Constructor(db)
 
   self._bucketById = {} -- id -> 'upcoming'|'ongoing'
 
-  self.db.notify = self.db.notify or { enabled = true, sound = true }
+  self.db.notify = self.db.notify or {}
+
+  -- Migration: older builds used notify.enabled for chat output.
+  if self.db.notify.chat == nil then
+    if self.db.notify.enabled ~= nil then
+      self.db.notify.chat = not not self.db.notify.enabled
+    else
+      self.db.notify.chat = true
+    end
+  end
+  if self.db.notify.sound == nil then
+    self.db.notify.sound = true
+  end
+  -- Keep legacy alias in sync.
+  self.db.notify.enabled = not not self.db.notify.chat
   self.db.notified = self.db.notified or {} -- id -> epoch
 end
 
@@ -238,22 +252,38 @@ end
 
 
 function App:NotifyBecameActive(event)
-  if not (self.db and self.db.notify and self.db.notify.enabled) then return end
+  if not (self.db and self.db.notify) then return end
+
+  -- Default/migration safety.
+  if self.db.notify.chat == nil then
+    self.db.notify.chat = (self.db.notify.enabled ~= nil) and (not not self.db.notify.enabled) or true
+  end
+  if self.db.notify.sound == nil then
+    self.db.notify.sound = true
+  end
+  self.db.notify.enabled = not not self.db.notify.chat
+
+  local chatEnabled = not not self.db.notify.chat
+  local soundEnabled = not not self.db.notify.sound
+
+  if not (chatEnabled or soundEnabled) then return end
   if not event then return end
 
-  -- Sound + chat fire together.
-  if self.db.notify.sound then
+  -- Sound notification (optional)
+  if soundEnabled then
     self._activeSoundKit = self._activeSoundKit or PickActiveSoundKit()
     if self._activeSoundKit then
       PlaySound(self._activeSoundKit, "Master")
     end
   end
 
-  if self.log and self.log.Info then
-    -- Use the logger so it respects the user's chat frame formatting, but we control the colors.
-    DEFAULT_CHAT_FRAME:AddMessage(FormatActiveMessage(event.title))
-  else
-    DEFAULT_CHAT_FRAME:AddMessage(FormatActiveMessage(event.title))
+  if chatEnabled then
+    if self.log and self.log.Info then
+      -- Use the logger so it respects the user's chat frame formatting, but we control the colors.
+      DEFAULT_CHAT_FRAME:AddMessage(FormatActiveMessage(event.title))
+    else
+      DEFAULT_CHAT_FRAME:AddMessage(FormatActiveMessage(event.title))
+    end
   end
 end
 
@@ -294,7 +324,15 @@ function App:_PruneNotified(now)
 end
 
 function App:NotifyNew(now)
-  if not self.db.notify.enabled then return end
+  if not (self.db and self.db.notify) then return end
+
+  -- Default/migration safety.
+  if self.db.notify.sound == nil then
+    self.db.notify.sound = true
+  end
+
+  -- This notifier is sound-only.
+  if not self.db.notify.sound then return end
   self:_PruneNotified(now)
 
   local function notifyList(list)
