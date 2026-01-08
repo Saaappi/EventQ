@@ -4,20 +4,20 @@
     <HighlightTexture file="Interface/QuestFrame/UI-QuestTitleHighlight" alphaMode="ADD"/>
   </Button>
 
-  <!-- Compact section header used in the Settings panel to reduce vertical spacing. -->
-  <Frame name="EventQSettingsSectionHeaderTemplate" mixin="SettingsListSectionHeaderMixin" virtual="true">
-    <Size y="26"/>
+  <!-- Settings panel element used to draw a subtle horizontal divider line. -->
+  <Frame name="EventQSettingsDividerTemplate" virtual="true">
+    <Size y="4"/>
     <Layers>
-      <Layer level="OVERLAY">
-        <FontString parentKey="Title" inherits="GameFontHighlightLarge" justifyH="LEFT" justifyV="TOP">
+      <Layer level="BACKGROUND">
+        <Texture parentKey="Line" file="Interface/Buttons/WHITE8X8">
           <Anchors>
-            <Anchor point="TOPLEFT" x="7" y="-8"/>
+            <Anchor point="LEFT" x="7" y="0"/>
+            <Anchor point="RIGHT" x="-7" y="0"/>
           </Anchors>
-        </FontString>
+          <Size y="1"/>
+          <Color a="0.35" r="1" g="1" b="1"/>
+        </Texture>
       </Layer>
     </Layers>
-    <Scripts>
-      <OnLoad method="OnLoad"/>
-    </Scripts>
   </Frame>
 </Ui>

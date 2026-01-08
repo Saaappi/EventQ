@@ -40,11 +40,10 @@ function SettingsModule:Init(db)
   local category, layout = Settings.RegisterVerticalLayoutCategory(CATEGORY_NAME)
   self.categoryID = category and category.GetID and category:GetID() or nil
 
-  -- "Notifications" header (compact; minimal gap to first checkbox)
+  -- "Notifications" header + divider line
   if layout and layout.AddInitializer then
-    layout:AddInitializer(Settings.CreateElementInitializer("EventQSettingsSectionHeaderTemplate", {
-      name = "Notifications",
-    }))
+    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Notifications"))
+    layout:AddInitializer(Settings.CreateElementInitializer("EventQSettingsDividerTemplate", {}))
   end
 
   local function GetChat()
