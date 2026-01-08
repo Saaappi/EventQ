@@ -1,4 +1,3 @@
--- EventQ/UI/Settings.lua
 local ADDON, ns = ...
 
 ns.Settings = ns.Settings or {}

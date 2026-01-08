@@ -1,4 +1,3 @@
--- EventQ/EventQ.lua
 local ADDON, ns = ...
 
 local _G = _G

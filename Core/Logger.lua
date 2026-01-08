@@ -1,4 +1,3 @@
--- EventQ/Core/Logger.lua
 local _, ns = ...
 
 local Logger = ns.Class:Create("Logger")

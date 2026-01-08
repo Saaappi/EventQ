@@ -1,4 +1,3 @@
--- EventQ/UI/DateTimePicker.lua
 local ADDON, ns = ...
 
 -- A lightweight date+time picker popover for the custom editor datetime editboxes.
@@ -232,9 +231,6 @@ function DateTimePicker:Ensure()
       DateTimePicker.dismiss:EnableMouse(false)
     end
   end)
-
-
-  -- Close button
   local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -6, -6)
 
@@ -305,8 +301,6 @@ function DateTimePicker:Ensure()
 
   f.AmCol = CreateSpinnerColumn(timeArea, 52, "")
   f.AmCol:SetPoint("TOPLEFT", f.MinCol, "TOPRIGHT", 6, 0)
-
-  -- Bottom buttons
   f.ClearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   f.ClearBtn:SetSize(90, 22)
   f.ClearBtn:SetPoint("BOTTOMLEFT", 14, 12)
@@ -453,9 +447,6 @@ function DateTimePicker:Ensure()
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
-
-
-  -- Bottom buttons
   f.DoneBtn:SetScript("OnClick", function() DateTimePicker:Close() end)
 
   f.ClearBtn:SetScript("OnClick", function()
@@ -501,8 +492,6 @@ function DateTimePicker:Ensure()
     f.order = nil
     f.dateUtil = nil
   end)
-
-  -- Public helpers bound onto the frame for reuse.
   f._SetTimeUI = setTimeUI
 
   return f
@@ -531,12 +520,13 @@ function DateTimePicker:RefreshCalendar()
   local offset = firstWday - 1 -- 0..6, number of cells before day 1
   local dim = DaysInMonth(s.year, s.month)
 
-  -- Prev month context for leading days
+  -- Render a fixed 6x7 grid (42 cells). Cells before day 1 are populated from the
+  -- previous month; cells after the last day are populated from the next month.
+  -- Each day button stores its true Y/M/D so selection works across month boundaries.
   local prevYear, prevMonth = s.year, s.month - 1
   if prevMonth < 1 then prevMonth = 12; prevYear = prevYear - 1 end
   local dimPrev = DaysInMonth(prevYear, prevMonth)
 
-  -- Next month context
   local nextYear, nextMonth = s.year, s.month + 1
   if nextMonth > 12 then nextMonth = 1; nextYear = nextYear + 1 end
 
@@ -547,11 +537,9 @@ function DateTimePicker:RefreshCalendar()
     local inMonth = true
 
     if dayIndex < 1 then
-      -- previous month
       inMonth = false
       y, m, d = prevYear, prevMonth, dimPrev + dayIndex
     elseif dayIndex > dim then
-      -- next month
       inMonth = false
       y, m, d = nextYear, nextMonth, dayIndex - dim
     else
@@ -561,7 +549,6 @@ function DateTimePicker:RefreshCalendar()
     b._year, b._month, b._day = y, m, d
     b:SetText(tostring(d))
 
-    -- Visual styling
     if not inMonth then
       b:SetEnabled(true)
       if b.GetFontString then
@@ -575,7 +562,6 @@ function DateTimePicker:RefreshCalendar()
       end
     end
 
-    -- Selected highlight
     if y == s.year and m == s.month and d == s.day then
       b:LockHighlight()
     else

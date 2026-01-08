@@ -1,4 +1,3 @@
--- EventQ/Core/Class.lua
 local _, ns = ...
 
 ---@class EventQ.Class

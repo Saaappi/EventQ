@@ -1,4 +1,3 @@
--- EventQ/Config/IconOverrides.lua
 local _, ns = ...
 
 -- Hardcoded icon overrides (optional).

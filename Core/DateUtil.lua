@@ -1,4 +1,3 @@
--- EventQ/Core/DateUtil.lua
 local _, ns = ...
 
 local DateUtil = ns.Class:Create("DateUtil")

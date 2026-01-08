@@ -1,4 +1,3 @@
--- EventQ/Data/CustomStore.lua
 local _, ns = ...
 
 local CustomStore = ns.Class:Create("CustomStore")
@@ -13,6 +12,7 @@ end
 ---@param e table {title,startEpoch,endEpoch,icon?,description?}
 ---@return string id
 function CustomStore:Add(e)
+  -- Stable per-event identifier used as a key in SavedVariables/UI state.
   local id = ("custom:%d:%d:%s"):format(e.startEpoch, e.endEpoch, e.title)
   table.insert(self.db.customEvents, {
     id = id,
@@ -56,6 +56,7 @@ function CustomStore:PruneOld(nowEpoch)
   if not events or #events == 0 then return end
 
   local cutoff = (nowEpoch or 0) - 7 * 86400
+  -- In-place compaction: avoids allocating a new table while preserving relative order.
   local write = 0
   for i = 1, #events do
     local e = events[i]

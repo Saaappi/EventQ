@@ -1,4 +1,3 @@
--- EventQ/UI/RolePopup.lua
 local _, ns = ...
 
 local RolePopup = ns.Class:Create("RolePopup")

@@ -1,4 +1,3 @@
--- EventQ/Config/PVPQueue.lua
 local _, ns = ...
 
 -- Lightweight PvP queue helpers (used for PvP Brawl events).

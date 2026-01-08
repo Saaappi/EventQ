@@ -1,4 +1,3 @@
--- EventQ/UI/MainFrame.lua
 local ADDON, ns = ...
 
 local MainFrame = ns.Class:Create("MainFrame")
@@ -115,8 +114,6 @@ local function EnsureDescriptionPopup(self)
     tile = true, tileSize = 32, edgeSize = 32,
     insets = { left = 8, right = 8, top = 8, bottom = 8 },
   })
-
-  -- Placeholder icon (not user-changeable yet)
   local iconHolder = CreateFrame("Frame", nil, f)
   iconHolder:SetSize(40, 40)
   iconHolder:SetPoint("TOP", f, "TOP", 0, -18)
@@ -138,8 +135,6 @@ local function EnsureDescriptionPopup(self)
   end
   border:SetAlpha(0.95)
   f._eventqIconBorder = border
-
-  -- Scrollable multiline edit box
   local scrollBg = CreateFrame("Frame", nil, f, "BackdropTemplate")
   scrollBg:SetPoint("TOPLEFT", 18, -86)
   scrollBg:SetPoint("BOTTOMRIGHT", -18, 58)
@@ -150,8 +145,6 @@ local function EnsureDescriptionPopup(self)
     insets = { left = 4, right = 4, top = 4, bottom = 4 },
   })
   scrollBg:SetBackdropColor(0, 0, 0, 0.35)
-
-  -- Optional helper text just above the edit box
   local sub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   sub:SetPoint("BOTTOM", scrollBg, "TOP", 0, 6)
   sub:SetJustifyH("CENTER")
@@ -446,8 +439,6 @@ function MainFrame:Constructor(app)
   MakeLabel("End Datetime", editor, 490, -42)
   self.endBox = MakeEditBox(220, editor, 490, -58)
   self.endBox:SetText(hint)
-
-  -- Calendar/time picker button (Option A).
   if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
     ns.DateTimePicker:AttachCalendarButton(self.endBox, function()
       local order = self.app.db.settings.dateOrder
@@ -563,8 +554,6 @@ function MainFrame:ClearEdit()
   local hint = self.dateUtil:FormatHint(self.app.db.settings.dateOrder)
   self.nameBox:SetText("")
   self.startBox:SetText(hint)
-
-  -- Calendar/time picker button (Option A).
   if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
     ns.DateTimePicker:AttachCalendarButton(self.startBox, function()
       local order = self.app.db.settings.dateOrder
@@ -572,8 +561,6 @@ function MainFrame:ClearEdit()
     end)
   end
   self.endBox:SetText(hint)
-
-  -- Calendar/time picker button (Option A).
   if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
     ns.DateTimePicker:AttachCalendarButton(self.endBox, function()
       local order = self.app.db.settings.dateOrder
@@ -700,8 +687,6 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
   local hint = self.dateUtil:FormatHint(self.app.db.settings.dateOrder)
   self.nameBox:SetText("")
   self.startBox:SetText(hint)
-
-  -- Calendar/time picker button (Option A).
   if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
     ns.DateTimePicker:AttachCalendarButton(self.startBox, function()
       local order = self.app.db.settings.dateOrder
@@ -709,8 +694,6 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
     end)
   end
   self.endBox:SetText(hint)
-
-  -- Calendar/time picker button (Option A).
   if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
     ns.DateTimePicker:AttachCalendarButton(self.endBox, function()
       local order = self.app.db.settings.dateOrder

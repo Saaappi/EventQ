@@ -1,4 +1,3 @@
--- EventQ/Config/DungeonQueue.lua
 -- Maps certain calendar events (currently Timewalking) to an LFD dungeon ID so rows can be left-clicked to queue.
 local _, ns = ...
 

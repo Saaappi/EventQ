@@ -1,11 +1,8 @@
--- EventQ/UI/Row.lua
 local _, ns = ...
 
 local Row = ns.Class:Create("Row")
 
 local MENU = CreateFrame("Frame", "EventQRowContextMenu", UIParent, "UIDropDownMenuTemplate")
-
--- Queueable title color (used for ONGOING queueable events)
 local QUEUEABLE_TITLE_R, QUEUEABLE_TITLE_G, QUEUEABLE_TITLE_B = 0.4, 0.8, 1.0 -- #66CCFF
 local DEFAULT_TITLE_R, DEFAULT_TITLE_G, DEFAULT_TITLE_B = 1.0, 0.82, 0.0       -- GameFontNormal-like gold
 
@@ -376,9 +373,6 @@ function Row:SetEvent(event, dateUtil)
       end
     end
   end
-
-
-  -- Queueable ONGOING events get a cyan title for quick scanning.
   if IsQueueable(self.frame, event) then
     self.name:SetTextColor(QUEUEABLE_TITLE_R, QUEUEABLE_TITLE_G, QUEUEABLE_TITLE_B)
   else

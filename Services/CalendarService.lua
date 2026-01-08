@@ -1,4 +1,3 @@
--- EventQ/Services/CalendarService.lua
 local _, ns = ...
 
 local CalendarService = ns.Class:Create("CalendarService")
@@ -30,6 +29,9 @@ function CalendarService:Constructor(logger, dateUtil)
   self._descCache = {} -- eventID -> string | false
   -- eventID -> { icon=fileID, textureIndex=number } | false
   self._iconCache = {}
+
+  -- Calendar APIs are stateful (OpenEvent -> GetEventInfo) and can be relatively expensive.
+  -- We cache successful lookups (and explicit "no data" results as false) to keep refreshes fast.
 
   -- Scratch tables to reduce GC churn during periodic refreshes.
   self._tmpByKey = {}

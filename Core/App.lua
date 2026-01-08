@@ -1,4 +1,3 @@
--- EventQ/Core/App.lua
 local _, ns = ...
 
 local App = ns.Class:Create("App")
