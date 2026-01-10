@@ -487,6 +487,29 @@ function MainFrame:Constructor(app)
     end)
   end
 
+  -- Keyboard navigation between editor fields.
+  -- Retail templates don't reliably provide tab ordering for dynamically-created EditBoxes,
+  -- so wire it explicitly.
+  local function SetupTabNavigation(boxes)
+    for i, box in ipairs(boxes) do
+      local index = i
+      box:SetScript("OnTabPressed", function()
+        local shiftDown = IsShiftKeyDown and IsShiftKeyDown()
+
+        local targetIndex = index + (shiftDown and -1 or 1)
+        local target = boxes[targetIndex]
+        if target and target.SetFocus then
+          target:SetFocus()
+          if target.HighlightText then
+            target:HighlightText()
+          end
+        end
+      end)
+    end
+  end
+
+  SetupTabNavigation({ self.nameBox, self.startBox, self.endBox })
+
   local addBtn = CreateFrame("Button", nil, editor, "UIPanelButtonTemplate")
   addBtn:SetSize(160, 24)
   addBtn:SetPoint("TOP", editor, "TOP", 0, -82)
