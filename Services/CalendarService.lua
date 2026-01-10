@@ -333,9 +333,27 @@ function CalendarService:CollectWindow(maxDaysAhead)
     if not existing then
       byKey[key] = event
       order[#order + 1] = key
-    else
-      byKey[key] = prefer(existing, event)
+      return
     end
+
+    -- Prefer one record, but always merge stable holidayID + description when available.
+    local chosen = prefer(existing, event)
+    local other = (chosen == existing) and event or existing
+
+    if chosen.holidayID == nil and other.holidayID ~= nil then
+      chosen.holidayID = other.holidayID
+    end
+    if chosen.description == nil and other.description ~= nil then
+      chosen.description = other.description
+    end
+    if chosen.icon == nil and other.icon ~= nil then
+      chosen.icon = other.icon
+      chosen.iconIsCalendar = other.iconIsCalendar
+      chosen.iconIsCalendarSheet = other.iconIsCalendarSheet
+      chosen.textureIndex = other.textureIndex
+    end
+
+    byKey[key] = chosen
   end
 
   for dayOffset = 0, maxDaysAhead do
@@ -371,6 +389,7 @@ function CalendarService:CollectWindow(maxDaysAhead)
       for i = 1, 50 do
         local holidayInfo = GetHolidayInfo(monthOffset, monthDay, i)
         if not holidayInfo then break end
+        local holidayID = holidayInfo.holidayID or holidayInfo.holidayId or holidayInfo.id or holidayInfo.ID
 
         local startEpoch = holidayInfo.startTime and dateUtil:CalendarTimeToEpoch(holidayInfo.startTime) or dayEpoch
         local endEpoch = holidayInfo.endTime and dateUtil:CalendarTimeToEpoch(holidayInfo.endTime) or (dayEpoch + 86399)
@@ -379,6 +398,7 @@ function CalendarService:CollectWindow(maxDaysAhead)
         upsert({
           id = "holiday:" .. mkKey(holidayInfo.name, startEpoch, endEpoch),
           eventID = nil,
+          holidayID = holidayID,
           title = holidayInfo.name,
           description = holidayInfo.description,
           startEpoch = startEpoch,

@@ -2,8 +2,8 @@
 ## Title: EventQ
 ## Notes: Calendar event queue (ongoing + upcoming)
 ## SavedVariables: EventQDB
-## Author: You
-## Version: 0.1.65
+## Author: LightskyGG
+## Version: 0.1.70
 
 EventQ.xml
 Core/Class.lua

@@ -50,13 +50,14 @@ end
 local function ApplyIconOverrides(app, event)
   if not event then return end
   local eventID = event.eventID
+  local overrideID = (event.holidayID ~= nil) and event.holidayID or eventID
 
-  -- Normalize eventID keys: some APIs return numbers, some return strings.
-  local idNum = type(eventID) == "number" and eventID or tonumber(eventID)
-  local idStr = eventID ~= nil and tostring(eventID) or nil
+  -- Normalize overrideID keys: some APIs return numbers, some return strings.
+  local idNum = type(overrideID) == "number" and overrideID or tonumber(overrideID)
+  local idStr = overrideID ~= nil and tostring(overrideID) or nil
 
   -- 0) SavedVariables per-user override by eventID (persists to disk)
-  if app and app.db and app.db.iconOverridesById and eventID ~= nil then
+  if app and app.db and app.db.iconOverridesById and overrideID ~= nil then
     local sv = app.db.iconOverridesById
     local ico = (idNum and sv[idNum]) or (idStr and sv[idStr])
     if ico then
@@ -69,7 +70,7 @@ local function ApplyIconOverrides(app, event)
   if not ov then return end
 
   -- 1) Explicit eventID override (config)
-  if eventID ~= nil and ov.byId then
+  if overrideID ~= nil and ov.byId then
     local ico = (idNum and ov.byId[idNum]) or (idStr and ov.byId[idStr])
     if ico then
       ApplyOverrideToEvent(event, ico)
