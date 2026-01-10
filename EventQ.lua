@@ -32,6 +32,17 @@ local function EnsureDB()
   -- Keep legacy alias in sync.
   EventQDB.notify.enabled = not not EventQDB.notify.chat
 
+
+  -- Main window position (movable frame). Store an anchor + offsets relative to UIParent.
+  EventQDB.window = EventQDB.window or {}
+  if type(EventQDB.window) ~= "table" then
+    EventQDB.window = {}
+  end
+  EventQDB.window.point = EventQDB.window.point or "CENTER"
+  EventQDB.window.relPoint = EventQDB.window.relPoint or EventQDB.window.point
+  EventQDB.window.x = tonumber(EventQDB.window.x) or 0
+  EventQDB.window.y = tonumber(EventQDB.window.y) or 0
+
   return EventQDB
 end
 

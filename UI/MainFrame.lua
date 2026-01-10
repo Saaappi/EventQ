@@ -7,6 +7,42 @@ local LIST_PADDING_TOP = 34
 
 local DEFAULT_CUSTOM_ICON = "Interface/Icons/INV_Misc_Note_01"
 
+-- Window positioning helpers
+local function EnsureWindowDefaults(db)
+  if not db then return nil end
+  db.window = db.window or {}
+  if type(db.window) ~= "table" then db.window = {} end
+  db.window.point = db.window.point or "CENTER"
+  db.window.relPoint = db.window.relPoint or db.window.point
+  db.window.x = tonumber(db.window.x) or 0
+  db.window.y = tonumber(db.window.y) or 0
+  return db.window
+end
+
+function MainFrame:RestorePosition()
+  local db = self.app and self.app.db
+  local pos = EnsureWindowDefaults(db)
+  if not (pos and self.frame) then return end
+
+  -- Always anchor relative to UIParent to avoid capturing transient frames.
+  self.frame:ClearAllPoints()
+  self.frame:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
+end
+
+function MainFrame:SavePosition()
+  local db = self.app and self.app.db
+  if not (db and self.frame) then return end
+  local pos = EnsureWindowDefaults(db)
+  if not pos then return end
+
+  local point, _, relPoint, x, y = self.frame:GetPoint(1)
+  if not point then return end
+  pos.point = point
+  pos.relPoint = relPoint or point
+  pos.x = x or 0
+  pos.y = y or 0
+end
+
 local function PickCogwheelAtlas()
   if not (C_Texture and C_Texture.GetAtlasInfo) then return nil end
 
@@ -272,12 +308,17 @@ function MainFrame:Constructor(app)
   self.frame = mainFrame
   mainFrame:Hide()
   mainFrame:SetSize(780, 485)
-  mainFrame:SetPoint("CENTER")
+  -- Restore persisted position (or default to center).
+  self:RestorePosition()
   mainFrame:SetMovable(true)
   mainFrame:EnableMouse(true)
+  mainFrame:SetClampedToScreen(true)
   mainFrame:RegisterForDrag("LeftButton")
   mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
-  mainFrame:SetScript("OnDragStop", mainFrame.StopMovingOrSizing)
+  mainFrame:SetScript("OnDragStop", function(frame)
+    frame:StopMovingOrSizing()
+    self:SavePosition()
+  end)
 
   mainFrame:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -569,7 +610,12 @@ function MainFrame:ClearEdit()
   end
 end
 function MainFrame:Toggle()
-  if self.frame:IsShown() then self.frame:Hide() else self.frame:Show() end
+  if self.frame:IsShown() then
+    self.frame:Hide()
+  else
+    self:RestorePosition()
+    self.frame:Show()
+  end
 end
 
 function MainFrame:SetStatus(msg)

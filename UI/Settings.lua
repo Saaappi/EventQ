@@ -42,7 +42,6 @@ function SettingsModule:Init(db)
   -- "Notifications" header + divider line
   if layout and layout.AddInitializer then
     layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Notifications"))
-    layout:AddInitializer(Settings.CreateElementInitializer("EventQSettingsDividerTemplate", {}))
   end
 
   local function GetChat()
@@ -89,6 +88,34 @@ function SettingsModule:Init(db)
   Settings.CreateCheckbox(category, chatSetting, "Print a chat message when an event becomes active.")
   Settings.CreateCheckbox(category, soundSetting, "Play a sound when an event becomes active.")
 
+
+  -- "Window" section: allow the user to reset the main frame position.
+  if layout and layout.AddInitializer and type(CreateSettingsButtonInitializer) == "function" then
+    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Window"))
+
+    local function ResetWindowPosition()
+      if InCombatLockdown and InCombatLockdown() then
+        if UIErrorsFrame and UIErrorsFrame.AddMessage then
+          UIErrorsFrame:AddMessage("|cff66ccff[EventQ]|r: Can\'t reset the window position while in combat.", 1, 0.1, 0.1)
+        else
+          print("[EventQ]: Can\'t reset the window position while in combat.")
+        end
+        return
+      end
+
+      db.window = { point = "CENTER", relPoint = "CENTER", x = 0, y = 0 }
+
+      local frame = _G and _G.EventQFrame
+      if frame and frame.ClearAllPoints and frame.SetPoint then
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+      end
+    end
+
+    local tooltip = "Moves the EventQ window back to the center of your screen and clears the saved position."
+    local addSearchTags = true
+    layout:AddInitializer(CreateSettingsButtonInitializer("Reset Position", "Reset Position", ResetWindowPosition, tooltip, addSearchTags))
+  end
   Settings.RegisterAddOnCategory(category)
 end
 
