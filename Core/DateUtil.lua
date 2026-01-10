@@ -22,9 +22,9 @@ end
 function DateUtil:FormatHint(order)
   order = order or self:GetDefaultDateOrder()
   if order == "DMY" then
-    return "DD/MM/YYYY hh:mm[:ss]"
+    return "DD/MM/YYYY hh:mm"
   end
-  return "MM/DD/YYYY hh:mm[:ss]"
+  return "MM/DD/YYYY hh:mm"
 end
 
 ---@param cal table CalendarTime-ish: {year, month, monthDay, hour, minute, second?}
@@ -114,10 +114,10 @@ function DateUtil:ParseUserDateTime(s, order, isEnd)
   s = tostring(s or "")
   order = order or self:GetDefaultDateOrder()
 
-  -- Accepted formats (seconds optional, time optional):
+  -- Accepted formats (time optional):
   --   MM/DD/YYYY
   --   MM/DD/YYYY hh:mm
-  --   MM/DD/YYYY hh:mm:ss
+  --   MM/DD/YYYY hh:mm
   -- (and the DD/MM variants depending on order)
 
   local p1, p2, y, hh, mm, ss =
@@ -135,7 +135,7 @@ function DateUtil:ParseUserDateTime(s, order, isEnd)
   end
 
   if not p1 then
-    local fmt = (order == "DMY") and "DD/MM/YYYY hh:mm[:ss] or DD/MM/YYYY" or "MM/DD/YYYY hh:mm[:ss] or MM/DD/YYYY"
+    local fmt = (order == "DMY") and "DD/MM/YYYY hh:mm or DD/MM/YYYY" or "MM/DD/YYYY hh:mm or MM/DD/YYYY"
     return nil, ("Invalid datetime. Use %s."):format(fmt)
   end
 

@@ -238,16 +238,50 @@ function DateTimePicker:Ensure()
   pickerFrame.MonthText = pickerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   pickerFrame.MonthText:SetPoint("TOPLEFT", 16, -14)
   pickerFrame.MonthText:SetText("")
+  local function StyleHeaderChevron(btn, atlas, fallbackText)
+    -- Use the same atlas chevrons as the time spinners (avoids font issues with "<" and ">").
+    btn._fallbackText = fallbackText or btn._fallbackText or ""
+    btn:SetText("")
+    local fs = btn:GetFontString()
+    if fs then fs:Hide() end
+
+    local hasAtlas = atlas and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
+    if not hasAtlas then
+      -- Fallback: show the original text if the atlas is unavailable.
+      btn:SetText(btn._fallbackText)
+      if fs then fs:Show() end
+      if btn.Icon then btn.Icon:Hide() end
+      if btn._hlTex then btn._hlTex:Hide() end
+      return
+    end
+
+    local icon = btn.Icon or btn:CreateTexture(nil, "ARTWORK")
+    icon:SetPoint("CENTER")
+    icon:SetAtlas(atlas, true)
+    icon:SetSize(14, 14)
+    icon:Show()
+    btn.Icon = icon
+
+    local hl = btn._hlTex or btn:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetPoint("CENTER")
+    hl:SetAtlas(atlas, true)
+    hl:SetSize(14, 14)
+    hl:SetBlendMode("ADD")
+    hl:Show()
+    btn._hlTex = hl
+    btn:SetHighlightTexture(hl)
+  end
+
 
   pickerFrame.Prev = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.Prev:SetSize(26, 20)
   pickerFrame.Prev:SetPoint("LEFT", pickerFrame.MonthText, "RIGHT", 10, 0)
-  pickerFrame.Prev:SetText("<")
+  StyleHeaderChevron(pickerFrame.Prev, "uitools-icon-chevron-left", "<")
 
   pickerFrame.Next = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.Next:SetSize(26, 20)
   pickerFrame.Next:SetPoint("LEFT", pickerFrame.Prev, "RIGHT", 4, 0)
-  pickerFrame.Next:SetText(">")
+  StyleHeaderChevron(pickerFrame.Next, "uitools-icon-chevron-right", ">")
 
   -- Weekday labels
   local weekdays = { "S", "M", "T", "W", "T", "F", "S" }
@@ -286,7 +320,7 @@ function DateTimePicker:Ensure()
   -- Time picker area (right side)
   local timeArea = CreateFrame("Frame", nil, pickerFrame)
   pickerFrame.TimeArea = timeArea
-  timeArea:SetPoint("TOPLEFT", 340, -18)
+  timeArea:SetPoint("TOPLEFT", 340, -14)
   timeArea:SetSize(170, 170)
 
   local timeTitle = timeArea:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -294,7 +328,7 @@ function DateTimePicker:Ensure()
   timeTitle:SetText("Time")
 
   pickerFrame.HourCol = CreateSpinnerColumn(timeArea, 52, "HH")
-  pickerFrame.HourCol:SetPoint("TOPLEFT", 0, -18)
+  pickerFrame.HourCol:SetPoint("TOPLEFT", 0, -32)
 
   pickerFrame.MinCol = CreateSpinnerColumn(timeArea, 52, "MM")
   pickerFrame.MinCol:SetPoint("TOPLEFT", pickerFrame.HourCol, "TOPRIGHT", 6, 0)
@@ -472,9 +506,6 @@ function DateTimePicker:Ensure()
   pickerFrame.TodayBtn:SetScript("OnClick", function()
     if not pickerFrame.state then return end
     local state = pickerFrame.state
-    local todayParts = date("*t", time())
-    state.year, state.month, state.day = todayParts.year, todayParts.month, todayParts.day
-
     if pickerFrame.isEnd then
       state.hour, state.min = 23, 59
     else
