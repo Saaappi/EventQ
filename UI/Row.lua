@@ -14,6 +14,10 @@ local CONFIRM_REMOVE_DIALOG_KEY = "EVENTQ_CONFIRM_REMOVE_CUSTOM_EVENT"
 local function PickClockAtlas()
   if not (C_Texture and C_Texture.GetAtlasInfo) then return nil end
   local candidates = {
+    -- Prefer the Quest Log clock icon when available.
+    "questlog-questtypeicon-clockyellow",
+    -- Fallbacks (keep these to avoid breaking older clients / atlas variants).
+    "perks-clock",
     "worldquest-icon-clock",
     "poi-workorders",
     "UI-HUD-Clock",
