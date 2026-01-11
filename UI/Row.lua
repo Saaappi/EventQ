@@ -5,6 +5,7 @@ local Row = ns.Class:Create("Row")
 local MENU = CreateFrame("Frame", "EventQRowContextMenu", UIParent, "UIDropDownMenuTemplate")
 local QUEUEABLE_TITLE_R, QUEUEABLE_TITLE_G, QUEUEABLE_TITLE_B = 0.4, 0.8, 1.0 -- #66CCFF
 local DEFAULT_TITLE_R, DEFAULT_TITLE_G, DEFAULT_TITLE_B = 1.0, 0.82, 0.0       -- GameFontNormal-like gold
+local URGENCY_NOTE_R, URGENCY_NOTE_G, URGENCY_NOTE_B = 0xFF / 255, 0x2D / 255, 0x2D / 255 -- #FF2D2D
 
 local function TryQueueLFD(dungeonID)
   if not dungeonID then return false end
@@ -23,6 +24,39 @@ local function IsOngoingEvent(data)
   if not data or not data.startEpoch or not data.endEpoch then return false end
   local now = time()
   return data.startEpoch <= now and data.endEpoch >= now
+end
+
+local function FormatRemainingTime(seconds)
+  seconds = tonumber(seconds) or 0
+  if seconds <= 0 then
+    return "0m"
+  end
+
+  -- Round to nearest minute for a cleaner tooltip.
+  local totalMinutes = math.floor((seconds + 30) / 60)
+  if totalMinutes <= 0 then
+    return "<1m"
+  end
+
+  local days = math.floor(totalMinutes / (24 * 60))
+  local hours = math.floor((totalMinutes - (days * 24 * 60)) / 60)
+  local minutes = totalMinutes - (days * 24 * 60) - (hours * 60)
+
+  if days > 0 then
+    if hours > 0 then
+      return string.format("%dd %dh", days, hours)
+    end
+    return string.format("%dd", days)
+  end
+
+  if hours > 0 then
+    if minutes > 0 then
+      return string.format("%dh %dm", hours, minutes)
+    end
+    return string.format("%dh", hours)
+  end
+
+  return string.format("%dm", minutes)
 end
 
 local function IsQueueable(frame, data)
@@ -147,7 +181,7 @@ local function EnsureUrgencyBackground(frame)
 
   -- Texture is white with alpha ramp to 0 near the right edge; tint red here.
   if urgencyBg.SetVertexColor then
-    urgencyBg:SetVertexColor(1, 0, 0, 0.18)
+    urgencyBg:SetVertexColor(1, 0, 0, 0.26)
   else
     urgencyBg:SetAlpha(0.18)
   end
@@ -204,6 +238,24 @@ function Row:Constructor(frame, app)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Left-click: queue for event", 0.2, 1, 0.2, true)
       end
+      -- Expiration (shown last). Matches the urgency highlight threshold used for the row background.
+      if data.endEpoch then
+        local remainingSeconds = data.endEpoch - time()
+        if remainingSeconds > 0 then
+          GameTooltip:AddLine(" ")
+          local remainingText = FormatRemainingTime(remainingSeconds)
+          if remainingSeconds <= 24 * 60 * 60 then
+            GameTooltip:AddLine(
+              string.format("Row highlighted red because this event expires within 24 hours (%s remaining).", remainingText),
+              URGENCY_NOTE_R, URGENCY_NOTE_G, URGENCY_NOTE_B,
+              true
+            )
+          else
+            GameTooltip:AddLine(string.format("Expires in %s.", remainingText), 0.7, 0.7, 0.7, true)
+          end
+        end
+      end
+
       GameTooltip:Show()
     end)
 
