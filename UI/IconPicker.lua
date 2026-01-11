@@ -23,6 +23,13 @@ local ICON_TEXCOORDS = { 0.08, 0.92, 0.08, 0.92 }
 local GRID_PADDING_X = 12 -- padding to the right of the anchor frame
 local ICON_PATH_PREFIX = "Interface/Icons/"
 
+-- Selection glow:
+-- Hover uses ButtonHilight-Square; the selected state reuses the same art but stacks
+-- two additive layers (inner + outer) so it reads clearly as a strong selection border.
+local SELECTED_GLOW_INNER_ALPHA = 1.0
+local SELECTED_GLOW_OUTER_ALPHA = 0.85
+local SELECTED_GLOW_OUTER_EXTENT = 2
+
 -- Layout constants:
 -- The scroll area reserves space on the right for the UIPanelScrollFrameTemplate scrollbar.
 -- With a fixed column count, ensure the frame is wide enough so the last column doesn't clip.
@@ -427,8 +434,11 @@ local function EnsureFrame(self)
   end
 
   local function ApplySelectionGlow(iconButton)
-    if not iconButton or not iconButton._eventqSelectedGlow then return end
-    iconButton._eventqSelectedGlow:SetShown(iconButton._eventqTextureKey ~= "" and iconButton._eventqTextureKey == frame._eventqSelectedTextureKey)
+    if not iconButton or not iconButton._eventqSelectedGlows then return end
+    local isSelected = iconButton._eventqTextureKey ~= "" and iconButton._eventqTextureKey == frame._eventqSelectedTextureKey
+    for glowIndex = 1, #iconButton._eventqSelectedGlows do
+      iconButton._eventqSelectedGlows[glowIndex]:SetShown(isSelected)
+    end
   end
 
   local function OnIconClick(iconButton)
@@ -453,14 +463,28 @@ local function EnsureFrame(self)
     highlight:SetTexture("Interface/Buttons/ButtonHilight-Square")
     highlight:SetBlendMode("ADD")
     highlight:SetAlpha(0.25)
+    local selectedGlows = {}
 
-    local selectedGlow = iconButton:CreateTexture(nil, "OVERLAY")
-    selectedGlow:SetAllPoints(iconButton)
-    selectedGlow:SetTexture("Interface/Buttons/UI-ActionButton-Border")
-    selectedGlow:SetBlendMode("ADD")
-    selectedGlow:SetAlpha(0.65)
-    selectedGlow:Hide()
-    iconButton._eventqSelectedGlow = selectedGlow
+    local outerGlow = iconButton:CreateTexture(nil, "OVERLAY", nil, 1)
+    outerGlow:SetPoint("TOPLEFT", iconButton, "TOPLEFT", -SELECTED_GLOW_OUTER_EXTENT, SELECTED_GLOW_OUTER_EXTENT)
+    outerGlow:SetPoint("BOTTOMRIGHT", iconButton, "BOTTOMRIGHT", SELECTED_GLOW_OUTER_EXTENT, -SELECTED_GLOW_OUTER_EXTENT)
+    outerGlow:SetTexture("Interface/Buttons/ButtonHilight-Square")
+    outerGlow:SetBlendMode("ADD")
+    outerGlow:SetAlpha(SELECTED_GLOW_OUTER_ALPHA)
+    outerGlow:Hide()
+    selectedGlows[#selectedGlows + 1] = outerGlow
+
+    local innerGlow = iconButton:CreateTexture(nil, "OVERLAY", nil, 2)
+    innerGlow:SetAllPoints(iconButton)
+    innerGlow:SetTexture("Interface/Buttons/ButtonHilight-Square")
+    innerGlow:SetBlendMode("ADD")
+    innerGlow:SetAlpha(SELECTED_GLOW_INNER_ALPHA)
+    innerGlow:Hide()
+    selectedGlows[#selectedGlows + 1] = innerGlow
+
+    iconButton._eventqSelectedGlows = selectedGlows
+    -- Backward-compatible alias used by earlier iterations.
+    iconButton._eventqSelectedGlow = innerGlow
 
     iconButton:SetScript("OnClick", OnIconClick)
     return iconButton
