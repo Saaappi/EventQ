@@ -2,9 +2,9 @@ local _, ns = ...
 
 local DateUtil = ns.Class:Create("DateUtil")
 
-local function pad2(n)
-  n = tonumber(n) or 0
-  return (n < 10) and ("0" .. n) or tostring(n)
+local function pad2(numberValue)
+  numberValue = tonumber(numberValue) or 0
+  return (numberValue < 10) and ("0" .. numberValue) or tostring(numberValue)
 end
 
 ---@return "MDY"|"DMY"
@@ -110,8 +110,8 @@ end
 ---@param order "MDY"|"DMY"|nil
 ---@param isEnd boolean|nil  -- when date-only is provided, choose end-of-day defaults
 ---@return integer|nil epoch, string|nil err
-function DateUtil:ParseUserDateTime(s, order, isEnd)
-  s = tostring(s or "")
+function DateUtil:ParseUserDateTime(inputText, order, isEnd)
+  inputText = tostring(inputText or "")
   order = order or self:GetDefaultDateOrder()
 
   -- Accepted formats (time optional):
@@ -121,11 +121,11 @@ function DateUtil:ParseUserDateTime(s, order, isEnd)
   -- (and the DD/MM variants depending on order)
 
   local part1, part2, year, hour, minute, second =
-    s:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s+(%d%d?)%s*:%s*(%d%d)%s*:%s*(%d%d)%s*$")
+    inputText:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s+(%d%d?)%s*:%s*(%d%d)%s*:%s*(%d%d)%s*$")
 
   if not part1 then
     part1, part2, year, hour, minute =
-      s:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s+(%d%d?)%s*:%s*(%d%d)%s*$")
+      inputText:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s+(%d%d?)%s*:%s*(%d%d)%s*$")
   end
 
   local dateOnly = false

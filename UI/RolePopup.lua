@@ -80,8 +80,8 @@ local function EnsureFrame(self)
     roleButton._eventqMask = mask
 
     local back = roleButton:CreateTexture(nil, "BACKGROUND")
-    local r, g, bl = GetRoleColor(role)
-    back:SetColorTexture(r, g, bl, 0.25)
+    local red, green, blue = GetRoleColor(role)
+    back:SetColorTexture(red, green, blue, 0.25)
     back:SetAllPoints()
     back:AddMaskTexture(mask)
     roleButton._eventqBack = back

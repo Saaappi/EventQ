@@ -9,9 +9,9 @@ local ADDON, ns = ...
 local DateTimePicker = {}
 ns.DateTimePicker = DateTimePicker
 
-local function pad2(n)
-  n = tonumber(n) or 0
-  return (n < 10) and ("0" .. n) or tostring(n)
+local function pad2(numberValue)
+  numberValue = tonumber(numberValue) or 0
+  return (numberValue < 10) and ("0" .. numberValue) or tostring(numberValue)
 end
 
 local function DaysInMonth(year, month)
@@ -36,10 +36,10 @@ local function MonthName(month)
   return fallback[month] or tostring(month)
 end
 
-local function Clamp(v, lo, hi)
-  if v < lo then return lo end
-  if v > hi then return hi end
-  return v
+local function Clamp(value, minValue, maxValue)
+  if value < minValue then return minValue end
+  if value > maxValue then return maxValue end
+  return value
 end
 
 local function To12h(hour24)

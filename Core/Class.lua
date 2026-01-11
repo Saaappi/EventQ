@@ -15,8 +15,8 @@ function ns.Class:Create(name, base)
 
   setmetatable(cls, {
     __index = base,
-    __call = function(c, ...)
-      return c:New(...)
+    __call = function(classPrototype, ...)
+      return classPrototype:New(...)
     end,
   })
 

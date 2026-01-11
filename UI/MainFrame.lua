@@ -7,6 +7,25 @@ local LIST_PADDING_TOP = 34
 
 local DEFAULT_CUSTOM_ICON = "Interface/Icons/INV_Misc_Note_01"
 
+local ICON_TEXCOORDS = { 0.08, 0.92, 0.08, 0.92 }
+
+local function SetCroppedIconTexture(textureObj, texturePathOrId)
+  if not textureObj or not textureObj.SetTexture then return end
+  textureObj:SetTexture(texturePathOrId or DEFAULT_CUSTOM_ICON)
+  if textureObj.SetTexCoord then
+    textureObj:SetTexCoord(unpack(ICON_TEXCOORDS))
+  end
+end
+
+local function SetDescriptionPopupIcon(popupFrame, texturePathOrId)
+  if not popupFrame then return end
+  popupFrame._eventqSelectedIcon = texturePathOrId or DEFAULT_CUSTOM_ICON
+  if popupFrame._eventqIcon then
+    SetCroppedIconTexture(popupFrame._eventqIcon, popupFrame._eventqSelectedIcon)
+  end
+end
+
+
 -- Window positioning helpers
 local function EnsureWindowDefaults(db)
   if not db then return nil end
@@ -70,7 +89,7 @@ end
 
 local function CreateSectionHeader(parent, text, offsetX, offsetY)
   local titleFontString = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  titleFontString:SetPoint("TOPLEFT", oftitleFontStringetX, oftitleFontStringetY)
+  titleFontString:SetPoint("TOPLEFT", offsetX, offsetY)
   titleFontString:SetText(text)
   return titleFontString
 end
@@ -137,11 +156,12 @@ local function EnsureDescriptionPopup(self)
     return self._descPopup
   end
 
-  local popupFrame = CreateFrame("Frame", "EventQCustomDescriptionPopup", UIParent, "BackdropTemplate")
+  local popupFrame = CreateFrame("Frame", "EventQCustomDescriptionPopup", self.frame, "BackdropTemplate")
+  popupFrame._eventqMainFrame = self.frame
   popupFrame:SetSize(440, 280)
   popupFrame:SetFrameStrata("DIALOG")
   popupFrame:SetClampedToScreen(true)
-  popupFrame:SetPoint("CENTER")
+  popupFrame:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", 12, 0)
   popupFrame:Hide()
 
   popupFrame:SetBackdrop({
@@ -150,27 +170,59 @@ local function EnsureDescriptionPopup(self)
     tile = true, tileSize = 32, edgeSize = 32,
     insets = { left = 8, right = 8, top = 8, bottom = 8 },
   })
-  local iconHolder = CreateFrame("Frame", nil, popupFrame)
-  iconHolder:SetSize(40, 40)
-  iconHolder:SetPoint("TOP", popupFrame, "TOP", 0, -18)
-  popupFrame._eventqIconHolder = iconHolder
-
-  local icon = iconHolder:CreateTexture(nil, "ARTWORK")
-  icon:SetAllPoints(iconHolder)
-  icon:SetTexture(DEFAULT_CUSTOM_ICON)
-  if icon.SetTexCoord then
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  local iconButton
+  do
+    local ok, created = pcall(CreateFrame, "Button", nil, popupFrame, "SquareIconButtonTemplate")
+    if ok and created then
+      iconButton = created
+    else
+      iconButton = CreateFrame("Button", nil, popupFrame, "BackdropTemplate")
+    end
   end
+
+  iconButton:SetSize(40, 40)
+  iconButton:SetPoint("TOP", popupFrame, "TOP", 0, -18)
+  iconButton:RegisterForClicks("LeftButtonUp")
+  popupFrame._eventqIconButton = iconButton
+
+  local icon = iconButton.Icon or iconButton.icon or iconButton.IconTexture
+  if not icon then
+    icon = iconButton:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints(iconButton)
+  end
+
+  SetCroppedIconTexture(icon, DEFAULT_CUSTOM_ICON)
   popupFrame._eventqIcon = icon
+  popupFrame._eventqSelectedIcon = DEFAULT_CUSTOM_ICON
 
-  local border = iconHolder:CreateTexture(nil, "OVERLAY")
-  border:SetTexture("Interface/Common/WhiteIconFrame")
-  border:SetAllPoints(iconHolder)
-  if border.SetTexCoord then
-    border:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-  end
-  border:SetAlpha(0.95)
-  popupFrame._eventqIconBorder = border
+  iconButton:SetScript("OnEnter", function()
+    if not GameTooltip then return end
+    GameTooltip:SetOwner(iconButton, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Click to choose an icon", 1, 1, 1)
+    GameTooltip:Show()
+  end)
+  iconButton:SetScript("OnLeave", function()
+    if GameTooltip and GameTooltip.Hide then GameTooltip:Hide() end
+  end)
+
+  iconButton:SetScript("OnClick", function()
+    local picker = ns.IconPicker
+    if not picker or not picker.Open then return end
+
+    local currentIcon = popupFrame._eventqSelectedIcon or DEFAULT_CUSTOM_ICON
+    local mainFrame = popupFrame._eventqMainFrame
+    local desiredHeight = (mainFrame and mainFrame.GetHeight and mainFrame:GetHeight()) or nil
+
+    picker:Open(popupFrame, currentIcon, function(selectedTexture, selectedName)
+      if not selectedTexture then return end
+      SetDescriptionPopupIcon(popupFrame, selectedTexture)
+
+      local payload = popupFrame._eventqPayload
+      if type(payload) == "table" then
+        payload.icon = selectedTexture
+      end
+    end, { height = desiredHeight })
+  end)
   local scrollBg = CreateFrame("Frame", nil, popupFrame, "BackdropTemplate")
   scrollBg:SetPoint("TOPLEFT", 18, -86)
   scrollBg:SetPoint("BOTTOMRIGHT", -18, 58)
@@ -433,10 +485,10 @@ function MainFrame:Constructor(app)
     local upcomingCustomCount = moreCustom._eventqCount or 0
     if upcomingCustomCount <= 0 then return end
 
-    local r, g, b = NORMAL_FONT_COLOR:GetRGB()
+    local red, green, blue = NORMAL_FONT_COLOR:GetRGB()
     GameTooltip:SetOwner(moreCustom, "ANCHOR_TOP")
     local suffix = (upcomingCustomCount == 1) and "" or "s"
-    GameTooltip:SetText(("You have %d upcoming custom event%s scheduled beyond the 8-day upcoming filter.\nThey will appear in the Upcoming list above as their date approaches."):format(upcomingCustomCount, suffix), r, g, b, true)
+    GameTooltip:SetText(("You have %d upcoming custom event%s scheduled beyond the 8-day upcoming filter.\nThey will appear in the Upcoming list above as their date approaches."):format(upcomingCustomCount, suffix), red, green, blue, true)
     GameTooltip:Show()
   end)
   moreCustom:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -444,18 +496,18 @@ function MainFrame:Constructor(app)
   self.moreCustom = moreCustom
 
   -- Editor fields
-  local function MakeLabel(text, anchorTo, dx, dy)
+  local function MakeLabel(text, anchorTo, offsetX, offsetY)
     local label = editor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    label:SetPoint("TOPLEFT", anchorTo, dx, dy)
+    label:SetPoint("TOPLEFT", anchorTo, offsetX, offsetY)
     label:SetText(text)
     return label
   end
 
-  local function MakeEditBox(width, anchorTo, dx, dy)
+  local function MakeEditBox(width, anchorTo, offsetX, offsetY)
     local editBox = CreateFrame("EditBox", nil, editor, "InputBoxTemplate")
     editBox:SetAutoFocus(false)
     editBox:SetSize(width, 20)
-    editBox:SetPoint("TOPLEFT", anchorTo, dx, dy)
+    editBox:SetPoint("TOPLEFT", anchorTo, offsetX, offsetY)
     editBox:SetScript("OnEscapePressed", function() editBox:ClearFocus() end)
     return editBox
   end
@@ -545,16 +597,16 @@ end
 
 ---Shows a transient message between the Add button and the credit line.
 ---Auto-hides after `seconds`, then restores the credit line position.
-function self:ShowTransientMessage(msg, r, g, b, seconds)
+function self:ShowTransientMessage(messageText, red, green, blue, durationSeconds)
   self._statusToken = (self._statusToken or 0) + 1
   local token = self._statusToken
 
-  self.status:SetTextColor(r or 1, g or 1, b or 1)
-  self.status:SetText(msg or "")
+  self.status:SetTextColor(red or 1, green or 1, blue or 1)
+  self.status:SetText(messageText or "")
   self:_SetStatusVisible(true)
 
-  if seconds and seconds > 0 and C_Timer and C_Timer.After then
-    C_Timer.After(seconds, function()
+  if durationSeconds and durationSeconds > 0 and C_Timer and C_Timer.After then
+    C_Timer.After(durationSeconds, function()
       if self._statusToken ~= token then return end
       self.status:SetText("")
       self:_SetStatusVisible(false)
@@ -566,7 +618,7 @@ function self:SetStatus(msg)
   -- Non-transient status (rare); keep visible until overwritten.
   self._statusToken = (self._statusToken or 0) + 1
   self.status:SetTextColor(1, 1, 1)
-  self.status:SetText(msg or "")
+  self.status:SetText(messageText or "")
   self:_SetStatusVisible(msg and msg ~= "")
 end
 mainFrame:Hide()
@@ -590,6 +642,9 @@ function MainFrame:BeginEditCustom(event)
   if not event or not event.isCustom then return end
   self.editingId = event.id
 
+
+  self._editingIcon = event.icon or DEFAULT_CUSTOM_ICON
+
   -- Seed the description popup. If the saved description is the default, treat it as blank.
   local rawDescription = (type(event.description) == "string") and event.description or ""
   local trimmed = strtrim(rawDescription)
@@ -612,6 +667,7 @@ end
 function MainFrame:ClearEdit()
   self.editingId = nil
   self._editingDescSeed = nil
+  self._editingIcon = nil
   if self.edTitle then self.edTitle:SetText("Add Custom Event") end
   if self.addBtn then self.addBtn:SetText("Next") end
 
@@ -642,7 +698,7 @@ function MainFrame:Toggle()
 end
 
 function MainFrame:SetStatus(msg)
-  self.status:SetText(msg or "")
+  self.status:SetText(messageText or "")
 end
 
 function MainFrame:OnNextCustom()
@@ -678,15 +734,20 @@ function MainFrame:OnNextCustom()
     return
   end
 
+  local previousIcon = self._pendingCustomPayload and self._pendingCustomPayload.icon or nil
+  local baseIcon = previousIcon or self._editingIcon or DEFAULT_CUSTOM_ICON
+
   local payload = {
     title = title,
     startEpoch = startEpoch,
     endEpoch = endEpoch,
+    icon = baseIcon,
   }
 
   self._pendingCustomPayload = payload
   local popup = EnsureDescriptionPopup(self)
   popup._eventqPayload = payload
+  SetDescriptionPopupIcon(popup, payload.icon)
   if popup._eventqOK then
     popup._eventqOK:SetText(self.editingId and "Save" or "Add")
   end
@@ -732,10 +793,13 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
   if desc == "" then desc = nil end
   payload.description = desc
 
+  payload.icon = payload.icon or popup._eventqSelectedIcon or DEFAULT_CUSTOM_ICON
+
   if self.editingId then
     self.app:ReplaceCustomEvent(self.editingId, payload)
     self.editingId = nil
     self._editingDescSeed = nil
+    self._editingIcon = nil
     if self.edTitle then self.edTitle:SetText("Add Custom Event") end
     if self.addBtn then self.addBtn:SetText("Next") end
     self:ShowTransientMessage("Updated.", 0.4, 1, 0.4, 4)
@@ -750,6 +814,8 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
     popup._eventqEditBox:SetText("")
     popup._eventqEditBox:ClearFocus()
   end
+  popup._eventqSelectedIcon = nil
+  SetDescriptionPopupIcon(popup, DEFAULT_CUSTOM_ICON)
   popup:Hide()
 
   -- Clear inputs back to hint after action (same as the previous single-step flow)

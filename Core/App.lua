@@ -7,11 +7,11 @@ local UPCOMING_WINDOW = UPCOMING_DAYS * 86400
 
 -- Hot-path locals
 local _G = _G
-local strtrim = _G.strtrim or function(s)
-  return (s and s:match("^%s*(.-)%s*$")) or ""
+local strtrim = _G.strtrim or function(inputText)
+  return (inputText and inputText:match("^%s*(.-)%s*$")) or ""
 end
-local wipe = _G.wipe or function(t)
-  for k in pairs(t) do t[k] = nil end
+local wipe = _G.wipe or function(tableToWipe)
+  for key in pairs(tableToWipe) do tableToWipe[key] = nil end
 end
 local function wipeArray(array)
   for i = #array, 1, -1 do
@@ -33,18 +33,18 @@ local function ApplyOverrideToEvent(event, override)
   event._eventqIconOverride = true
 end
 
-local function SortOngoing(a, b)
-  if a.endEpoch == b.endEpoch then
-    return (a.title or "") < (b.title or "")
+local function SortOngoing(leftEvent, rightEvent)
+  if leftEvent.endEpoch == rightEvent.endEpoch then
+    return (leftEvent.title or "") < (rightEvent.title or "")
   end
-  return a.endEpoch < b.endEpoch
+  return leftEvent.endEpoch < rightEvent.endEpoch
 end
 
-local function SortUpcoming(a, b)
-  if a.startEpoch == b.startEpoch then
-    return (a.title or "") < (b.title or "")
+local function SortUpcoming(leftEvent, rightEvent)
+  if leftEvent.startEpoch == rightEvent.startEpoch then
+    return (leftEvent.title or "") < (rightEvent.title or "")
   end
-  return a.startEpoch < b.startEpoch
+  return leftEvent.startEpoch < rightEvent.startEpoch
 end
 
 local function ApplyIconOverrides(app, event)
@@ -59,9 +59,9 @@ local function ApplyIconOverrides(app, event)
   -- 0) SavedVariables per-user override by eventID (persists to disk)
   if app and app.db and app.db.iconOverridesById and overrideID ~= nil then
     local savedOverrides = app.db.iconOverridesById
-    local ico = (idNum and savedOverrides[idNum]) or (idStr and savedOverrides[idStr])
-    if ico then
-      ApplyOverrideToEvent(event, ico)
+    local overrideData = (idNum and savedOverrides[idNum]) or (idStr and savedOverrides[idStr])
+    if overrideData then
+      ApplyOverrideToEvent(event, overrideData)
       return
     end
   end
@@ -71,9 +71,9 @@ local function ApplyIconOverrides(app, event)
 
   -- 1) Explicit eventID override (config)
   if overrideID ~= nil and iconOverrides.byId then
-    local ico = (idNum and iconOverrides.byId[idNum]) or (idStr and iconOverrides.byId[idStr])
-    if ico then
-      ApplyOverrideToEvent(event, ico)
+    local overrideData = (idNum and iconOverrides.byId[idNum]) or (idStr and iconOverrides.byId[idStr])
+    if overrideData then
+      ApplyOverrideToEvent(event, overrideData)
       return
     end
   end

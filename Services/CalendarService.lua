@@ -4,11 +4,11 @@ local CalendarService = ns.Class:Create("CalendarService")
 
 -- Hot-path locals
 local _G = _G
-local strtrim = _G.strtrim or function(s)
-  return (s and s:match("^%s*(.-)%s*$")) or ""
+local strtrim = _G.strtrim or function(inputText)
+  return (inputText and inputText:match("^%s*(.-)%s*$")) or ""
 end
-local wipe = _G.wipe or function(t)
-  for k in pairs(t) do t[k] = nil end
+local wipe = _G.wipe or function(tableToWipe)
+  for key in pairs(tableToWipe) do tableToWipe[key] = nil end
 end
 local function wipeArray(array)
   for i = #array, 1, -1 do
@@ -16,11 +16,11 @@ local function wipeArray(array)
   end
 end
 
-local function SortByStartThenTitle(a, b)
-  if a.startEpoch == b.startEpoch then
-    return (a.title or "") < (b.title or "")
+local function SortByStartThenTitle(leftEvent, rightEvent)
+  if leftEvent.startEpoch == rightEvent.startEpoch then
+    return (leftEvent.title or "") < (rightEvent.title or "")
   end
-  return a.startEpoch < b.startEpoch
+  return leftEvent.startEpoch < rightEvent.startEpoch
 end
 
 function CalendarService:Constructor(logger, dateUtil)
@@ -49,23 +49,23 @@ local function mkKey(title, startEpoch, endEpoch)
   return (title or "?") .. "|" .. (startEpoch or 0) .. "|" .. (endEpoch or 0)
 end
 
-local function prefer(a, b)
-  if not a then return b end
-  if not b then return a end
+local function prefer(primaryEvent, fallbackEvent)
+  if not primaryEvent then return fallbackEvent end
+  if not fallbackEvent then return primaryEvent end
 
-  local aHasId = a.eventID ~= nil
-  local bHasId = b.eventID ~= nil
-  if bHasId and not aHasId then return b end
+  local primaryHasId = primaryEvent.eventID ~= nil
+  local fallbackHasId = fallbackEvent.eventID ~= nil
+  if fallbackHasId and not primaryHasId then return fallbackEvent end
 
-  local aHasIcon = a.icon ~= nil
-  local bHasIcon = b.icon ~= nil
-  if bHasIcon and not aHasIcon then return b end
+  local primaryHasIcon = primaryEvent.icon ~= nil
+  local fallbackHasIcon = fallbackEvent.icon ~= nil
+  if fallbackHasIcon and not primaryHasIcon then return fallbackEvent end
 
-  return a
+  return primaryEvent
 end
 
-local function isBlank(s)
-  return (not s) or strtrim(s) == ""
+local function isBlank(inputText)
+  return (not inputText) or strtrim(inputText) == ""
 end
 
 local function holidayTextureByName(monthOffset, monthDay, title)

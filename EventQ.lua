@@ -1,8 +1,8 @@
 local ADDON, ns = ...
 
 local _G = _G
-local strtrim = _G.strtrim or function(s)
-  return (s and s:match("^%s*(.-)%s*$")) or ""
+local strtrim = _G.strtrim or function(inputText)
+  return (inputText and inputText:match("^%s*(.-)%s*$")) or ""
 end
 
 -- SavedVariables are guaranteed to be populated by the time ADDON_LOADED fires for this addon.

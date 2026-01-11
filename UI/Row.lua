@@ -392,37 +392,38 @@ function Row:SetEvent(event, dateUtil)
     self.icon:SetSize(holderWidth, holderHeight)
 
     if self.icon.SetTexCoord then
-      local tc = event._eventqTexCoord
-      if type(tc) == "table" and tc[1] and tc[2] and tc[3] and tc[4] then
-        self.icon:SetTexCoord(tc[1], tc[2], tc[3], tc[4])
+      local textureCoordinates = event._eventqTexCoord
+      if type(textureCoordinates) == "table" and textureCoordinates[1] and textureCoordinates[2] and textureCoordinates[3] and textureCoordinates[4] then
+        self.icon:SetTexCoord(textureCoordinates[1], textureCoordinates[2], textureCoordinates[3], textureCoordinates[4])
       else
-        local useSheetCrop = (event.iconIsCalendarSheet == true) and (event._eventqIconOverride ~= true)
-      if useSheetCrop and type(event.textureIndex) == "number" then
-        -- 2x2 sheet; textureIndex selects the quadrant.
-        -- Index mapping is assumed to be left-to-right, top-to-bottom.
-        local idx = event.textureIndex
-        local u0, u1, v0, v1
-        if idx == 1 then
-          u0, u1, v0, v1 = 0.04, 0.46, 0.04, 0.46
-        elseif idx == 2 then
-          u0, u1, v0, v1 = 0.54, 0.96, 0.04, 0.46
-        elseif idx == 3 then
-          u0, u1, v0, v1 = 0.04, 0.46, 0.54, 0.96
-        elseif idx == 4 then
-          u0, u1, v0, v1 = 0.54, 0.96, 0.54, 0.96
-        end
+        local useCalendarSheetCrop = (event.iconIsCalendarSheet == true) and (event._eventqIconOverride ~= true)
+        if useCalendarSheetCrop and type(event.textureIndex) == "number" then
+          -- 2x2 sheet; textureIndex selects the quadrant.
+          -- Index mapping is assumed to be left-to-right, top-to-bottom.
+          local quadrantIndex = event.textureIndex
+          local leftU, rightU, topV, bottomV
+          if quadrantIndex == 1 then
+            leftU, rightU, topV, bottomV = 0.04, 0.46, 0.04, 0.46
+          elseif quadrantIndex == 2 then
+            leftU, rightU, topV, bottomV = 0.54, 0.96, 0.04, 0.46
+          elseif quadrantIndex == 3 then
+            leftU, rightU, topV, bottomV = 0.04, 0.46, 0.54, 0.96
+          elseif quadrantIndex == 4 then
+            leftU, rightU, topV, bottomV = 0.54, 0.96, 0.54, 0.96
+          end
 
-        if u0 then
-          self.icon:SetTexCoord(u0, u1, v0, v1)
+          if leftU then
+            self.icon:SetTexCoord(leftU, rightU, topV, bottomV)
+          else
+            -- Unknown index; fall back to normal crop.
+            self.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+          end
         else
-          -- Unknown index; fall back to normal crop.
+          -- Normal icon crop (removes common padding).
           self.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         end
-      else
-        -- Normal icon crop (removes common padding).
-        self.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
       end
-      end
+
     end
   end
   if IsQueueable(self.frame, event) then

@@ -88,41 +88,41 @@ local function IntersectEquilateralTriangle(radius, angleRad)
 
   local dx, dy = cos(angleRad), sin(angleRad)
 
-  local function cross(ax, ay, bx, by)
-    return ax * by - ay * bx
+  local function cross(vecAX, vecAY, vecBX, vecBY)
+    return vecAX * vecBY - vecAY * vecBX
   end
 
-  local function intersect(ax, ay, bx, by)
-    -- Ray: p = t*d from origin. Segment: a + u*(b-a)
-    local sx, sy = bx - ax, by - ay
-    local denom = cross(dx, dy, sx, sy)
+  local function intersect(segmentStartX, segmentStartY, segmentEndX, segmentEndY)
+    -- Ray: p = rayScale * d from origin. Segment: a + segmentParam * (b - a)
+    local segmentX, segmentY = segmentEndX - segmentStartX, segmentEndY - segmentStartY
+    local denom = cross(dx, dy, segmentX, segmentY)
     if denom == 0 then return nil end
-    local t = cross(ax, ay, sx, sy) / denom
-    local u = cross(ax, ay, dx, dy) / denom
-    if t >= 0 and u >= 0 and u <= 1 then
-      return t
+    local rayScale = cross(segmentStartX, segmentStartY, segmentX, segmentY) / denom
+    local segmentParam = cross(segmentStartX, segmentStartY, dx, dy) / denom
+    if rayScale >= 0 and segmentParam >= 0 and segmentParam <= 1 then
+      return rayScale
     end
     return nil
   end
 
-  local tMin
-  for _, e in ipairs({
+  local minRayScale
+  for _, edge in ipairs({
     { v1x, v1y, v2x, v2y },
     { v2x, v2y, v3x, v3y },
     { v3x, v3y, v1x, v1y },
   }) do
-    local t = intersect(e[1], e[2], e[3], e[4])
-    if t and (not tMin or t < tMin) then
-      tMin = t
+    local rayScale = intersect(edge[1], edge[2], edge[3], edge[4])
+    if rayScale and (not minRayScale or rayScale < minRayScale) then
+      minRayScale = rayScale
     end
   end
 
-  if not tMin then
+  if not minRayScale then
     -- Fallback to circle
     return dx * radius, dy * radius
   end
 
-  return dx * tMin, dy * tMin
+  return dx * minRayScale, dy * minRayScale
 end
 
 local function UpdatePosition(button)
@@ -138,12 +138,12 @@ local function UpdatePosition(button)
   if shape == "TRIANGLE" then
     x, y = IntersectEquilateralTriangle(radius, angle)
   else
-    local q = 1
-    if x < 0 then q = q + 1 end
-    if y > 0 then q = q + 2 end
+    local quadrantIndex = 1
+    if x < 0 then quadrantIndex = quadrantIndex + 1 end
+    if y > 0 then quadrantIndex = quadrantIndex + 2 end
 
     local quadTable = minimapShapes[shape] or minimapShapes["ROUND"]
-    if quadTable[q] then
+    if quadTable[quadrantIndex] then
       x, y = x * radius, y * radius
     else
       local diagRadius = sqrt(2 * (radius ^ 2)) - 10
