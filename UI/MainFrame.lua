@@ -634,6 +634,9 @@ mainFrame:Hide()
     if self._descPopup and self._descPopup.Hide then
       self._descPopup:Hide()
     end
+    if ns.IconPicker and ns.IconPicker.Hide then
+      ns.IconPicker:Hide()
+    end
   end)
 end
 
