@@ -179,4 +179,166 @@ function DateUtil:ParseUserDateTime(inputText, order, isEnd)
   return epoch, nil
 end
 
+-- -----------------------------------------------------------------------------
+-- Series helpers
+-- -----------------------------------------------------------------------------
+
+---@param epoch integer
+---@return integer weekday -- 1=Sunday .. 7=Saturday
+function DateUtil:GetWeekday(epoch)
+  return (date("*t", epoch or time()).wday) or 1
+end
+
+---@param epoch integer
+---@return integer weekOfMonth -- 1..5 (5 = last partial week)
+function DateUtil:GetWeekOfMonth(epoch)
+  local day = (date("*t", epoch or time()).day) or 1
+  return math.floor((day - 1) / 7) + 1
+end
+
+---@param year integer
+---@param month integer
+---@return integer
+function DateUtil:GetDaysInMonth(year, month)
+  year = tonumber(year) or 1970
+  month = tonumber(month) or 1
+
+  -- Lua date/time supports day=0 to mean "day 0 of next month" (i.e., last day of this month).
+  local lastDayEpoch = time({
+    year = year,
+    month = month + 1,
+    day = 0,
+    hour = 12,
+    min = 0,
+    sec = 0,
+    isdst = false,
+  })
+  local parts = lastDayEpoch and date("*t", lastDayEpoch) or nil
+  return (parts and parts.day) or 28
+end
+
+---@param year integer
+---@param month integer
+---@param weekOfMonth integer
+---@param weekday integer -- 1=Sunday .. 7=Saturday
+---@return integer dayOfMonth
+function DateUtil:GetNthWeekdayOfMonth(year, month, weekOfMonth, weekday)
+  year = tonumber(year) or 1970
+  month = tonumber(month) or 1
+  weekOfMonth = tonumber(weekOfMonth) or 1
+  weekday = tonumber(weekday) or 1
+
+  local firstDayEpoch = time({ year = year, month = month, day = 1, hour = 12, min = 0, sec = 0, isdst = false })
+  local firstWday = (firstDayEpoch and date("*t", firstDayEpoch).wday) or 1
+  local offset = (weekday - firstWday) % 7
+  local day = 1 + offset + (weekOfMonth - 1) * 7
+  local daysInMonth = self:GetDaysInMonth(year, month)
+
+  -- Auto-correct: if the requested Nth weekday doesn't exist (e.g., 5th Monday in a 4-week month),
+  -- snap back by 1 week until it fits.
+  while day > daysInMonth do
+    day = day - 7
+  end
+  if day < 1 then day = 1 end
+  return day
+end
+
+---@param epoch integer
+---@param weekOfMonth integer
+---@param weekday integer
+---@return integer correctedEpoch
+function DateUtil:CorrectToNthWeekdayInMonth(epoch, weekOfMonth, weekday)
+  local parts = date("*t", epoch or time())
+  local year, month = parts.year, parts.month
+  local day = self:GetNthWeekdayOfMonth(year, month, weekOfMonth, weekday)
+  return time({
+    year = year,
+    month = month,
+    day = day,
+    hour = parts.hour,
+    min = parts.min,
+    sec = parts.sec,
+    isdst = false,
+  })
+end
+
+---@param epoch integer
+---@param minutes integer
+---@return integer
+function DateUtil:AddMinutes(epoch, minutes)
+  return (tonumber(epoch) or 0) + (tonumber(minutes) or 0) * 60
+end
+
+---@param epoch integer
+---@param hours integer
+---@return integer
+function DateUtil:AddHours(epoch, hours)
+  return (tonumber(epoch) or 0) + (tonumber(hours) or 0) * 3600
+end
+
+---@param epoch integer
+---@param days integer
+---@return integer
+function DateUtil:AddDays(epoch, days)
+  return (tonumber(epoch) or 0) + (tonumber(days) or 0) * 86400
+end
+
+---@param epoch integer
+---@param weeks integer
+---@return integer
+function DateUtil:AddWeeks(epoch, weeks)
+  return (tonumber(epoch) or 0) + (tonumber(weeks) or 0) * 7 * 86400
+end
+
+---@param epoch integer
+---@param months integer
+---@param weekOfMonth integer
+---@param weekday integer
+---@return integer
+function DateUtil:AddMonthsByNthWeekday(epoch, months, weekOfMonth, weekday)
+  local parts = date("*t", epoch or time())
+  local baseIndex = parts.year * 12 + (parts.month - 1)
+  local targetIndex = baseIndex + (tonumber(months) or 0)
+  local year = math.floor(targetIndex / 12)
+  local month = (targetIndex % 12) + 1
+
+  local day = self:GetNthWeekdayOfMonth(year, month, weekOfMonth, weekday)
+  return time({
+    year = year,
+    month = month,
+    day = day,
+    hour = parts.hour,
+    min = parts.min,
+    sec = parts.sec,
+    isdst = false,
+  })
+end
+
+---@param epoch integer
+---@param years integer
+---@param month integer
+---@param day integer
+---@return integer
+function DateUtil:AddYearsByMonthDay(epoch, years, month, day)
+  local parts = date("*t", epoch or time())
+  local year = (parts.year or 1970) + (tonumber(years) or 0)
+  month = tonumber(month) or parts.month or 1
+  day = tonumber(day) or parts.day or 1
+
+  local daysInMonth = self:GetDaysInMonth(year, month)
+  if day > daysInMonth then
+    day = daysInMonth
+  end
+
+  return time({
+    year = year,
+    month = month,
+    day = day,
+    hour = parts.hour,
+    min = parts.min,
+    sec = parts.sec,
+    isdst = false,
+  })
+end
+
 ns.DateUtil = DateUtil

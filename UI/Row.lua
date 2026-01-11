@@ -11,6 +11,21 @@ local ONE_DAY_SECONDS = 24 * 60 * 60
 
 local CONFIRM_REMOVE_DIALOG_KEY = "EVENTQ_CONFIRM_REMOVE_CUSTOM_EVENT"
 
+local function PickClockAtlas()
+  if not (C_Texture and C_Texture.GetAtlasInfo) then return nil end
+  local candidates = {
+    "worldquest-icon-clock",
+    "poi-workorders",
+    "UI-HUD-Clock",
+    "QuestLog-QuestID", -- harmless fallback (non-clock) on older clients
+  }
+  for _, atlas in ipairs(candidates) do
+    local info = C_Texture.GetAtlasInfo(atlas)
+    if info then return atlas end
+  end
+  return nil
+end
+
 local function EnsureConfirmRemoveDialog()
   if not StaticPopupDialogs then return false end
   if StaticPopupDialogs[CONFIRM_REMOVE_DIALOG_KEY] then return true end
@@ -233,6 +248,26 @@ local function EnsureUrgencyBackground(frame)
   return urgencyBg
 end
 
+local function EnsureSeriesIndicator(frame)
+  if frame._eventqSeriesIcon and frame._eventqSeriesIcon.GetObjectType then
+    return frame._eventqSeriesIcon
+  end
+
+  local seriesIcon = frame:CreateTexture(nil, "OVERLAY")
+  seriesIcon:SetSize(14, 14)
+  seriesIcon:SetPoint("TOPRIGHT", -8, -8)
+
+  local atlas = PickClockAtlas()
+  if atlas and seriesIcon.SetAtlas then
+    seriesIcon:SetAtlas(atlas, true)
+  else
+    seriesIcon:SetTexture("Interface/Common/Clock")
+  end
+  seriesIcon:Hide()
+  frame._eventqSeriesIcon = seriesIcon
+  return seriesIcon
+end
+
 ---@param frame Button
 ---@param app table
 function Row:Constructor(frame, app)
@@ -241,6 +276,7 @@ function Row:Constructor(frame, app)
   self.iconHolder, self.icon = EnsureTexture(frame)
   self.name, self.range = EnsureFontStrings(frame, self.iconHolder)
   self.urgencyBg = EnsureUrgencyBackground(frame)
+  self.seriesIcon = EnsureSeriesIndicator(frame)
   self.data = nil
   self.LfgDungeonID = nil
   self.IsBrawl = false
@@ -364,6 +400,25 @@ function Row:Constructor(frame, app)
         titleInfo.text = (MENU._eventqData and MENU._eventqData.title) or "Custom Event"
         UIDropDownMenu_AddButton(titleInfo, level)
 
+        local menuData = MENU._eventqData
+        local isSeries = menuData and (menuData.isSeriesRoot or menuData.isSeriesOccurrence)
+        if isSeries then
+          local viewInfo = UIDropDownMenu_CreateInfo()
+          viewInfo.notCheckable = true
+          viewInfo.text = "View Series"
+          viewInfo.func = function()
+            local rootId = (menuData and (menuData.seriesRootId or menuData.id)) or nil
+            if rootId and MENU._eventqApp and MENU._eventqApp.ui and MENU._eventqApp.ui.ShowSeries then
+              MENU._eventqApp.ui:ShowSeries(rootId)
+            end
+          end
+          UIDropDownMenu_AddButton(viewInfo, level)
+        end
+
+        if menuData and menuData.isSeriesOccurrence then
+          return
+        end
+
         local editInfo = UIDropDownMenu_CreateInfo()
         editInfo.notCheckable = true
         editInfo.text = "Edit"
@@ -404,6 +459,7 @@ function Row:SetEvent(event, dateUtil)
 
   if not event then
     if self.urgencyBg then self.urgencyBg:Hide() end
+    if self.seriesIcon then self.seriesIcon:Hide() end
     self.frame:Hide()
     return
   end
@@ -478,6 +534,14 @@ function Row:SetEvent(event, dateUtil)
       self.urgencyBg:Show()
     else
       self.urgencyBg:Hide()
+    end
+  end
+
+  if self.seriesIcon then
+    if event.isSeriesRoot then
+      self.seriesIcon:Show()
+    else
+      self.seriesIcon:Hide()
     end
   end
 end

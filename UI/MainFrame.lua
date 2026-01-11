@@ -7,6 +7,51 @@ local LIST_PADDING_TOP = 34
 
 local DEFAULT_CUSTOM_ICON = "Interface/Icons/INV_Misc_Note_01"
 
+local SERIES_FREQ = {
+  MINUTELY = "MINUTELY",
+  HOURLY = "HOURLY",
+  DAILY = "DAILY",
+  WEEKLY = "WEEKLY",
+  MONTHLY = "MONTHLY",
+  ANNUALLY = "ANNUALLY",
+}
+
+local SERIES_FREQUENCY_OPTIONS = {
+  { key = SERIES_FREQ.MINUTELY, label = "Minutely" },
+  { key = SERIES_FREQ.HOURLY, label = "Hourly" },
+  { key = SERIES_FREQ.DAILY, label = "Daily" },
+  { key = SERIES_FREQ.WEEKLY, label = "Weekly" },
+  { key = SERIES_FREQ.MONTHLY, label = "Monthly" },
+  { key = SERIES_FREQ.ANNUALLY, label = "Annually" },
+}
+
+local WEEK_OF_MONTH_OPTIONS = {
+  { key = 1, label = "1st" },
+  { key = 2, label = "2nd" },
+  { key = 3, label = "3rd" },
+  { key = 4, label = "4th" },
+  { key = 5, label = "5th" },
+}
+
+local WEEKDAY_OPTIONS = {
+  { key = 1, label = "Sunday" },
+  { key = 2, label = "Monday" },
+  { key = 3, label = "Tuesday" },
+  { key = 4, label = "Wednesday" },
+  { key = 5, label = "Thursday" },
+  { key = 6, label = "Friday" },
+  { key = 7, label = "Saturday" },
+}
+
+local function CopyTableShallow(source)
+  if type(source) ~= "table" then return nil end
+  local out = {}
+  for k, v in pairs(source) do
+    out[k] = v
+  end
+  return out
+end
+
 local ICON_TEXCOORDS = { 0.08, 0.92, 0.08, 0.92 }
 
 local ICON_INSET = 3
@@ -120,14 +165,36 @@ local function CreateModernList(parent, app)
   scrollBar:SetPoint("TOPRIGHT", -6, -LIST_PADDING_TOP)
   scrollBar:SetPoint("BOTTOMRIGHT", -6, 6)
 
-  -- ScrollUtil registers callbacks on the scroll bar. On some client builds, the template's
-  -- mixin init isn't fully run for dynamically-created frames, so force-init CallbackRegistry.
-  if CallbackRegistryMixin and CallbackRegistryMixin.OnLoad then
-    CallbackRegistryMixin.OnLoad(scrollBar)
+  -- ScrollUtil relies on ScrollBox/ScrollBar callback events. When these widgets are created dynamically,
+  -- their XML OnLoad scripts do not automatically fire, so we run any available OnLoad initialization.
+  local function RunTemplateOnLoad(widget)
+    if not widget or widget._eventqDidOnLoad then return end
+    widget._eventqDidOnLoad = true
+
+    if widget.GetScript then
+      local onLoadScript = widget:GetScript("OnLoad")
+      if type(onLoadScript) == "function" then
+        pcall(onLoadScript, widget)
+      end
+    end
+
+    if type(widget.OnLoad) == "function" then
+      pcall(widget.OnLoad, widget)
+    end
+
+    -- As a last resort, initialize CallbackRegistryMixin tables so RegisterCallback() cannot crash.
+    if (not widget.callbackTables) and CallbackRegistryMixin and type(CallbackRegistryMixin.OnLoad) == "function" then
+      pcall(CallbackRegistryMixin.OnLoad, widget)
+    end
+
+    if type(widget.SetUndefinedEventsAllowed) == "function" then
+      pcall(widget.SetUndefinedEventsAllowed, widget, true)
+    end
   end
-  if scrollBar.SetUndefinedEventsAllowed then
-    scrollBar:SetUndefinedEventsAllowed(true)
-  end
+
+  RunTemplateOnLoad(scrollBox)
+  RunTemplateOnLoad(scrollBar)
+
 
   local view = CreateScrollBoxListLinearView()
   view:SetElementExtent(ROW_HEIGHT)
@@ -175,7 +242,7 @@ local function EnsureDescriptionPopup(self)
 
   local popupFrame = CreateFrame("Frame", "EventQCustomDescriptionPopup", self.frame, "BackdropTemplate")
   popupFrame._eventqMainFrame = self.frame
-  popupFrame:SetSize(440, 280)
+  popupFrame:SetSize(440, 360)
   popupFrame:SetFrameStrata("DIALOG")
   popupFrame:SetClampedToScreen(true)
   popupFrame:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", 12, 0)
@@ -236,6 +303,8 @@ local function EnsureDescriptionPopup(self)
   popupFrame._eventqIcon = icon
   popupFrame._eventqSelectedIcon = DEFAULT_CUSTOM_ICON
 
+  popupFrame._eventqOwner = self
+
 
   if not iconButton._eventqIconTooltipHooked then
     iconButton._eventqIconTooltipHooked = true
@@ -291,7 +360,7 @@ local function EnsureDescriptionPopup(self)
   end)
   local scrollBg = CreateFrame("Frame", nil, popupFrame, "BackdropTemplate")
   scrollBg:SetPoint("TOPLEFT", 18, -86)
-  scrollBg:SetPoint("BOTTOMRIGHT", -18, 58)
+  scrollBg:SetPoint("BOTTOMRIGHT", -18, 150)
   scrollBg:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
     edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -383,6 +452,248 @@ local function EnsureDescriptionPopup(self)
   scrollFrame:HookScript("OnShow", ResizeDescEditBox)
   -- Run once immediately too; some clients won't fire OnSizeChanged until later.
   ResizeDescEditBox()
+
+  -- ---------------------------------------------------------------------------
+  -- Series controls
+  -- ---------------------------------------------------------------------------
+
+  local seriesCheck = CreateFrame("CheckButton", nil, popupFrame, "UICheckButtonTemplate")
+  seriesCheck:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 118)
+  if seriesCheck.Text then
+    seriesCheck.Text:SetText("Series")
+  elseif seriesCheck.text then
+    seriesCheck.text:SetText("Series")
+  end
+
+  local freqLabel = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  freqLabel:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 42, 96)
+  freqLabel:SetText("Frequency")
+
+  local freqDrop = CreateFrame("Frame", nil, popupFrame, "UIDropDownMenuTemplate")
+  freqDrop:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 70)
+  UIDropDownMenu_SetWidth(freqDrop, 140)
+
+  local intervalLabel = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  intervalLabel:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 42, 48)
+  intervalLabel:SetText("Every")
+
+  local intervalEdit = CreateFrame("EditBox", nil, popupFrame, "InputBoxTemplate")
+  intervalEdit:SetSize(52, 22)
+  intervalEdit:SetPoint("LEFT", intervalLabel, "RIGHT", 6, 0)
+  intervalEdit:SetAutoFocus(false)
+  intervalEdit:SetNumeric(true)
+  intervalEdit:SetMaxLetters(4)
+  intervalEdit:SetText("30")
+  intervalEdit:SetScript("OnEscapePressed", function() intervalEdit:ClearFocus() end)
+
+  local intervalUnit = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  intervalUnit:SetPoint("LEFT", intervalEdit, "RIGHT", 6, 0)
+  intervalUnit:SetText("minutes")
+
+  local monthWeekDrop = CreateFrame("Frame", nil, popupFrame, "UIDropDownMenuTemplate")
+  monthWeekDrop:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 44)
+  UIDropDownMenu_SetWidth(monthWeekDrop, 70)
+
+  local monthWeekdayDrop = CreateFrame("Frame", nil, popupFrame, "UIDropDownMenuTemplate")
+  monthWeekdayDrop:SetPoint("LEFT", monthWeekDrop, "RIGHT", -10, 0)
+  UIDropDownMenu_SetWidth(monthWeekdayDrop, 110)
+
+  popupFrame._eventqSeriesCheck = seriesCheck
+  popupFrame._eventqFreqDrop = freqDrop
+  popupFrame._eventqIntervalLabel = intervalLabel
+  popupFrame._eventqIntervalEdit = intervalEdit
+  popupFrame._eventqIntervalUnit = intervalUnit
+  popupFrame._eventqMonthWeekDrop = monthWeekDrop
+  popupFrame._eventqMonthWeekdayDrop = monthWeekdayDrop
+
+  local function EnsureSeriesInPayload(payload)
+    if type(payload) ~= "table" then return nil end
+    payload.series = payload.series or { enabled = true, frequency = SERIES_FREQ.DAILY }
+    if type(payload.series) ~= "table" then
+      payload.series = { enabled = true, frequency = SERIES_FREQ.DAILY }
+    end
+    payload.series.enabled = true
+    payload.series.frequency = tostring(payload.series.frequency or SERIES_FREQ.DAILY):upper()
+    return payload.series
+  end
+
+  local function SetDropdownText(dropdown, text)
+    if UIDropDownMenu_SetText then
+      UIDropDownMenu_SetText(dropdown, text)
+    elseif dropdown and dropdown.Text then
+      dropdown.Text:SetText(text)
+    end
+  end
+
+  local function GetOptionLabel(options, key)
+    for _, opt in ipairs(options) do
+      if opt.key == key then
+        return opt.label
+      end
+    end
+    return tostring(key)
+  end
+
+  local function ApplyFrequencyDefaults(payload, series)
+    if not (payload and series) then return end
+    local frequency = tostring(series.frequency or SERIES_FREQ.DAILY):upper()
+    series.frequency = frequency
+
+    if frequency == SERIES_FREQ.MINUTELY then
+      series.intervalMinutes = tonumber(series.intervalMinutes) or 30
+      if series.intervalMinutes < 1 then series.intervalMinutes = 1 end
+    elseif frequency == SERIES_FREQ.HOURLY then
+      series.intervalHours = tonumber(series.intervalHours) or 1
+      if series.intervalHours < 1 then series.intervalHours = 1 end
+    elseif frequency == SERIES_FREQ.MONTHLY then
+      local dateUtil = self and self.dateUtil
+      local startEpoch = (payload and payload.startEpoch) or time()
+      series.weekOfMonth = tonumber(series.weekOfMonth) or (dateUtil and dateUtil:GetWeekOfMonth(startEpoch)) or 1
+      series.weekday = tonumber(series.weekday) or (dateUtil and dateUtil:GetWeekday(startEpoch)) or 1
+    elseif frequency == SERIES_FREQ.ANNUALLY then
+      local parts = date("*t", (payload and payload.startEpoch) or time())
+      series.month = tonumber(series.month) or parts.month
+      series.day = tonumber(series.day) or parts.day
+    end
+  end
+
+  local function UpdateSeriesUI()
+    local payload = popupFrame._eventqPayload
+    local series = payload and payload.series or nil
+    local enabled = series and series.enabled == true
+    seriesCheck:SetChecked(enabled)
+
+    freqLabel:SetShown(enabled)
+    freqDrop:SetShown(enabled)
+
+    if not enabled then
+      intervalLabel:Hide()
+      intervalEdit:Hide()
+      intervalUnit:Hide()
+      monthWeekDrop:Hide()
+      monthWeekdayDrop:Hide()
+      return
+    end
+
+    series = EnsureSeriesInPayload(payload)
+    ApplyFrequencyDefaults(payload, series)
+
+    local frequency = series.frequency
+    SetDropdownText(freqDrop, GetOptionLabel(SERIES_FREQUENCY_OPTIONS, frequency))
+
+    local showInterval = frequency == SERIES_FREQ.MINUTELY or frequency == SERIES_FREQ.HOURLY
+    intervalLabel:SetShown(showInterval)
+    intervalEdit:SetShown(showInterval)
+    intervalUnit:SetShown(showInterval)
+
+    local showMonthly = frequency == SERIES_FREQ.MONTHLY
+    monthWeekDrop:SetShown(showMonthly)
+    monthWeekdayDrop:SetShown(showMonthly)
+
+    if frequency == SERIES_FREQ.MINUTELY then
+      intervalEdit:SetText(tostring(series.intervalMinutes or 30))
+      intervalUnit:SetText("minutes")
+    elseif frequency == SERIES_FREQ.HOURLY then
+      intervalEdit:SetText(tostring(series.intervalHours or 1))
+      intervalUnit:SetText("hours")
+    end
+
+    if showMonthly then
+      SetDropdownText(monthWeekDrop, GetOptionLabel(WEEK_OF_MONTH_OPTIONS, series.weekOfMonth or 1))
+      SetDropdownText(monthWeekdayDrop, GetOptionLabel(WEEKDAY_OPTIONS, series.weekday or 1))
+    end
+  end
+
+  popupFrame._eventqUpdateSeriesUI = UpdateSeriesUI
+
+  seriesCheck:SetScript("OnClick", function()
+    local payload = popupFrame._eventqPayload
+    if type(payload) ~= "table" then return end
+    if seriesCheck:GetChecked() then
+      local series = EnsureSeriesInPayload(payload)
+      ApplyFrequencyDefaults(payload, series)
+    else
+      payload.series = nil
+    end
+    UpdateSeriesUI()
+  end)
+
+  UIDropDownMenu_Initialize(freqDrop, function(_, level)
+    if level ~= 1 then return end
+    local payload = popupFrame._eventqPayload
+    local series = EnsureSeriesInPayload(payload)
+
+    for _, opt in ipairs(SERIES_FREQUENCY_OPTIONS) do
+      local info = UIDropDownMenu_CreateInfo()
+      info.text = opt.label
+      info.notCheckable = false
+      info.checked = (series.frequency == opt.key)
+      info.func = function()
+        series.frequency = opt.key
+        ApplyFrequencyDefaults(payload, series)
+        UpdateSeriesUI()
+      end
+      UIDropDownMenu_AddButton(info, level)
+    end
+  end)
+
+  UIDropDownMenu_Initialize(monthWeekDrop, function(_, level)
+    if level ~= 1 then return end
+    local payload = popupFrame._eventqPayload
+    local series = EnsureSeriesInPayload(payload)
+    ApplyFrequencyDefaults(payload, series)
+
+    for _, opt in ipairs(WEEK_OF_MONTH_OPTIONS) do
+      local info = UIDropDownMenu_CreateInfo()
+      info.text = opt.label
+      info.notCheckable = false
+      info.checked = (tonumber(series.weekOfMonth) == opt.key)
+      info.func = function()
+        series.weekOfMonth = opt.key
+        UpdateSeriesUI()
+      end
+      UIDropDownMenu_AddButton(info, level)
+    end
+  end)
+
+  UIDropDownMenu_Initialize(monthWeekdayDrop, function(_, level)
+    if level ~= 1 then return end
+    local payload = popupFrame._eventqPayload
+    local series = EnsureSeriesInPayload(payload)
+    ApplyFrequencyDefaults(payload, series)
+
+    for _, opt in ipairs(WEEKDAY_OPTIONS) do
+      local info = UIDropDownMenu_CreateInfo()
+      info.text = opt.label
+      info.notCheckable = false
+      info.checked = (tonumber(series.weekday) == opt.key)
+      info.func = function()
+        series.weekday = opt.key
+        UpdateSeriesUI()
+      end
+      UIDropDownMenu_AddButton(info, level)
+    end
+  end)
+
+  intervalEdit:SetScript("OnEditFocusLost", function()
+    local payload = popupFrame._eventqPayload
+    local series = payload and payload.series
+    if not series then return end
+
+    local val = tonumber(intervalEdit:GetText())
+    if not val or val < 1 then val = 1 end
+    val = math.floor(val)
+
+    if tostring(series.frequency):upper() == SERIES_FREQ.MINUTELY then
+      series.intervalMinutes = val
+    elseif tostring(series.frequency):upper() == SERIES_FREQ.HOURLY then
+      series.intervalHours = val
+    end
+    UpdateSeriesUI()
+  end)
+
+  -- Default to hidden until the payload is bound.
+  UpdateSeriesUI()
 
   -- Buttons
   local back = CreateFrame("Button", nil, popupFrame, "UIPanelButtonTemplate")
@@ -684,7 +995,7 @@ function self:SetStatus(msg)
   -- Non-transient status (rare); keep visible until overwritten.
   self._statusToken = (self._statusToken or 0) + 1
   self.status:SetTextColor(1, 1, 1)
-  self.status:SetText(messageText or "")
+  self.status:SetText(msg or "")
   self:_SetStatusVisible(msg and msg ~= "")
 end
 mainFrame:Hide()
@@ -703,6 +1014,9 @@ mainFrame:Hide()
     if ns.IconPicker and ns.IconPicker.Hide then
       ns.IconPicker:Hide()
     end
+    if self.seriesViewer and self.seriesViewer.frame and self.seriesViewer.frame.Hide then
+      self.seriesViewer.frame:Hide()
+    end
   end)
 end
 
@@ -713,6 +1027,7 @@ function MainFrame:BeginEditCustom(event)
 
 
   self._editingIcon = event.icon or DEFAULT_CUSTOM_ICON
+  self._editingSeries = CopyTableShallow(event.series)
 
   -- Seed the description popup. If the saved description is the default, treat it as blank.
   local rawDescription = (type(event.description) == "string") and event.description or ""
@@ -737,6 +1052,7 @@ function MainFrame:ClearEdit()
   self.editingId = nil
   self._editingDescSeed = nil
   self._editingIcon = nil
+  self._editingSeries = nil
   if self.edTitle then self.edTitle:SetText("Add Custom Event") end
   if self.addBtn then self.addBtn:SetText("Next") end
 
@@ -757,6 +1073,34 @@ function MainFrame:ClearEdit()
     end)
   end
 end
+
+function MainFrame:EnsureSeriesViewer()
+  if self.seriesViewer then
+    return self.seriesViewer
+  end
+
+  if not ns.SeriesViewer then
+    return nil
+  end
+
+  self.seriesViewer = ns.SeriesViewer(self.frame, self.app)
+  return self.seriesViewer
+end
+
+function MainFrame:ShowSeries(rootId)
+  local viewer = self:EnsureSeriesViewer()
+  if not viewer then return end
+
+  if self._descPopup and self._descPopup.Hide then
+    self._descPopup:Hide()
+  end
+  if ns.IconPicker and ns.IconPicker.Hide then
+    ns.IconPicker:Hide()
+  end
+
+  viewer:ShowSeries(rootId)
+end
+
 function MainFrame:Toggle()
   if self.frame:IsShown() then
     self.frame:Hide()
@@ -767,7 +1111,8 @@ function MainFrame:Toggle()
 end
 
 function MainFrame:SetStatus(msg)
-  self.status:SetText(messageText or "")
+  if not self.status then return end
+  self.status:SetText(msg or "")
 end
 
 function MainFrame:OnNextCustom()
@@ -813,9 +1158,16 @@ function MainFrame:OnNextCustom()
     icon = baseIcon,
   }
 
+  if self.editingId and self._editingSeries then
+    payload.series = CopyTableShallow(self._editingSeries)
+  end
+
   self._pendingCustomPayload = payload
   local popup = EnsureDescriptionPopup(self)
   popup._eventqPayload = payload
+  if popup._eventqUpdateSeriesUI then
+    popup._eventqUpdateSeriesUI()
+  end
   SetDescriptionPopupIcon(popup, payload.icon)
   if popup._eventqOK then
     popup._eventqOK:SetText(self.editingId and "Save" or "Add")
@@ -836,9 +1188,101 @@ function MainFrame:OnNextCustom()
     end
   end
 
+  if self.seriesViewer and self.seriesViewer.frame and self.seriesViewer.frame.Hide then
+    self.seriesViewer.frame:Hide()
+  end
+
   popup:Show()
+  if self.seriesViewer and self.seriesViewer.frame and self.seriesViewer.frame.Hide then
+    self.seriesViewer.frame:Hide()
+  end
   if popup._eventqEditBox and popup._eventqEditBox.SetFocus then
     popup._eventqEditBox:SetFocus()
+  end
+end
+
+function MainFrame:_NormalizeSeriesPayload(payload)
+  if type(payload) ~= "table" then return end
+
+  local series = payload.series
+  if type(series) ~= "table" or series.enabled ~= true then
+    payload.series = nil
+    return
+  end
+
+  local frequency = tostring(series.frequency or SERIES_FREQ.DAILY):upper()
+  series.frequency = frequency
+
+  if frequency == SERIES_FREQ.MINUTELY then
+    local minutes = tonumber(series.intervalMinutes) or 30
+    minutes = math.max(1, math.floor(minutes))
+    series.intervalMinutes = minutes
+    series.intervalHours = nil
+    series.weekOfMonth = nil
+    series.weekday = nil
+    series.month = nil
+    series.day = nil
+  elseif frequency == SERIES_FREQ.HOURLY then
+    local hours = tonumber(series.intervalHours) or 1
+    hours = math.max(1, math.floor(hours))
+    series.intervalHours = hours
+    series.intervalMinutes = nil
+    series.weekOfMonth = nil
+    series.weekday = nil
+    series.month = nil
+    series.day = nil
+  elseif frequency == SERIES_FREQ.DAILY then
+    series.intervalMinutes = nil
+    series.intervalHours = nil
+    series.weekOfMonth = nil
+    series.weekday = nil
+    series.month = nil
+    series.day = nil
+  elseif frequency == SERIES_FREQ.WEEKLY then
+    series.intervalMinutes = nil
+    series.intervalHours = nil
+    series.weekOfMonth = nil
+    series.weekday = nil
+    series.month = nil
+    series.day = nil
+  elseif frequency == SERIES_FREQ.MONTHLY then
+    series.intervalMinutes = nil
+    series.intervalHours = nil
+    series.month = nil
+    series.day = nil
+
+    local startEpoch = payload.startEpoch or time()
+    series.weekOfMonth = tonumber(series.weekOfMonth) or self.dateUtil:GetWeekOfMonth(startEpoch)
+    series.weekday = tonumber(series.weekday) or self.dateUtil:GetWeekday(startEpoch)
+    series.weekOfMonth = math.max(1, math.min(5, math.floor(series.weekOfMonth)))
+    series.weekday = math.max(1, math.min(7, math.floor(series.weekday)))
+
+    -- Auto-correct the start date to match the chosen "Nth weekday" slot.
+    local correctedStart = self.dateUtil:CorrectToNthWeekdayInMonth(startEpoch, series.weekOfMonth, series.weekday)
+    if correctedStart and correctedStart ~= startEpoch then
+      local duration = (payload.endEpoch or correctedStart) - startEpoch
+      if duration < 60 then duration = 60 end
+      payload.startEpoch = correctedStart
+      payload.endEpoch = correctedStart + duration
+    end
+  elseif frequency == SERIES_FREQ.ANNUALLY then
+    series.intervalMinutes = nil
+    series.intervalHours = nil
+    series.weekOfMonth = nil
+    series.weekday = nil
+
+    local parts = date("*t", payload.startEpoch or time())
+    series.month = tonumber(series.month) or parts.month
+    series.day = tonumber(series.day) or parts.day
+  else
+    -- Unknown value: fall back safely.
+    series.frequency = SERIES_FREQ.DAILY
+    series.intervalMinutes = nil
+    series.intervalHours = nil
+    series.weekOfMonth = nil
+    series.weekday = nil
+    series.month = nil
+    series.day = nil
   end
 end
 
@@ -864,11 +1308,15 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
 
   payload.icon = payload.icon or popup._eventqSelectedIcon or DEFAULT_CUSTOM_ICON
 
+  -- Finalize/clean series settings (if enabled), including any required date correction.
+  self:_NormalizeSeriesPayload(payload)
+
   if self.editingId then
     self.app:ReplaceCustomEvent(self.editingId, payload)
     self.editingId = nil
     self._editingDescSeed = nil
     self._editingIcon = nil
+    self._editingSeries = nil
     if self.edTitle then self.edTitle:SetText("Add Custom Event") end
     if self.addBtn then self.addBtn:SetText("Next") end
     self:ShowTransientMessage("Updated.", 0.4, 1, 0.4, 4)
@@ -879,12 +1327,18 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
 
   self._pendingCustomPayload = nil
   popup._eventqPayload = nil
+  if popup._eventqUpdateSeriesUI then
+    popup._eventqUpdateSeriesUI()
+  end
   if popup._eventqEditBox then
     popup._eventqEditBox:SetText("")
     popup._eventqEditBox:ClearFocus()
   end
   popup._eventqSelectedIcon = nil
   SetDescriptionPopupIcon(popup, DEFAULT_CUSTOM_ICON)
+  if popup._eventqUpdateSeriesUI then
+    popup._eventqUpdateSeriesUI()
+  end
   popup:Hide()
 
   -- Clear inputs back to hint after action (same as the previous single-step flow)

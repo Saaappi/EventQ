@@ -4,23 +4,41 @@ local CustomStore = ns.Class:Create("CustomStore")
 
 local DEFAULT_ICON = "Interface/Icons/INV_Misc_Note_01"
 
+local function CopyTableShallow(source)
+  if type(source) ~= "table" then return nil end
+  local out = {}
+  for k, v in pairs(source) do
+    out[k] = v
+  end
+  return out
+end
+
+function CustomStore:_NextId()
+  local nextId = tonumber(self.db._nextCustomId) or 1
+  self.db._nextCustomId = nextId + 1
+  return ("custom:%d"):format(nextId)
+end
+
 function CustomStore:Constructor(db)
   self.db = db
   self.db.customEvents = self.db.customEvents or {}
+  -- Per-profile monotonically increasing id counter for stable ids.
+  self.db._nextCustomId = tonumber(self.db._nextCustomId) or 1
 end
 
----@param e table {title,startEpoch,endEpoch,icon?,description?}
+---@param e table {title,startEpoch,endEpoch,icon?,description?,series?}
 ---@return string id
 function CustomStore:Add(event)
-  -- Stable per-event identifier used as a key in SavedVariables/UI state.
-  local id = ("custom:%d:%d:%s"):format(event.startEpoch, event.endEpoch, event.title)
+  local id = (event and event.id) or self:_NextId()
   table.insert(self.db.customEvents, {
     id = id,
-    title = event.title,
-    description = event.description,
-    startEpoch = event.startEpoch,
-    endEpoch = event.endEpoch,
-    icon = event.icon or DEFAULT_ICON,
+    title = event and event.title or nil,
+    description = event and event.description or nil,
+    startEpoch = event and event.startEpoch or nil,
+    endEpoch = event and event.endEpoch or nil,
+    icon = (event and event.icon) or DEFAULT_ICON,
+    -- series config is intentionally shallow-copied to avoid accidental shared mutations
+    series = CopyTableShallow(event and event.series),
   })
   return id
 end
@@ -28,6 +46,30 @@ end
 ---@return table
 function CustomStore:GetAll()
   return self.db.customEvents
+end
+
+---@param id string
+---@return table|nil
+function CustomStore:GetById(id)
+  if not id then return nil end
+  for _, customEvent in ipairs(self.db.customEvents or {}) do
+    if customEvent and customEvent.id == id then
+      return customEvent
+    end
+  end
+  return nil
+end
+
+---@param id string
+---@return table|nil
+function CustomStore:GetById(id)
+  if not id then return nil end
+  for _, e in ipairs(self.db.customEvents or {}) do
+    if e and e.id == id then
+      return e
+    end
+  end
+  return nil
 end
 
 ---@param id string
@@ -47,7 +89,23 @@ end
 ---@param e table
 ---@return string newId
 function CustomStore:Replace(oldId, event)
-  self:Remove(oldId)
+  if oldId then
+    local existing = self:GetById(oldId)
+    if existing then
+      existing.title = event and event.title or existing.title
+      existing.description = event and event.description or nil
+      existing.startEpoch = event and event.startEpoch or existing.startEpoch
+      existing.endEpoch = event and event.endEpoch or existing.endEpoch
+      existing.icon = (event and event.icon) or existing.icon or DEFAULT_ICON
+      existing.series = CopyTableShallow(event and event.series)
+      return existing.id
+    end
+  end
+
+  -- Preserve caller-supplied ids if present.
+  if event and oldId and not event.id then
+    event.id = oldId
+  end
   return self:Add(event)
 end
 

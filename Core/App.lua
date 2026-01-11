@@ -33,6 +33,125 @@ local function ApplyOverrideToEvent(event, override)
   event._eventqIconOverride = true
 end
 
+-- -----------------------------------------------------------------------------
+-- Custom series helpers
+-- -----------------------------------------------------------------------------
+
+local SERIES_FREQ = {
+  MINUTELY = "MINUTELY",
+  HOURLY = "HOURLY",
+  DAILY = "DAILY",
+  WEEKLY = "WEEKLY",
+  MONTHLY = "MONTHLY",
+  ANNUALLY = "ANNUALLY",
+}
+
+local function IsSeriesEnabled(series)
+  return type(series) == "table" and series.enabled == true and type(series.frequency) == "string"
+end
+
+local function NormalizeSeriesConfig(dateUtil, series, startEpoch)
+  if type(series) ~= "table" then return nil end
+
+  local frequency = tostring(series.frequency or SERIES_FREQ.DAILY):upper()
+  local normalized = {
+    enabled = not not series.enabled,
+    frequency = frequency,
+  }
+
+  if frequency == SERIES_FREQ.MINUTELY then
+    local intervalMinutes = tonumber(series.intervalMinutes) or 30
+    if intervalMinutes < 1 then intervalMinutes = 1 end
+    normalized.intervalMinutes = intervalMinutes
+  elseif frequency == SERIES_FREQ.HOURLY then
+    local intervalHours = tonumber(series.intervalHours) or 1
+    if intervalHours < 1 then intervalHours = 1 end
+    normalized.intervalHours = intervalHours
+  elseif frequency == SERIES_FREQ.MONTHLY then
+    local weekday = tonumber(series.weekday)
+    local weekOfMonth = tonumber(series.weekOfMonth)
+    if not weekday or weekday < 1 or weekday > 7 then
+      weekday = dateUtil and dateUtil:GetWeekday(startEpoch) or 1
+    end
+    if not weekOfMonth or weekOfMonth < 1 or weekOfMonth > 5 then
+      weekOfMonth = dateUtil and dateUtil:GetWeekOfMonth(startEpoch) or 1
+    end
+    normalized.weekday = weekday
+    normalized.weekOfMonth = weekOfMonth
+  elseif frequency == SERIES_FREQ.ANNUALLY then
+    local parts = date("*t", startEpoch or time())
+    normalized.month = tonumber(series.month) or parts.month
+    normalized.day = tonumber(series.day) or parts.day
+  end
+
+  return normalized
+end
+
+local function NextSeriesStart(dateUtil, startEpoch, series)
+  if not (dateUtil and IsSeriesEnabled(series)) then return startEpoch end
+  local frequency = series.frequency
+  if frequency == SERIES_FREQ.MINUTELY then
+    return dateUtil:AddMinutes(startEpoch, series.intervalMinutes or 30)
+  elseif frequency == SERIES_FREQ.HOURLY then
+    return dateUtil:AddHours(startEpoch, series.intervalHours or 1)
+  elseif frequency == SERIES_FREQ.DAILY then
+    return dateUtil:AddDays(startEpoch, 1)
+  elseif frequency == SERIES_FREQ.WEEKLY then
+    return dateUtil:AddWeeks(startEpoch, 1)
+  elseif frequency == SERIES_FREQ.MONTHLY then
+    return dateUtil:AddMonthsByNthWeekday(startEpoch, 1, series.weekOfMonth or 1, series.weekday or 1)
+  elseif frequency == SERIES_FREQ.ANNUALLY then
+    return dateUtil:AddYearsByMonthDay(startEpoch, 1, series.month, series.day)
+  end
+  return dateUtil:AddDays(startEpoch, 1)
+end
+
+local function CorrectSeriesStartIfNeeded(dateUtil, startEpoch, series)
+  if not (dateUtil and IsSeriesEnabled(series)) then return startEpoch end
+  if series.frequency == SERIES_FREQ.MONTHLY then
+    return dateUtil:CorrectToNthWeekdayInMonth(startEpoch, series.weekOfMonth or 1, series.weekday or 1)
+  end
+  return startEpoch
+end
+
+local function AdvanceSeriesInPlace(dateUtil, dbEvent, nowEpoch)
+  if not (dbEvent and IsSeriesEnabled(dbEvent.series)) then return false end
+
+  local startEpoch = tonumber(dbEvent.startEpoch)
+  local endEpoch = tonumber(dbEvent.endEpoch)
+  if not (startEpoch and endEpoch) then return false end
+
+  local duration = endEpoch - startEpoch
+  if duration <= 0 then
+    -- Defensive: normalize to 1 hour.
+    duration = 3600
+    endEpoch = startEpoch + duration
+  end
+
+  local series = dbEvent.series
+  startEpoch = CorrectSeriesStartIfNeeded(dateUtil, startEpoch, series)
+  endEpoch = startEpoch + duration
+
+  local changed = (startEpoch ~= dbEvent.startEpoch) or (endEpoch ~= dbEvent.endEpoch)
+
+  local safety = 0
+  while (nowEpoch or 0) > endEpoch do
+    safety = safety + 1
+    if safety > 2000 then
+      break
+    end
+    startEpoch = NextSeriesStart(dateUtil, startEpoch, series)
+    endEpoch = startEpoch + duration
+    changed = true
+  end
+
+  if changed then
+    dbEvent.startEpoch = startEpoch
+    dbEvent.endEpoch = endEpoch
+  end
+  return changed
+end
+
 local function SortOngoing(leftEvent, rightEvent)
   if leftEvent.endEpoch == rightEvent.endEpoch then
     return (leftEvent.title or "") < (rightEvent.title or "")
@@ -213,6 +332,16 @@ function App:RefreshAll()
   end
 
   for _, e in ipairs(custom) do
+    if e and IsSeriesEnabled(e.series) then
+      -- Keep series config well-formed and advance the root forward so the UI only
+      -- ever shows the next/active occurrence.
+      local normalized = NormalizeSeriesConfig(self.dateUtil, e.series, e.startEpoch)
+      if normalized then
+        e.series = normalized
+      end
+      AdvanceSeriesInPlace(self.dateUtil, e, now)
+    end
+
     local desc = e.description
     if type(desc) ~= "string" then
       desc = nil
@@ -226,6 +355,7 @@ function App:RefreshAll()
       end
     end
 
+    local isSeries = e and IsSeriesEnabled(e.series)
     local customEvent = {
       id = e.id,
       eventID = nil,
@@ -236,8 +366,11 @@ function App:RefreshAll()
       icon = e.icon,
       source = "Custom",
       isCustom = true,
+      isSeriesRoot = isSeries,
+      series = isSeries and e.series or nil,
+      seriesRootId = isSeries and e.id or nil,
     }
-    ApplyIconOverrides(customEvent)
+    ApplyIconOverrides(self, customEvent)
     all[#all + 1] = customEvent
   end
 
@@ -357,6 +490,55 @@ function App:ReplaceCustomEvent(oldId, event)
     end
   end
   self:RefreshAll()
+end
+
+---@param series table
+---@return integer
+function App:GetSeriesViewCount(series)
+  if not IsSeriesEnabled(series) then return 0 end
+  local frequency = series.frequency
+  if frequency == SERIES_FREQ.MINUTELY then return 6 end
+  if frequency == SERIES_FREQ.HOURLY then return 6 end
+  if frequency == SERIES_FREQ.DAILY then return 7 end
+  if frequency == SERIES_FREQ.WEEKLY then return 6 end
+  if frequency == SERIES_FREQ.MONTHLY then return 6 end
+  if frequency == SERIES_FREQ.ANNUALLY then return 1 end
+  return 6
+end
+
+---@param rootId string
+---@param count integer|nil
+---@return table[] occurrences {startEpoch,endEpoch}
+function App:GetSeriesOccurrences(rootId, count)
+  if not rootId then return {} end
+  local dbEvent = (self.customStore and self.customStore.GetById) and self.customStore:GetById(rootId) or nil
+  if not (dbEvent and IsSeriesEnabled(dbEvent.series)) then return {} end
+
+  local normalized = NormalizeSeriesConfig(self.dateUtil, dbEvent.series, dbEvent.startEpoch)
+  if normalized then
+    dbEvent.series = normalized
+  end
+  AdvanceSeriesInPlace(self.dateUtil, dbEvent, time())
+
+  local startEpoch = tonumber(dbEvent.startEpoch)
+  local endEpoch = tonumber(dbEvent.endEpoch)
+  if not (startEpoch and endEpoch) then return {} end
+
+  local duration = endEpoch - startEpoch
+  if duration <= 0 then duration = 3600 end
+
+  local series = dbEvent.series
+  local maxCount = tonumber(count) or self:GetSeriesViewCount(series)
+  if maxCount < 1 then return {} end
+
+  local occurrences = {}
+  local occStart = CorrectSeriesStartIfNeeded(self.dateUtil, startEpoch, series)
+  for _ = 1, maxCount do
+    local occEnd = occStart + duration
+    occurrences[#occurrences + 1] = { startEpoch = occStart, endEpoch = occEnd }
+    occStart = NextSeriesStart(self.dateUtil, occStart, series)
+  end
+  return occurrences
 end
 
 function App:_PruneNotified(now)
