@@ -8,6 +8,8 @@ end
 -- SavedVariables are guaranteed to be populated by the time ADDON_LOADED fires for this addon.
 -- We intentionally *delay* constructing the App until then to ensure we bind to the persisted table.
 local app
+local pendingCalendarUpdate = false
+local didWarmCalendar = false
 
 local addonFrame = CreateFrame("Frame")
 addonFrame:RegisterEvent("ADDON_LOADED")
@@ -64,15 +66,36 @@ local function EnsureApp()
     ns.Settings:Init(db)
   end
 
+  if pendingCalendarUpdate then
+    pendingCalendarUpdate = false
+    app:RefreshAll()
+  end
+
   return app
 end
 
-local function delayedCalendarRequest()
-  C_Timer.After(5, function()
-    if app then
+local function WarmCalendar()
+  if not app then return end
+
+  app:RequestCalendar()
+  app:RefreshAll()
+
+  -- Calendar initialization can be slow (or race with early CALENDAR_UPDATE_* events).
+  -- Retry a few times shortly after login to ensure the list is populated.
+  local retryDelaysSeconds = { 1, 3, 6 }
+  for delayIndex, delaySeconds in ipairs(retryDelaysSeconds) do
+    C_Timer.After(delaySeconds, function()
+      if not app then return end
       app:RequestCalendar()
-    end
-  end)
+      app:RefreshAll()
+    end)
+  end
+end
+
+local function WarmCalendarOnce()
+  if didWarmCalendar then return end
+  didWarmCalendar = true
+  WarmCalendar()
 end
 
 addonFrame:SetScript("OnEvent", function(_, event, arg1)
@@ -109,13 +132,17 @@ addonFrame:SetScript("OnEvent", function(_, event, arg1)
       app:ToggleUI()
     end
 
-    delayedCalendarRequest()
+    WarmCalendarOnce()
 
     C_Timer.NewTicker(60, function()
       if app then app:RefreshAll() end
     end)
 
   elseif event == "CALENDAR_UPDATE_EVENT_LIST" then
-    if app then app:RefreshAll() end
+    if app then
+      app:RefreshAll()
+    else
+      pendingCalendarUpdate = true
+    end
   end
 end)

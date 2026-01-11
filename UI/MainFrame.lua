@@ -1039,7 +1039,14 @@ end
 mainFrame:Hide()
 
   mainFrame:SetScript("OnShow", function()
-    self:UpdateLists()
+    -- Calendar APIs can return empty results until the calendar has been opened and populated.
+    -- Request a refresh on open so the lists populate reliably.
+    if self.app and self.app.RequestCalendar then
+      self.app:RequestCalendar()
+      self.app:RefreshAll()
+    else
+      self:UpdateLists()
+    end
   end)
 
   mainFrame:SetScript("OnHide", function()

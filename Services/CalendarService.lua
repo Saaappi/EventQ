@@ -55,6 +55,7 @@ function CalendarService:Constructor(logger, dateUtil)
   -- eventID -> { icon=fileID, textureIndex=number } | false
   self._iconCache = {}
   self._creatorCache = {} -- eventID -> string | false
+  self._lastOpenCalendarEpoch = nil
 
   -- Calendar APIs are stateful (OpenEvent -> GetEventInfo) and can be relatively expensive.
   -- We cache successful lookups (and explicit "no data" results as false) to keep refreshes fast.
@@ -379,12 +380,20 @@ function CalendarService:EnhanceEventIcon(event)
 end
 
 function CalendarService:CollectWindow(maxDaysAhead)
+  local nowEpoch = time()
+  -- Calendar data is loaded lazily and the APIs are stateful.
+  -- Ensure the calendar is opened before querying day events; throttle to avoid spam.
+  if not self._lastOpenCalendarEpoch or (nowEpoch - self._lastOpenCalendarEpoch) > 30 then
+    C_Calendar.OpenCalendar()
+    self._lastOpenCalendarEpoch = nowEpoch
+  end
+
   local CalendarAPI = C_Calendar
   local GetNumDayEvents = CalendarAPI.GetNumDayEvents
   local GetDayEvent = CalendarAPI.GetDayEvent
   local GetHolidayInfo = CalendarAPI.GetHolidayInfo
   local dateUtil = self.dateUtil
-  local now = time()
+  local now = nowEpoch
   local startDayEpoch = time(date("*t", now))
   local endEpoch = now + maxDaysAhead * 86400
 
