@@ -23,6 +23,31 @@ local function SortByStartThenTitle(leftEvent, rightEvent)
   return leftEvent.startEpoch < rightEvent.startEpoch
 end
 
+-- Player/guild/community calendar events only have a start time; they do not carry an explicit end time.
+-- For list display and sorting, we assume they last two hours.
+local CUSTOM_CALENDAR_EVENT_DURATION_SECONDS = 2 * 60 * 60
+
+local function ComputeEndEpoch(startEpoch, endTime, calendarType, dateUtil)
+  if not startEpoch then return nil end
+
+  local endEpoch = nil
+  if endTime then
+    endEpoch = dateUtil:CalendarTimeToEpoch(endTime)
+  end
+
+  if not endEpoch or endEpoch <= startEpoch then
+    -- In practice this is most common for PLAYER/GUILD_EVENT/COMMUNITY_EVENT.
+    if calendarType == "PLAYER" or calendarType == "GUILD_EVENT" or calendarType == "COMMUNITY_EVENT" then
+      endEpoch = startEpoch + CUSTOM_CALENDAR_EVENT_DURATION_SECONDS
+    else
+      -- Defensive fallback: still ensure the event has a sane end time.
+      endEpoch = startEpoch + CUSTOM_CALENDAR_EVENT_DURATION_SECONDS
+    end
+  end
+
+  return endEpoch
+end
+
 function CalendarService:Constructor(logger, dateUtil)
   self.log = logger
   self.dateUtil = dateUtil
@@ -361,26 +386,31 @@ function CalendarService:CollectWindow(maxDaysAhead)
     local monthOffset, monthDay = dateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
 
     local numDayEvents = GetNumDayEvents(monthOffset, monthDay)
-    for i = 1, numDayEvents do
-      local dayEvent = GetDayEvent(monthOffset, monthDay, i)
-      if dayEvent and dayEvent.startTime and dayEvent.endTime then
+    for eventIndex = 1, numDayEvents do
+      local dayEvent = GetDayEvent(monthOffset, monthDay, eventIndex)
+      if dayEvent and dayEvent.startTime then
         local startEpoch = dateUtil:CalendarTimeToEpoch(dayEvent.startTime)
-        local endEpoch = dateUtil:CalendarTimeToEpoch(dayEvent.endTime)
-
-        upsert({
-          id = dayEvent.eventID or mkKey(dayEvent.title, startEpoch, endEpoch),
-          eventID = dayEvent.eventID,
-          title = dayEvent.title,
-          description = nil, -- fetched lazily on tooltip
-          startEpoch = startEpoch,
-          endEpoch = endEpoch,
-          icon = dayEvent.iconTexture,
-          iconIsCalendar = true,
-          source = "Calendar (" .. (dayEvent.calendarType or "UNKNOWN") .. ")",
-          calendarType = dayEvent.calendarType,
-          monthOffset = monthOffset,
-          monthDay = monthDay,
-        })
+        if startEpoch then
+          local endEpoch = ComputeEndEpoch(startEpoch, dayEvent.endTime, dayEvent.calendarType, dateUtil)
+          if endEpoch then
+            local isEndAssumed = (not dayEvent.endTime)
+            upsert({
+              id = dayEvent.eventID or mkKey(dayEvent.title, startEpoch, endEpoch),
+              eventID = dayEvent.eventID,
+              title = dayEvent.title,
+              description = nil, -- fetched lazily on tooltip
+              startEpoch = startEpoch,
+              endEpoch = endEpoch,
+              endIsAssumed = isEndAssumed or nil,
+              icon = dayEvent.iconTexture,
+              iconIsCalendar = true,
+              source = "Calendar (" .. (dayEvent.calendarType or "UNKNOWN") .. ")",
+              calendarType = dayEvent.calendarType,
+              monthOffset = monthOffset,
+              monthDay = monthDay,
+            })
+          end
+        end
       end
     end
 
