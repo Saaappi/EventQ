@@ -57,11 +57,37 @@ local function IsSeriesWindowBoundedFrequency(series)
   return freq == SERIES_FREQ.MINUTELY or freq == SERIES_FREQ.HOURLY or freq == SERIES_FREQ.DAILY
 end
 
+local function ClampInteger(value, minValue, maxValue, fallback)
+  local numberValue = tonumber(value)
+  if not numberValue then
+    return fallback
+  end
 
-local function NormalizeSeriesConfig(dateUtil, series, startEpoch)
+  numberValue = math.floor(numberValue)
+  if numberValue < minValue then
+    return minValue
+  end
+  if numberValue > maxValue then
+    return maxValue
+  end
+  return numberValue
+end
+
+
+local function NormalizeSeriesConfig(_dateUtil, series, startEpoch)
   if type(series) ~= "table" then return nil end
 
   local frequency = tostring(series.frequency or SERIES_FREQ.DAILY):upper()
+  if frequency ~= SERIES_FREQ.MINUTELY
+    and frequency ~= SERIES_FREQ.HOURLY
+    and frequency ~= SERIES_FREQ.DAILY
+    and frequency ~= SERIES_FREQ.WEEKLY
+    and frequency ~= SERIES_FREQ.MONTHLY
+    and frequency ~= SERIES_FREQ.ANNUALLY
+  then
+    frequency = SERIES_FREQ.DAILY
+  end
+
   local normalized = {
     enabled = not not series.enabled,
     frequency = frequency,
@@ -76,26 +102,12 @@ local function NormalizeSeriesConfig(dateUtil, series, startEpoch)
     if intervalHours < 1 then intervalHours = 1 end
     normalized.intervalHours = intervalHours
   elseif frequency == SERIES_FREQ.MONTHLY then
-    local startParts = date("*t", firstStartEpoch)
-    local targetParts = date("*t", targetEpoch)
-    local startYear = startParts.year or 1970
-    local startMonth = startParts.month or 1
-    local targetYear = targetParts.year or 1970
-    local targetMonth = targetParts.month or 1
-    local monthsDiff = (targetYear - startYear) * 12 + (targetMonth - startMonth)
-    if monthsDiff < 0 then monthsDiff = 0 end
-
-    local weekOfMonth = series.weekOfMonth or 1
-    local weekday = series.weekday or 1
-    local candidate = dateUtil:AddMonthsByNthWeekday(firstStartEpoch, monthsDiff, weekOfMonth, weekday)
-    if candidate < targetEpoch then
-      candidate = dateUtil:AddMonthsByNthWeekday(firstStartEpoch, monthsDiff + 1, weekOfMonth, weekday)
-    end
-    return candidate
+    normalized.weekOfMonth = ClampInteger(series.weekOfMonth, 1, 5, 1)
+    normalized.weekday = ClampInteger(series.weekday, 1, 7, 1)
   elseif frequency == SERIES_FREQ.ANNUALLY then
     local parts = date("*t", startEpoch or time())
-    normalized.month = tonumber(series.month) or parts.month
-    normalized.day = tonumber(series.day) or parts.day
+    normalized.month = ClampInteger(series.month, 1, 12, parts.month or 1)
+    normalized.day = ClampInteger(series.day, 1, 31, parts.day or 1)
   end
 
   return normalized
