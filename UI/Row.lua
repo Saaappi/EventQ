@@ -7,6 +7,40 @@ local QUEUEABLE_TITLE_R, QUEUEABLE_TITLE_G, QUEUEABLE_TITLE_B = 0.4, 0.8, 1.0 --
 local DEFAULT_TITLE_R, DEFAULT_TITLE_G, DEFAULT_TITLE_B = 1.0, 0.82, 0.0       -- GameFontNormal-like gold
 local URGENCY_NOTE_R, URGENCY_NOTE_G, URGENCY_NOTE_B = 0xFF / 255, 0x2D / 255, 0x2D / 255 -- #FF2D2D
 
+
+local _G = _G
+local strtrim = _G.strtrim or function(inputText)
+  return (inputText and inputText:match("^%s*(.-)%s*$")) or ""
+end
+
+local function isBlank(inputText)
+  return (not inputText) or strtrim(inputText) == ""
+end
+
+local INVITE_REQUEST_WINDOW_SECONDS = 10 * 60
+local INVITE_REQUEST_MESSAGE = "Please invite me!"
+
+local function IsInviteRequestWindowOpen(eventData, nowEpoch)
+  if not (eventData and eventData.startEpoch) then return false end
+  nowEpoch = nowEpoch or time()
+  return nowEpoch >= eventData.startEpoch and nowEpoch <= (eventData.startEpoch + INVITE_REQUEST_WINDOW_SECONDS)
+end
+
+local function IsSelfName(fullName)
+  if isBlank(fullName) then return false end
+  local playerName, playerRealm = _G.UnitFullName and _G.UnitFullName("player") or nil
+  if not playerName then return false end
+  local targetName = (_G.Ambiguate and _G.Ambiguate(fullName, "short")) or fullName
+  if targetName ~= playerName then return false end
+
+  local targetRealm = fullName:match("%-(.+)$")
+  if targetRealm and playerRealm and targetRealm ~= playerRealm then
+    return false
+  end
+
+  return true
+end
+
 local ONE_DAY_SECONDS = 24 * 60 * 60
 
 local CONFIRM_REMOVE_DIALOG_KEY = "EVENTQ_CONFIRM_REMOVE_CUSTOM_EVENT"
@@ -315,8 +349,11 @@ function Row:Constructor(frame, app)
         GameTooltip:AddLine("This event does not have a description or one could not be found.", 1, 0.55, 0, true)
       end
 
-      -- Tooltip queue hint only for ONGOING queueable events.
-      if IsQueueable(frame, data) then
+      -- Tooltip hint (context-specific).
+      if data.calendarType == "PLAYER" and IsInviteRequestWindowOpen(data) then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Left-click: request invite", 0.2, 1, 0.2, true)
+      elseif IsQueueable(frame, data) then
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Left-click: queue for event", 0.2, 1, 0.2, true)
       end
@@ -347,8 +384,40 @@ function Row:Constructor(frame, app)
         local data = frame._eventqData
         -- Only allow queueing from the ONGOING section.
         if not (data and IsOngoingEvent(data)) then return end
+        -- Calendar player events: allow quick invite request whisper for a short window after start.
+        if data.calendarType == "PLAYER" and IsInviteRequestWindowOpen(data) then
+          local nowEpoch = time()
+          if frame._eventqLastInviteWhisperEpoch and (nowEpoch - frame._eventqLastInviteWhisperEpoch) < 1 then
+            return
+          end
+          frame._eventqLastInviteWhisperEpoch = nowEpoch
+
+          local whisperTarget = nil
+          if self.app and self.app.calendar and data.eventID then
+            whisperTarget = self.app.calendar:TryFetchCreator(data.eventID, data.monthOffset, data.monthDay)
+          end
+          if isBlank(whisperTarget) then
+            whisperTarget = data.invitedBy
+          end
+          whisperTarget = (not isBlank(whisperTarget)) and strtrim(whisperTarget) or nil
+
+          if isBlank(whisperTarget) then
+            UIErrorsFrame:AddMessage("Couldn't determine who to whisper for an invite.", 1, 0.1, 0.1)
+            return
+          end
+          if IsSelfName(whisperTarget) then
+            UIErrorsFrame:AddMessage("You are the event leader.", 1, 0.82, 0)
+            return
+          end
+
+          SendChatMessage(INVITE_REQUEST_MESSAGE, "WHISPER", nil, whisperTarget)
+          UIErrorsFrame:AddMessage("Invite request sent to " .. whisperTarget .. ".", 0.2, 1, 0.2)
+          return
+        end
 
         -- PvE (LFD-style queue)
+
+
         if self.LfgDungeonID then
           if AnyRolesSelected("PVE") then
             TryQueueLFD(self.LfgDungeonID)

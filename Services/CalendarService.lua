@@ -54,6 +54,7 @@ function CalendarService:Constructor(logger, dateUtil)
   self._descCache = {} -- eventID -> string | false
   -- eventID -> { icon=fileID, textureIndex=number } | false
   self._iconCache = {}
+  self._creatorCache = {} -- eventID -> string | false
 
   -- Calendar APIs are stateful (OpenEvent -> GetEventInfo) and can be relatively expensive.
   -- We cache successful lookups (and explicit "no data" results as false) to keep refreshes fast.
@@ -67,6 +68,7 @@ end
 function CalendarService:RequestRefresh()
   self._descCache = {} -- descriptions can change as calendar data loads
   self._iconCache = {}
+  self._creatorCache = {}
   C_Calendar.OpenCalendar()
 end
 
@@ -234,6 +236,46 @@ function CalendarService:TryFetchDescription(eventID, monthOffset, monthDay, tit
 
   -- If we successfully opened the event but it has no description, cache as false
   self._descCache[key] = false
+  return nil
+end
+
+
+function CalendarService:TryFetchCreator(eventID, monthOffset, monthDay)
+  if not eventID then return nil end
+  local key = tostring(eventID)
+
+  local cached = self._creatorCache[key]
+  if cached ~= nil then
+    return cached or nil
+  end
+
+  -- Resolve event index from eventID.
+  local idx = C_Calendar.GetEventIndexInfo(eventID, monthOffset, monthDay)
+  if not idx then
+    -- Fallback: scan the day list for the matching eventID.
+    idx = findEventIndexByScan(eventID, monthOffset, monthDay)
+    if not idx then
+      -- Don't cache failure here; calendar data may not be loaded yet.
+      return nil
+    end
+  end
+
+  -- OpenEvent is required before GetEventInfo (stateful API).
+  local success = C_Calendar.OpenEvent(idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if success == false then
+    -- Don't cache; could be transient.
+    return nil
+  end
+
+  local info = C_Calendar.GetEventInfo()
+  local creator = info and info.creator or nil
+  if not isBlank(creator) then
+    creator = strtrim(creator)
+    self._creatorCache[key] = creator
+    return creator
+  end
+
+  self._creatorCache[key] = false
   return nil
 end
 
@@ -406,6 +448,7 @@ function CalendarService:CollectWindow(maxDaysAhead)
               iconIsCalendar = true,
               source = "Calendar (" .. (dayEvent.calendarType or "UNKNOWN") .. ")",
               calendarType = dayEvent.calendarType,
+              invitedBy = (not isBlank(dayEvent.invitedBy)) and strtrim(dayEvent.invitedBy) or nil,
               monthOffset = monthOffset,
               monthDay = monthDay,
             })
