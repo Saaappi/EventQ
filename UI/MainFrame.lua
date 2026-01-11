@@ -9,13 +9,7 @@ local DEFAULT_CUSTOM_ICON = "Interface/Icons/INV_Misc_Note_01"
 
 local ICON_TEXCOORDS = { 0.08, 0.92, 0.08, 0.92 }
 
-local HUD_ICON_INSET = 4
-local HUD_HOVER_ALPHA = 0.85
-local HUD_CLICK_LAYER_SPECS = {
-  { alpha = 1.0, extent = 0 },
-  { alpha = 0.75, extent = 0 },
-  { alpha = 0.55, extent = 0 },
-}
+local ICON_INSET = 3
 local function SetCroppedIconTexture(textureObj, texturePathOrId)
   if not textureObj or not textureObj.SetTexture then return end
   textureObj:SetTexture(texturePathOrId or DEFAULT_CUSTOM_ICON)
@@ -25,178 +19,15 @@ local function SetCroppedIconTexture(textureObj, texturePathOrId)
 end
 
 
-local function SetupHudActionBarIconButton(iconButton)
-  if not iconButton then return nil end
+local function SetupActionButtonIconButton(iconButton)
+  if not iconButton or not iconButton.icon then return nil end
 
-  -- Some templates implement the icon as a button state texture (e.g., NormalTexture). We hide template
-  -- state textures and instead create a dedicated icon region so our visuals are stable.
-  local function HideTextureRegion(region)
-    if not region then return end
-    if region.Hide then region:Hide() end
-  end
-
-  if iconButton.GetNormalTexture then HideTextureRegion(iconButton:GetNormalTexture()) end
-  if iconButton.GetPushedTexture then HideTextureRegion(iconButton:GetPushedTexture()) end
-  if iconButton.GetCheckedTexture then HideTextureRegion(iconButton:GetCheckedTexture()) end
-  if iconButton.GetDisabledTexture then HideTextureRegion(iconButton:GetDisabledTexture()) end
-  if iconButton.GetHighlightTexture then HideTextureRegion(iconButton:GetHighlightTexture()) end
-
-  -- Dedicated icon texture.
-  local iconTexture = iconButton._eventqHudIcon
-  if not iconTexture then
-    iconTexture = iconButton:CreateTexture(nil, "ARTWORK")
-    iconButton._eventqHudIcon = iconTexture
-  end
-
+  -- ActionButtonTemplate provides a dedicated icon texture via parentKey="icon".
+  -- It does not have anchors by default, so we anchor it explicitly.
+  local iconTexture = iconButton.icon
   iconTexture:ClearAllPoints()
-  iconTexture:SetPoint("TOPLEFT", iconButton, "TOPLEFT", HUD_ICON_INSET, -HUD_ICON_INSET)
-  iconTexture:SetPoint("BOTTOMRIGHT", iconButton, "BOTTOMRIGHT", -HUD_ICON_INSET, HUD_ICON_INSET)
-
-  -- Base frame.
-  local baseFrame = iconButton._eventqHudBaseFrame
-  if not baseFrame then
-    baseFrame = iconButton:CreateTexture(nil, "OVERLAY", nil, 0)
-    baseFrame:SetAtlas("UI-HUD-ActionBar-IconFrame", true)
-    iconButton._eventqHudBaseFrame = baseFrame
-  end
-  baseFrame:SetAllPoints(iconButton)
-  baseFrame:Show()
-
-  -- Hover border.
-  local hoverBorder = iconButton._eventqHudHoverBorder
-  if not hoverBorder then
-    hoverBorder = iconButton:CreateTexture(nil, "OVERLAY", nil, 1)
-    hoverBorder:SetAtlas("UI-HUD-ActionBar-IconFrame-Border", true)
-    hoverBorder:SetBlendMode("ADD")
-    hoverBorder:SetAlpha(HUD_HOVER_ALPHA)
-    hoverBorder:Hide()
-    iconButton._eventqHudHoverBorder = hoverBorder
-  end
-  hoverBorder:SetAllPoints(iconButton)
-
-  -- Click glow layers (uses the hover border atlas, stacked for brightness).
-  local clickBorders = iconButton._eventqHudClickBorders
-  if not clickBorders then
-    clickBorders = {}
-    for specIndex, spec in ipairs(HUD_CLICK_LAYER_SPECS) do
-      local clickTexture = iconButton:CreateTexture(nil, "OVERLAY", nil, 2 + specIndex)
-      clickTexture:SetAtlas("UI-HUD-ActionBar-IconFrame-Border", true)
-      clickTexture:SetBlendMode("ADD")
-      clickTexture:SetAlpha(spec.alpha)
-      clickTexture:Hide()
-      clickBorders[specIndex] = clickTexture
-    end
-    iconButton._eventqHudClickBorders = clickBorders
-  end
-
-  for specIndex, spec in ipairs(HUD_CLICK_LAYER_SPECS) do
-    local clickTexture = clickBorders[specIndex]
-    clickTexture:ClearAllPoints()
-    if spec.extent == 0 then
-      clickTexture:SetAllPoints(iconButton)
-    else
-      clickTexture:SetPoint("TOPLEFT", iconButton, "TOPLEFT", -spec.extent, spec.extent)
-      clickTexture:SetPoint("BOTTOMRIGHT", iconButton, "BOTTOMRIGHT", spec.extent, -spec.extent)
-    end
-  end
-
-  -- Script hooks (only once).
-  if not iconButton._eventqHudScriptsHooked then
-    iconButton._eventqHudScriptsHooked = true
-
-    local function RefreshHover(button)
-      local isDown = button._eventqHudIsDown
-      if isDown then
-        if button._eventqHudHoverBorder then button._eventqHudHoverBorder:Hide() end
-        return
-      end
-
-      if button.IsMouseOver and button:IsMouseOver() then
-        if button._eventqHudHoverBorder then button._eventqHudHoverBorder:Show() end
-      else
-        if button._eventqHudHoverBorder then button._eventqHudHoverBorder:Hide() end
-      end
-    end
-
-    local function OnEnter(button)
-      RefreshHover(button)
-    end
-
-    local function OnLeave(button)
-      button._eventqHudIsDown = false
-      if button._eventqHudClickBorders then
-
-        for _, clickTexture in ipairs(button._eventqHudClickBorders) do
-
-          clickTexture:Hide()
-
-        end
-
-      end
-      if button._eventqHudHoverBorder then button._eventqHudHoverBorder:Hide() end
-    end
-
-    local function OnMouseDown(button)
-      button._eventqHudIsDown = true
-      if button._eventqHudClickBorders then
-
-        for _, clickTexture in ipairs(button._eventqHudClickBorders) do
-
-          clickTexture:Show()
-
-        end
-
-      end
-      if button._eventqHudHoverBorder then button._eventqHudHoverBorder:Hide() end
-    end
-
-    local function OnMouseUp(button)
-      button._eventqHudIsDown = false
-      if button._eventqHudClickBorders then
-
-        for _, clickTexture in ipairs(button._eventqHudClickBorders) do
-
-          clickTexture:Hide()
-
-        end
-
-      end
-      RefreshHover(button)
-    end
-
-    local function OnHide(button)
-      button._eventqHudIsDown = false
-      if button._eventqHudClickBorders then
-
-        for _, clickTexture in ipairs(button._eventqHudClickBorders) do
-
-          clickTexture:Hide()
-
-        end
-
-      end
-      if button._eventqHudHoverBorder then button._eventqHudHoverBorder:Hide() end
-    end
-
-    if iconButton.HookScript then
-      iconButton:HookScript("OnEnter", OnEnter)
-      iconButton:HookScript("OnLeave", OnLeave)
-      iconButton:HookScript("OnMouseDown", OnMouseDown)
-      iconButton:HookScript("OnMouseUp", OnMouseUp)
-      iconButton:HookScript("OnHide", OnHide)
-      iconButton:HookScript("OnShow", RefreshHover)
-    else
-      -- Extremely defensive fallback; frames should support HookScript in modern clients.
-      iconButton:SetScript("OnEnter", OnEnter)
-      iconButton:SetScript("OnLeave", OnLeave)
-      iconButton:SetScript("OnMouseDown", OnMouseDown)
-      iconButton:SetScript("OnMouseUp", OnMouseUp)
-      iconButton:SetScript("OnHide", OnHide)
-      iconButton:SetScript("OnShow", RefreshHover)
-    end
-    RefreshHover(iconButton)
-  end
-
+  iconTexture:SetPoint("TOPLEFT", iconButton, "TOPLEFT", ICON_INSET, -ICON_INSET)
+  iconTexture:SetPoint("BOTTOMRIGHT", iconButton, "BOTTOMRIGHT", -ICON_INSET, ICON_INSET)
 
   return iconTexture
 end
@@ -358,23 +189,51 @@ local function EnsureDescriptionPopup(self)
   })
   local iconButton
   do
-    local ok, created = pcall(CreateFrame, "Button", nil, popupFrame, "SquareIconButtonTemplate")
+    local ok, created = pcall(CreateFrame, "CheckButton", "EventQCustomDescriptionPopupIconButton", popupFrame, "ActionButtonTemplate")
     if ok and created then
       iconButton = created
+      iconButton:SetChecked(false)
+
+      -- Ensure the standard action button slot art (not the "add row" variant) is used.
+      iconButton.bar = iconButton.bar or {}
+      iconButton.bar.hideBarArt = false
+      if iconButton.UpdateButtonArt then iconButton:UpdateButtonArt() end
+
+      -- This button is used purely as an icon picker trigger; hide ActionButton overlays we don't use.
+      if iconButton.HotKey then iconButton.HotKey:Hide() end
+      if iconButton.Count then iconButton.Count:Hide() end
+      if iconButton.Name then iconButton.Name:Hide() end
     else
+      -- Extremely defensive fallback (e.g., secure frame creation blocked in combat).
       iconButton = CreateFrame("Button", nil, popupFrame, "BackdropTemplate")
+      iconButton:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+      })
+      iconButton:SetBackdropColor(0, 0, 0, 0.35)
     end
   end
 
-  iconButton:SetSize(40, 40)
+  -- If ActionButtonTemplate is unavailable, create a minimal icon texture region.
+  if not iconButton.icon then
+    local fallbackIconTexture = iconButton:CreateTexture(nil, "ARTWORK")
+    fallbackIconTexture:SetPoint("TOPLEFT", iconButton, "TOPLEFT", ICON_INSET, -ICON_INSET)
+    fallbackIconTexture:SetPoint("BOTTOMRIGHT", iconButton, "BOTTOMRIGHT", -ICON_INSET, ICON_INSET)
+    iconButton.icon = fallbackIconTexture
+  end
+
+
+  iconButton:SetSize(45, 45)
   iconButton:SetPoint("TOP", popupFrame, "TOP", 0, -18)
   iconButton:RegisterForClicks("LeftButtonUp")
   popupFrame._eventqIconButton = iconButton
-local icon = SetupHudActionBarIconButton(iconButton)
+  local icon = SetupActionButtonIconButton(iconButton)
 
-SetCroppedIconTexture(icon, DEFAULT_CUSTOM_ICON)
-popupFrame._eventqIcon = icon
-popupFrame._eventqSelectedIcon = DEFAULT_CUSTOM_ICON
+  SetCroppedIconTexture(icon, DEFAULT_CUSTOM_ICON)
+  popupFrame._eventqIcon = icon
+  popupFrame._eventqSelectedIcon = DEFAULT_CUSTOM_ICON
 
 
   if not iconButton._eventqIconTooltipHooked then
@@ -411,6 +270,7 @@ popupFrame._eventqSelectedIcon = DEFAULT_CUSTOM_ICON
   end
 
   iconButton:SetScript("OnClick", function()
+    if iconButton.SetChecked then iconButton:SetChecked(false) end
     local picker = ns.IconPicker
     if not picker or not picker.Open then return end
 
