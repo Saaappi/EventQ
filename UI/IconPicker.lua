@@ -23,6 +23,16 @@ local ICON_TEXCOORDS = { 0.08, 0.92, 0.08, 0.92 }
 local GRID_PADDING_X = 12 -- padding to the right of the anchor frame
 local ICON_PATH_PREFIX = "Interface/Icons/"
 
+-- Layout constants:
+-- The scroll area reserves space on the right for the UIPanelScrollFrameTemplate scrollbar.
+-- With a fixed column count, ensure the frame is wide enough so the last column doesn't clip.
+local SCROLL_BG_SIDE_INSET = 14           -- matches scrollBg:SetPoint("...LEFT/RIGHT", 14)
+local SCROLL_FRAME_INSET_LEFT = 6         -- matches scrollFrame:SetPoint("TOPLEFT", ..., 6, ...)
+local SCROLL_FRAME_INSET_RIGHT = 26       -- matches scrollFrame:SetPoint("...RIGHT", ..., -26, ...)
+local MIN_SCROLL_VIEW_WIDTH = (ICONS_PER_ROW - 1) * ICON_STEP + ICON_SIZE
+local MIN_FRAME_WIDTH = MIN_SCROLL_VIEW_WIDTH + (SCROLL_BG_SIDE_INSET * 2) + SCROLL_FRAME_INSET_LEFT + SCROLL_FRAME_INSET_RIGHT + 2
+
+
 local FILTER_DEBOUNCE_SEC = 0.12
 
 local function WipeTable(tableToWipe)
@@ -231,7 +241,7 @@ local function EnsureFrame(self)
   if self.frame then return self.frame end
 
   local frame = CreateFrame("Frame", FRAME_NAME, UIParent, "BackdropTemplate")
-  frame:SetSize(380, 420)
+  frame:SetSize(math.max(380, MIN_FRAME_WIDTH), 420)
   frame:SetClampedToScreen(true)
   frame:SetFrameStrata("DIALOG")
   frame:SetBackdrop({
@@ -255,8 +265,8 @@ local function EnsureFrame(self)
 
   -- Scroll background
   local scrollBg = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-  scrollBg:SetPoint("TOPLEFT", 14, -40)
-  scrollBg:SetPoint("BOTTOMRIGHT", -14, 72)
+  scrollBg:SetPoint("TOPLEFT", SCROLL_BG_SIDE_INSET, -40)
+  scrollBg:SetPoint("BOTTOMRIGHT", -SCROLL_BG_SIDE_INSET, 72)
   scrollBg:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
     edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -266,8 +276,8 @@ local function EnsureFrame(self)
   scrollBg:SetBackdropColor(0, 0, 0, 0.7)
 
   local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-  scrollFrame:SetPoint("TOPLEFT", scrollBg, "TOPLEFT", 6, -6)
-  scrollFrame:SetPoint("BOTTOMRIGHT", scrollBg, "BOTTOMRIGHT", -26, 6)
+  scrollFrame:SetPoint("TOPLEFT", scrollBg, "TOPLEFT", SCROLL_FRAME_INSET_LEFT, -6)
+  scrollFrame:SetPoint("BOTTOMRIGHT", scrollBg, "BOTTOMRIGHT", -SCROLL_FRAME_INSET_RIGHT, 6)
   frame._eventqScrollFrame = scrollFrame
 
   local content = CreateFrame("Frame", nil, scrollFrame)
