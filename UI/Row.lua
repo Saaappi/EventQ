@@ -115,10 +115,19 @@ local function TryQueueBrawl()
   return false
 end
 
-local function IsOngoingEvent(data)
+local function IsOngoingEvent(data, nowEpoch)
   if not data or not data.startEpoch or not data.endEpoch then return false end
-  local now = time()
-  return data.startEpoch <= now and data.endEpoch >= now
+  nowEpoch = nowEpoch or time()
+  return data.startEpoch <= nowEpoch and data.endEpoch >= nowEpoch
+end
+
+local function ShouldShowUrgency(eventData, nowEpoch)
+  if not (eventData and eventData.endEpoch) then return false end
+  nowEpoch = nowEpoch or time()
+  if not IsOngoingEvent(eventData, nowEpoch) then return false end
+
+  local remainingSeconds = eventData.endEpoch - nowEpoch
+  return remainingSeconds > 0 and remainingSeconds <= ONE_DAY_SECONDS
 end
 
 local function FormatRemainingTime(seconds)
@@ -358,17 +367,17 @@ function Row:Constructor(frame, app)
         GameTooltip:AddLine("Left-click: queue for event", 0.2, 1, 0.2, true)
       end
       -- Expiration (shown last). Only show when it is within the urgency window.
-      if data.endEpoch then
-        local remainingSeconds = data.endEpoch - time()
-        if remainingSeconds > 0 and remainingSeconds <= ONE_DAY_SECONDS then
-          GameTooltip:AddLine(" ")
-          local remainingText = FormatRemainingTime(remainingSeconds)
-          GameTooltip:AddLine(
-            string.format("Row highlighted red because this event expires within 24 hours (%s remaining).", remainingText),
-            URGENCY_NOTE_R, URGENCY_NOTE_G, URGENCY_NOTE_B,
-            true
-          )
-        end
+      -- NOTE: Urgency is ONLY for ongoing events (not upcoming).
+      local nowEpoch = time()
+      if ShouldShowUrgency(data, nowEpoch) then
+        local remainingSeconds = (data.endEpoch or 0) - nowEpoch
+        GameTooltip:AddLine(" ")
+        local remainingText = FormatRemainingTime(remainingSeconds)
+        GameTooltip:AddLine(
+          string.format("Row highlighted red because this event expires within 24 hours (%s remaining).", remainingText),
+          URGENCY_NOTE_R, URGENCY_NOTE_G, URGENCY_NOTE_B,
+          true
+        )
       end
 
       GameTooltip:Show()
@@ -599,11 +608,9 @@ function Row:SetEvent(event, dateUtil)
     self.name:SetTextColor(DEFAULT_TITLE_R, DEFAULT_TITLE_G, DEFAULT_TITLE_B)
   end
 
-  -- Urgency background: <= 24 hours remaining.
-  if self.urgencyBg and event.endEpoch then
-    local now = time()
-    local remaining = event.endEpoch - now
-    if remaining > 0 and remaining <= ONE_DAY_SECONDS then
+  -- Urgency background: <= 24 hours remaining (ONGOING only).
+  if self.urgencyBg then
+    if ShouldShowUrgency(event) then
       self.urgencyBg:Show()
     else
       self.urgencyBg:Hide()
