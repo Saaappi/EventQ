@@ -7,6 +7,46 @@ local QUEUEABLE_TITLE_R, QUEUEABLE_TITLE_G, QUEUEABLE_TITLE_B = 0.4, 0.8, 1.0 --
 local DEFAULT_TITLE_R, DEFAULT_TITLE_G, DEFAULT_TITLE_B = 1.0, 0.82, 0.0       -- GameFontNormal-like gold
 local URGENCY_NOTE_R, URGENCY_NOTE_G, URGENCY_NOTE_B = 0xFF / 255, 0x2D / 255, 0x2D / 255 -- #FF2D2D
 
+local CONFIRM_REMOVE_DIALOG_KEY = "EVENTQ_CONFIRM_REMOVE_CUSTOM_EVENT"
+
+local function EnsureConfirmRemoveDialog()
+  if not StaticPopupDialogs then return false end
+  if StaticPopupDialogs[CONFIRM_REMOVE_DIALOG_KEY] then return true end
+
+  StaticPopupDialogs[CONFIRM_REMOVE_DIALOG_KEY] = {
+    text = 'Remove the custom event "%s"?\nThis cannot be undone.',
+    button1 = (REMOVE or "Remove"),
+    button2 = (CANCEL or "Cancel"),
+    OnAccept = function(_, data)
+      if data and data.app and data.id and data.app.RemoveCustomEvent then
+        data.app:RemoveCustomEvent(data.id)
+      end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+  }
+
+  return true
+end
+
+local function ConfirmRemoveCustomEvent(app, eventData)
+  if not (app and eventData and eventData.id) then return end
+
+  -- Fallback: if the popup system isn't available for some reason, preserve existing behavior.
+  if not (EnsureConfirmRemoveDialog() and StaticPopup_Show) then
+    if app.RemoveCustomEvent then
+      app:RemoveCustomEvent(eventData.id)
+    end
+    return
+  end
+
+  local eventTitle = eventData.title or "Custom Event"
+  StaticPopup_Show(CONFIRM_REMOVE_DIALOG_KEY, eventTitle, nil, { app = app, id = eventData.id })
+end
+
+
 local function TryQueueLFD(dungeonID)
   if not dungeonID then return false end
   LFG_JoinDungeon(LE_LFG_CATEGORY_LFD, dungeonID, LFDDungeonList, LFDHiddenByCollapseList)
@@ -340,8 +380,8 @@ function Row:Constructor(frame, app)
         removeInfo.notCheckable = true
         removeInfo.text = "Remove"
         removeInfo.func = function()
-          if MENU._eventqApp and MENU._eventqApp.RemoveCustomEvent and MENU._eventqData then
-            MENU._eventqApp:RemoveCustomEvent(MENU._eventqData.id)
+          if MENU._eventqApp and MENU._eventqData then
+            ConfirmRemoveCustomEvent(MENU._eventqApp, MENU._eventqData)
           end
         end
         UIDropDownMenu_AddButton(removeInfo, level)
