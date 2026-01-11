@@ -3,7 +3,7 @@
 ## Notes: Calendar event queue (ongoing + upcoming)
 ## SavedVariables: EventQDB
 ## Author: LightskyGG
-## Version: 0.2.11
+## Version: 0.2.12
 EventQ.xml
 Core/Class.lua
 Core/Logger.lua

@@ -182,11 +182,12 @@ local function EnsureDescriptionPopup(self)
   popupFrame:Hide()
 
   popupFrame:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 8, right = 8, top = 8, bottom = 8 },
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
   })
+  popupFrame:SetBackdropColor(0, 0, 0, 0.85)
   local iconButton
   do
     local ok, created = pcall(CreateFrame, "CheckButton", "EventQCustomDescriptionPopupIconButton", popupFrame, "ActionButtonTemplate")
