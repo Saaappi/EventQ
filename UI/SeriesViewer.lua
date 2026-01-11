@@ -138,7 +138,7 @@ function SeriesViewer:Constructor(parentFrame, app)
     end
 
     row._eventqLabel:SetText(labelText)
-    row._eventqRange:SetText(self.dateUtil:FormatRange(elementData.startEpoch, elementData.endEpoch))
+    row._eventqRange:SetText(self.dateUtil:FormatEpoch(elementData.startEpoch))
   end)
 
   local function UpdateLayout()

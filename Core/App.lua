@@ -5,6 +5,8 @@ local App = ns.Class:Create("App")
 local UPCOMING_DAYS = 8
 local UPCOMING_WINDOW = UPCOMING_DAYS * 86400
 
+local SERIES_VIEW_COUNT = 12
+
 -- Hot-path locals
 local _G = _G
 local strtrim = _G.strtrim or function(inputText)
@@ -49,6 +51,12 @@ local SERIES_FREQ = {
 local function IsSeriesEnabled(series)
   return type(series) == "table" and series.enabled == true and type(series.frequency) == "string"
 end
+local function IsSeriesWindowBoundedFrequency(series)
+  if type(series) ~= "table" then return false end
+  local freq = series.frequency
+  return freq == SERIES_FREQ.MINUTELY or freq == SERIES_FREQ.HOURLY or freq == SERIES_FREQ.DAILY
+end
+
 
 local function NormalizeSeriesConfig(dateUtil, series, startEpoch)
   if type(series) ~= "table" then return nil end
@@ -68,16 +76,22 @@ local function NormalizeSeriesConfig(dateUtil, series, startEpoch)
     if intervalHours < 1 then intervalHours = 1 end
     normalized.intervalHours = intervalHours
   elseif frequency == SERIES_FREQ.MONTHLY then
-    local weekday = tonumber(series.weekday)
-    local weekOfMonth = tonumber(series.weekOfMonth)
-    if not weekday or weekday < 1 or weekday > 7 then
-      weekday = dateUtil and dateUtil:GetWeekday(startEpoch) or 1
+    local startParts = date("*t", firstStartEpoch)
+    local targetParts = date("*t", targetEpoch)
+    local startYear = startParts.year or 1970
+    local startMonth = startParts.month or 1
+    local targetYear = targetParts.year or 1970
+    local targetMonth = targetParts.month or 1
+    local monthsDiff = (targetYear - startYear) * 12 + (targetMonth - startMonth)
+    if monthsDiff < 0 then monthsDiff = 0 end
+
+    local weekOfMonth = series.weekOfMonth or 1
+    local weekday = series.weekday or 1
+    local candidate = dateUtil:AddMonthsByNthWeekday(firstStartEpoch, monthsDiff, weekOfMonth, weekday)
+    if candidate < targetEpoch then
+      candidate = dateUtil:AddMonthsByNthWeekday(firstStartEpoch, monthsDiff + 1, weekOfMonth, weekday)
     end
-    if not weekOfMonth or weekOfMonth < 1 or weekOfMonth > 5 then
-      weekOfMonth = dateUtil and dateUtil:GetWeekOfMonth(startEpoch) or 1
-    end
-    normalized.weekday = weekday
-    normalized.weekOfMonth = weekOfMonth
+    return candidate
   elseif frequency == SERIES_FREQ.ANNUALLY then
     local parts = date("*t", startEpoch or time())
     normalized.month = tonumber(series.month) or parts.month
@@ -113,6 +127,70 @@ local function CorrectSeriesStartIfNeeded(dateUtil, startEpoch, series)
   end
   return startEpoch
 end
+
+local function NextOccurrenceStartAtOrAfter(dateUtil, firstStartEpoch, series, targetEpoch)
+  if not (dateUtil and IsSeriesEnabled(series)) then return firstStartEpoch end
+  targetEpoch = tonumber(targetEpoch) or time()
+  firstStartEpoch = tonumber(firstStartEpoch) or 0
+  if targetEpoch <= firstStartEpoch then return firstStartEpoch end
+
+  local frequency = series.frequency
+  if frequency == SERIES_FREQ.MINUTELY then
+    local intervalMinutes = tonumber(series.intervalMinutes) or 30
+    if intervalMinutes < 1 then intervalMinutes = 1 end
+    local intervalSeconds = intervalMinutes * 60
+    local deltaSeconds = targetEpoch - firstStartEpoch
+    local steps = math.floor((deltaSeconds + intervalSeconds - 1) / intervalSeconds)
+    return firstStartEpoch + (steps * intervalSeconds)
+  elseif frequency == SERIES_FREQ.HOURLY then
+    local intervalHours = tonumber(series.intervalHours) or 1
+    if intervalHours < 1 then intervalHours = 1 end
+    local intervalSeconds = intervalHours * 3600
+    local deltaSeconds = targetEpoch - firstStartEpoch
+    local steps = math.floor((deltaSeconds + intervalSeconds - 1) / intervalSeconds)
+    return firstStartEpoch + (steps * intervalSeconds)
+  elseif frequency == SERIES_FREQ.DAILY then
+    local intervalSeconds = 86400
+    local deltaSeconds = targetEpoch - firstStartEpoch
+    local steps = math.floor((deltaSeconds + intervalSeconds - 1) / intervalSeconds)
+    return firstStartEpoch + (steps * intervalSeconds)
+  elseif frequency == SERIES_FREQ.WEEKLY then
+    local intervalSeconds = 7 * 86400
+    local deltaSeconds = targetEpoch - firstStartEpoch
+    local steps = math.floor((deltaSeconds + intervalSeconds - 1) / intervalSeconds)
+    return firstStartEpoch + (steps * intervalSeconds)
+  elseif frequency == SERIES_FREQ.MONTHLY then
+    local startParts = date("*t", firstStartEpoch)
+    local targetParts = date("*t", targetEpoch)
+    local monthsDiff = ((targetParts.year or 1970) - (startParts.year or 1970)) * 12 + ((targetParts.month or 1) - (startParts.month or 1))
+    if monthsDiff < 0 then monthsDiff = 0 end
+    local candidate = dateUtil:AddMonthsByNthWeekday(firstStartEpoch, monthsDiff, series.weekOfMonth or 1, series.weekday or 1)
+    if candidate < targetEpoch then
+      candidate = dateUtil:AddMonthsByNthWeekday(firstStartEpoch, monthsDiff + 1, series.weekOfMonth or 1, series.weekday or 1)
+    end
+    return candidate
+  elseif frequency == SERIES_FREQ.ANNUALLY then
+    local startParts = date("*t", firstStartEpoch)
+    local targetParts = date("*t", targetEpoch)
+    local yearsDiff = (targetParts.year or 1970) - (startParts.year or 1970)
+    if yearsDiff < 0 then yearsDiff = 0 end
+    local candidate = dateUtil:AddYearsByMonthDay(firstStartEpoch, yearsDiff, series.month, series.day)
+    if candidate < targetEpoch then
+      candidate = dateUtil:AddYearsByMonthDay(firstStartEpoch, yearsDiff + 1, series.month, series.day)
+    end
+    return candidate
+  end
+
+  -- Fallback for unknown/unexpected configs: walk forward with a guard to avoid infinite loops.
+  local candidate = firstStartEpoch
+  local guard = 0
+  while candidate < targetEpoch and guard < 500 do
+    candidate = NextSeriesStart(dateUtil, candidate, series)
+    guard = guard + 1
+  end
+  return candidate
+end
+
 
 local function AdvanceSeriesInPlace(dateUtil, dbEvent, nowEpoch)
   if not (dbEvent and IsSeriesEnabled(dbEvent.series)) then return false end
@@ -496,14 +574,7 @@ end
 ---@return integer
 function App:GetSeriesViewCount(series)
   if not IsSeriesEnabled(series) then return 0 end
-  local frequency = series.frequency
-  if frequency == SERIES_FREQ.MINUTELY then return 6 end
-  if frequency == SERIES_FREQ.HOURLY then return 6 end
-  if frequency == SERIES_FREQ.DAILY then return 7 end
-  if frequency == SERIES_FREQ.WEEKLY then return 6 end
-  if frequency == SERIES_FREQ.MONTHLY then return 6 end
-  if frequency == SERIES_FREQ.ANNUALLY then return 1 end
-  return 6
+  return SERIES_VIEW_COUNT
 end
 
 ---@param rootId string
@@ -518,7 +589,8 @@ function App:GetSeriesOccurrences(rootId, count)
   if normalized then
     dbEvent.series = normalized
   end
-  AdvanceSeriesInPlace(self.dateUtil, dbEvent, time())
+  local nowEpoch = time()
+  AdvanceSeriesInPlace(self.dateUtil, dbEvent, nowEpoch)
 
   local startEpoch = tonumber(dbEvent.startEpoch)
   local endEpoch = tonumber(dbEvent.endEpoch)
@@ -533,10 +605,27 @@ function App:GetSeriesOccurrences(rootId, count)
 
   local occurrences = {}
   local occStart = CorrectSeriesStartIfNeeded(self.dateUtil, startEpoch, series)
+  occStart = NextOccurrenceStartAtOrAfter(self.dateUtil, occStart, series, nowEpoch)
+  local bounded = IsSeriesWindowBoundedFrequency(series)
+  local seriesEndEpoch = bounded and endEpoch or nil
+
   for _ = 1, maxCount do
+    if seriesEndEpoch and occStart > seriesEndEpoch then
+      break
+    end
+
     local occEnd = occStart + duration
+    if seriesEndEpoch and occEnd > seriesEndEpoch then
+      occEnd = seriesEndEpoch
+    end
+
     occurrences[#occurrences + 1] = { startEpoch = occStart, endEpoch = occEnd }
-    occStart = NextSeriesStart(self.dateUtil, occStart, series)
+
+    local nextStart = NextSeriesStart(self.dateUtil, occStart, series)
+    if type(nextStart) ~= "number" or nextStart <= occStart then
+      break
+    end
+    occStart = nextStart
   end
   return occurrences
 end

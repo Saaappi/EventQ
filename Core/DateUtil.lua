@@ -7,6 +7,19 @@ local function pad2(numberValue)
   return (numberValue < 10) and ("0" .. numberValue) or tostring(numberValue)
 end
 
+local function formatDateTimeParts(parts, includeYear)
+  local monthPadded = pad2(parts.month)
+  local dayPadded = pad2(parts.day)
+  local hourPadded = pad2(parts.hour)
+  local minutePadded = pad2(parts.min)
+
+  if includeYear then
+    return string.format("%s/%s/%d %s:%s", monthPadded, dayPadded, parts.year, hourPadded, minutePadded)
+  end
+  return string.format("%s/%s %s:%s", monthPadded, dayPadded, hourPadded, minutePadded)
+end
+
+
 ---@return "MDY"|"DMY"
 function DateUtil:GetDefaultDateOrder()
   local loc = GetLocale and GetLocale() or "enUS"
@@ -75,20 +88,25 @@ function DateUtil:FormatRange(startEpoch, endEpoch)
 
   local sameYear = startParts.year == endParts.year
 
-  local function fmt(parts, includeYear)
-    local monthPadded = pad2(parts.month)
-    local dayPadded = pad2(parts.day)
-    local hourPadded = pad2(parts.hour)
-    local minutePadded = pad2(parts.min)
-    if includeYear then
-      return string.format("%s/%s/%d %s:%s", monthPadded, dayPadded, parts.year, hourPadded, minutePadded)
-    end
-    return string.format("%s/%s %s:%s", monthPadded, dayPadded, hourPadded, minutePadded)
-  end
 
   local includeYear = not sameYear
-  return fmt(startParts, includeYear) .. " - " .. fmt(endParts, includeYear)
+  return formatDateTimeParts(startParts, includeYear) .. " - " .. formatDateTimeParts(endParts, includeYear)
 end
+
+---@param epoch integer
+---@param referenceEpoch integer|nil
+---@return string
+function DateUtil:FormatEpoch(epoch, referenceEpoch)
+  epoch = tonumber(epoch) or 0
+  referenceEpoch = tonumber(referenceEpoch) or (time and time() or 0)
+
+  local parts = date("*t", epoch)
+  local refParts = date("*t", referenceEpoch)
+  local includeYear = parts.year ~= refParts.year
+
+  return formatDateTimeParts(parts, includeYear)
+end
+
 
 ---@param dayEpoch integer
 ---@return integer monthOffset, integer monthDay
