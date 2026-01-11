@@ -7,6 +7,8 @@ local QUEUEABLE_TITLE_R, QUEUEABLE_TITLE_G, QUEUEABLE_TITLE_B = 0.4, 0.8, 1.0 --
 local DEFAULT_TITLE_R, DEFAULT_TITLE_G, DEFAULT_TITLE_B = 1.0, 0.82, 0.0       -- GameFontNormal-like gold
 local URGENCY_NOTE_R, URGENCY_NOTE_G, URGENCY_NOTE_B = 0xFF / 255, 0x2D / 255, 0x2D / 255 -- #FF2D2D
 
+local ONE_DAY_SECONDS = 24 * 60 * 60
+
 local CONFIRM_REMOVE_DIALOG_KEY = "EVENTQ_CONFIRM_REMOVE_CUSTOM_EVENT"
 
 local function EnsureConfirmRemoveDialog()
@@ -278,21 +280,17 @@ function Row:Constructor(frame, app)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Left-click: queue for event", 0.2, 1, 0.2, true)
       end
-      -- Expiration (shown last). Matches the urgency highlight threshold used for the row background.
+      -- Expiration (shown last). Only show when it is within the urgency window.
       if data.endEpoch then
         local remainingSeconds = data.endEpoch - time()
-        if remainingSeconds > 0 then
+        if remainingSeconds > 0 and remainingSeconds <= ONE_DAY_SECONDS then
           GameTooltip:AddLine(" ")
           local remainingText = FormatRemainingTime(remainingSeconds)
-          if remainingSeconds <= 24 * 60 * 60 then
-            GameTooltip:AddLine(
-              string.format("Row highlighted red because this event expires within 24 hours (%s remaining).", remainingText),
-              URGENCY_NOTE_R, URGENCY_NOTE_G, URGENCY_NOTE_B,
-              true
-            )
-          else
-            GameTooltip:AddLine(string.format("Expires in %s.", remainingText), 0.7, 0.7, 0.7, true)
-          end
+          GameTooltip:AddLine(
+            string.format("Row highlighted red because this event expires within 24 hours (%s remaining).", remainingText),
+            URGENCY_NOTE_R, URGENCY_NOTE_G, URGENCY_NOTE_B,
+            true
+          )
         end
       end
 
@@ -472,11 +470,11 @@ function Row:SetEvent(event, dateUtil)
     self.name:SetTextColor(DEFAULT_TITLE_R, DEFAULT_TITLE_G, DEFAULT_TITLE_B)
   end
 
-  -- Urgency background: < 24 hours remaining.
+  -- Urgency background: <= 24 hours remaining.
   if self.urgencyBg and event.endEpoch then
     local now = time()
     local remaining = event.endEpoch - now
-    if remaining > 0 and remaining <= 24 * 60 * 60 then
+    if remaining > 0 and remaining <= ONE_DAY_SECONDS then
       self.urgencyBg:Show()
     else
       self.urgencyBg:Hide()
