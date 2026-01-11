@@ -469,9 +469,10 @@ local function EnsureDescriptionPopup(self)
   freqLabel:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 42, 96)
   freqLabel:SetText("Frequency")
 
-  local freqDrop = CreateFrame("Frame", nil, popupFrame, "UIDropDownMenuTemplate")
+  local freqDrop = CreateFrame("DropdownButton", nil, popupFrame, "WowStyle1DropdownTemplate")
   freqDrop:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 70)
-  UIDropDownMenu_SetWidth(freqDrop, 140)
+  freqDrop:SetWidth(140)
+  freqDrop:SetDefaultText((SERIES_FREQUENCY_OPTIONS[1] and SERIES_FREQUENCY_OPTIONS[1].label) or "")
 
   local intervalLabel = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   intervalLabel:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 42, 48)
@@ -490,13 +491,15 @@ local function EnsureDescriptionPopup(self)
   intervalUnit:SetPoint("LEFT", intervalEdit, "RIGHT", 6, 0)
   intervalUnit:SetText("minutes")
 
-  local monthWeekDrop = CreateFrame("Frame", nil, popupFrame, "UIDropDownMenuTemplate")
+  local monthWeekDrop = CreateFrame("DropdownButton", nil, popupFrame, "WowStyle1DropdownTemplate")
   monthWeekDrop:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 44)
-  UIDropDownMenu_SetWidth(monthWeekDrop, 70)
+  monthWeekDrop:SetWidth(70)
+  monthWeekDrop:SetDefaultText((WEEK_OF_MONTH_OPTIONS[1] and WEEK_OF_MONTH_OPTIONS[1].label) or "")
 
-  local monthWeekdayDrop = CreateFrame("Frame", nil, popupFrame, "UIDropDownMenuTemplate")
-  monthWeekdayDrop:SetPoint("LEFT", monthWeekDrop, "RIGHT", -10, 0)
-  UIDropDownMenu_SetWidth(monthWeekdayDrop, 110)
+  local monthWeekdayDrop = CreateFrame("DropdownButton", nil, popupFrame, "WowStyle1DropdownTemplate")
+  monthWeekdayDrop:SetPoint("LEFT", monthWeekDrop, "RIGHT", 10, 0)
+  monthWeekdayDrop:SetWidth(110)
+  monthWeekdayDrop:SetDefaultText((WEEKDAY_OPTIONS[1] and WEEKDAY_OPTIONS[1].label) or "")
 
   popupFrame._eventqSeriesCheck = seriesCheck
   popupFrame._eventqFreqDrop = freqDrop
@@ -517,21 +520,23 @@ local function EnsureDescriptionPopup(self)
     return payload.series
   end
 
-  local function SetDropdownText(dropdown, text)
-    if UIDropDownMenu_SetText then
-      UIDropDownMenu_SetText(dropdown, text)
-    elseif dropdown and dropdown.Text then
-      dropdown.Text:SetText(text)
-    end
-  end
 
-  local function GetOptionLabel(options, key)
-    for _, opt in ipairs(options) do
-      if opt.key == key then
-        return opt.label
-      end
+  local function UpdateDropdownSelection(dropdown)
+    if not dropdown then
+      return
     end
-    return tostring(key)
+
+    -- DropdownButtons don't have a menu description until they've been generated at least once.
+    if dropdown.GenerateMenu and dropdown.GetMenuDescription and not dropdown:GetMenuDescription() then
+      dropdown:GenerateMenu()
+    end
+
+    if dropdown.Update and dropdown.GetMenuDescription and dropdown:GetMenuDescription() then
+      dropdown:Update()
+    elseif dropdown.UpdateText then
+      -- Safety fallback (shouldn't normally be needed).
+      dropdown:UpdateText()
+    end
   end
 
   local function ApplyFrequencyDefaults(payload, series)
@@ -579,7 +584,7 @@ local function EnsureDescriptionPopup(self)
     ApplyFrequencyDefaults(payload, series)
 
     local frequency = series.frequency
-    SetDropdownText(freqDrop, GetOptionLabel(SERIES_FREQUENCY_OPTIONS, frequency))
+    UpdateDropdownSelection(freqDrop)
 
     local showInterval = frequency == SERIES_FREQ.MINUTELY or frequency == SERIES_FREQ.HOURLY
     intervalLabel:SetShown(showInterval)
@@ -599,8 +604,8 @@ local function EnsureDescriptionPopup(self)
     end
 
     if showMonthly then
-      SetDropdownText(monthWeekDrop, GetOptionLabel(WEEK_OF_MONTH_OPTIONS, series.weekOfMonth or 1))
-      SetDropdownText(monthWeekdayDrop, GetOptionLabel(WEEKDAY_OPTIONS, series.weekday or 1))
+      UpdateDropdownSelection(monthWeekDrop)
+      UpdateDropdownSelection(monthWeekdayDrop)
     end
   end
 
@@ -618,61 +623,77 @@ local function EnsureDescriptionPopup(self)
     UpdateSeriesUI()
   end)
 
-  UIDropDownMenu_Initialize(freqDrop, function(_, level)
-    if level ~= 1 then return end
+  local function IsSeriesFrequencySelected(frequencyKey)
+    local payload = popupFrame._eventqPayload
+    local series = payload and payload.series
+    return series and tostring(series.frequency):upper() == tostring(frequencyKey):upper()
+  end
+
+  local function SetSeriesFrequency(frequencyKey)
     local payload = popupFrame._eventqPayload
     local series = EnsureSeriesInPayload(payload)
+    if not series then
+      return
+    end
+    series.frequency = tostring(frequencyKey):upper()
+    ApplyFrequencyDefaults(payload, series)
+    UpdateSeriesUI()
+  end
 
+  freqDrop:SetupMenu(function(_, rootDescription)
+    rootDescription:SetTag("MENU_EVENTQ_SERIES_FREQUENCY")
     for _, opt in ipairs(SERIES_FREQUENCY_OPTIONS) do
-      local info = UIDropDownMenu_CreateInfo()
-      info.text = opt.label
-      info.notCheckable = false
-      info.checked = (series.frequency == opt.key)
-      info.func = function()
-        series.frequency = opt.key
-        ApplyFrequencyDefaults(payload, series)
-        UpdateSeriesUI()
-      end
-      UIDropDownMenu_AddButton(info, level)
+      rootDescription:CreateRadio(opt.label, IsSeriesFrequencySelected, SetSeriesFrequency, opt.key)
     end
+    rootDescription:SetMaximumWidth(140)
   end)
 
-  UIDropDownMenu_Initialize(monthWeekDrop, function(_, level)
-    if level ~= 1 then return end
+  local function IsWeekOfMonthSelected(weekKey)
+    local payload = popupFrame._eventqPayload
+    local series = payload and payload.series
+    return series and tonumber(series.weekOfMonth) == tonumber(weekKey)
+  end
+
+  local function SetWeekOfMonth(weekKey)
     local payload = popupFrame._eventqPayload
     local series = EnsureSeriesInPayload(payload)
-    ApplyFrequencyDefaults(payload, series)
+    if not series then
+      return
+    end
+    series.weekOfMonth = tonumber(weekKey)
+    UpdateSeriesUI()
+  end
 
+  monthWeekDrop:SetupMenu(function(_, rootDescription)
+    rootDescription:SetTag("MENU_EVENTQ_SERIES_WEEK_OF_MONTH")
     for _, opt in ipairs(WEEK_OF_MONTH_OPTIONS) do
-      local info = UIDropDownMenu_CreateInfo()
-      info.text = opt.label
-      info.notCheckable = false
-      info.checked = (tonumber(series.weekOfMonth) == opt.key)
-      info.func = function()
-        series.weekOfMonth = opt.key
-        UpdateSeriesUI()
-      end
-      UIDropDownMenu_AddButton(info, level)
+      rootDescription:CreateRadio(opt.label, IsWeekOfMonthSelected, SetWeekOfMonth, opt.key)
     end
+    rootDescription:SetMaximumWidth(70)
   end)
 
-  UIDropDownMenu_Initialize(monthWeekdayDrop, function(_, level)
-    if level ~= 1 then return end
+  local function IsWeekdaySelected(weekdayKey)
+    local payload = popupFrame._eventqPayload
+    local series = payload and payload.series
+    return series and tonumber(series.weekday) == tonumber(weekdayKey)
+  end
+
+  local function SetWeekday(weekdayKey)
     local payload = popupFrame._eventqPayload
     local series = EnsureSeriesInPayload(payload)
-    ApplyFrequencyDefaults(payload, series)
-
-    for _, opt in ipairs(WEEKDAY_OPTIONS) do
-      local info = UIDropDownMenu_CreateInfo()
-      info.text = opt.label
-      info.notCheckable = false
-      info.checked = (tonumber(series.weekday) == opt.key)
-      info.func = function()
-        series.weekday = opt.key
-        UpdateSeriesUI()
-      end
-      UIDropDownMenu_AddButton(info, level)
+    if not series then
+      return
     end
+    series.weekday = tonumber(weekdayKey)
+    UpdateSeriesUI()
+  end
+
+  monthWeekdayDrop:SetupMenu(function(_, rootDescription)
+    rootDescription:SetTag("MENU_EVENTQ_SERIES_WEEKDAY")
+    for _, opt in ipairs(WEEKDAY_OPTIONS) do
+      rootDescription:CreateRadio(opt.label, IsWeekdaySelected, SetWeekday, opt.key)
+    end
+    rootDescription:SetMaximumWidth(110)
   end)
 
   intervalEdit:SetScript("OnEditFocusLost", function()
