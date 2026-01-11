@@ -734,6 +734,22 @@ function MainFrame:Constructor(app)
   self.dateUtil = app.dateUtil
 
   local mainFrame = CreateFrame("Frame", "EventQFrame", UIParent, "BackdropTemplate")
+
+  -- Allow the main frame to be closed with the Escape key.
+  -- Avoid duplicate entries if the addon is reloaded.
+  local mainFrameName = mainFrame:GetName()
+  if mainFrameName and UISpecialFrames then
+    local isRegistered = false
+    for index = 1, #UISpecialFrames do
+      if UISpecialFrames[index] == mainFrameName then
+        isRegistered = true
+        break
+      end
+    end
+    if not isRegistered then
+      tinsert(UISpecialFrames, mainFrameName)
+    end
+  end
   self.frame = mainFrame
   mainFrame:Hide()
   mainFrame:SetSize(780, 485)
