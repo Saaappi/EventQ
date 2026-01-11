@@ -168,6 +168,8 @@ local function BuildIconCatalog()
   local textureKeys = {}
   local seen = {}
 
+  local nameToIndex = {}
+  local nameQuality = {}
   local function Add(textureValue, nameValue)
     if not textureValue then return end
     local texture = TextureFromValue(textureValue)
@@ -177,24 +179,49 @@ local function BuildIconCatalog()
     if key == "" or seen[key] then return end
     seen[key] = true
 
-    local normalized = NormalizeIconName(nameValue)
-    if normalized == "" and type(textureValue) == "number" and addonIconFileNames then
+    local rawName
+    if type(nameValue) == "string" and nameValue ~= "" then
+      rawName = nameValue
+    elseif type(textureValue) == "number" and addonIconFileNames then
       local mapped = addonIconFileNames[textureValue]
       if type(mapped) == "string" and mapped ~= "" then
-        normalized = SafeLower(mapped)
+        rawName = mapped
       end
+    elseif type(textureValue) == "string" and textureValue ~= "" then
+      rawName = textureValue
+    elseif type(texture) == "string" and texture ~= "" then
+      rawName = texture
     end
 
-    if normalized == "" and type(textureValue) == "string" then
-      normalized = NormalizeIconName(textureValue)
-    end
-    if normalized == "" and type(texture) == "string" then
-      normalized = NormalizeIconName(texture)
+    local normalized = NormalizeIconName(rawName)
+    if normalized == "" then
+      normalized = key
     end
 
-    textures[#textures + 1] = texture
-    names[#names + 1] = normalized
-    textureKeys[#textureKeys + 1] = key
+    local qualityScore = 0
+    if type(rawName) == "string" and rawName ~= "" then
+      qualityScore = rawName:match("%.%w+$") and 1 or 2
+    end
+
+    local existingIndex = nameToIndex[normalized]
+    if existingIndex then
+      local existingScore = nameQuality[existingIndex] or 0
+      if qualityScore > existingScore then
+        textures[existingIndex] = texture
+        names[existingIndex] = normalized
+        textureKeys[existingIndex] = key
+        nameQuality[existingIndex] = qualityScore
+      end
+      return
+    end
+
+    local insertIndex = #textures + 1
+    textures[insertIndex] = texture
+    names[insertIndex] = normalized
+    textureKeys[insertIndex] = key
+    nameToIndex[normalized] = insertIndex
+    nameQuality[insertIndex] = qualityScore
+
   end
 
   local function BuildFromIndexed(getCountFunc, getInfoFunc)
