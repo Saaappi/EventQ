@@ -465,14 +465,15 @@ local function EnsureDescriptionPopup(self)
     seriesCheck.text:SetText("Series")
   end
 
-  local freqLabel = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  freqLabel:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 42, 96)
-  freqLabel:SetText("Frequency")
-
   local freqDrop = CreateFrame("DropdownButton", nil, popupFrame, "WowStyle1DropdownTemplate")
   freqDrop:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 70)
   freqDrop:SetWidth(140)
   freqDrop:SetDefaultText((SERIES_FREQUENCY_OPTIONS[1] and SERIES_FREQUENCY_OPTIONS[1].label) or "")
+
+  -- Anchor the label to the dropdown so it stays aligned with the dropdown's left accent bar.
+  local freqLabel = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  freqLabel:SetPoint("BOTTOMLEFT", freqDrop, "TOPLEFT", 0, 0)
+  freqLabel:SetText("Frequency")
 
   local intervalLabel = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   intervalLabel:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 42, 48)
