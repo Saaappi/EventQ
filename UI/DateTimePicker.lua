@@ -50,10 +50,10 @@ local function To12h(hour24)
   return hour12, ampm
 end
 
-local function From12h(h12, ampm)
-  h12 = Clamp(tonumber(h12) or 12, 1, 12)
+local function From12h(hour12, ampm)
+  hour12 = Clamp(tonumber(hour12) or 12, 1, 12)
   ampm = (ampm == "PM") and "PM" or "AM"
-  local h24 = h12 % 12
+  local h24 = hour12 % 12
   if ampm == "PM" then h24 = h24 + 12 end
   return h24
 end
@@ -139,8 +139,8 @@ local function CreateSpinnerColumn(parent, width, label)
   local function StyleChevron(btn, isUp)
     -- Use atlas chevrons instead of unicode arrows (some fonts render them as squares).
     btn:SetText("")
-    local fs = btn:GetFontString()
-    if fs then fs:Hide() end
+    local fontString = btn:GetFontString()
+    if fontString then fontString:Hide() end
 
     local icon = btn:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("CENTER")
@@ -151,15 +151,15 @@ local function CreateSpinnerColumn(parent, width, label)
     end
     btn.Icon = icon
 
-    local hl = btn:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetPoint("CENTER")
-    hl:SetAtlas("uitools-icon-chevron-down", true)
-    hl:SetSize(14, 14)
+    local highlightTexture = btn:CreateTexture(nil, "HIGHLIGHT")
+    highlightTexture:SetPoint("CENTER")
+    highlightTexture:SetAtlas("uitools-icon-chevron-down", true)
+    highlightTexture:SetSize(14, 14)
     if isUp then
-      hl:SetRotation(math.pi)
+      highlightTexture:SetRotation(math.pi)
     end
-    hl:SetBlendMode("ADD")
-    btn:SetHighlightTexture(hl)
+    highlightTexture:SetBlendMode("ADD")
+    btn:SetHighlightTexture(highlightTexture)
   end
 
   col.Up = CreateFrame("Button", nil, col, "UIPanelButtonTemplate")
@@ -242,14 +242,14 @@ function DateTimePicker:Ensure()
     -- Use the same atlas chevrons as the time spinners (avoids font issues with "<" and ">").
     btn._fallbackText = fallbackText or btn._fallbackText or ""
     btn:SetText("")
-    local fs = btn:GetFontString()
-    if fs then fs:Hide() end
+    local fontString = btn:GetFontString()
+    if fontString then fontString:Hide() end
 
     local hasAtlas = atlas and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
     if not hasAtlas then
       -- Fallback: show the original text if the atlas is unavailable.
       btn:SetText(btn._fallbackText)
-      if fs then fs:Show() end
+      if fontString then fontString:Show() end
       if btn.Icon then btn.Icon:Hide() end
       if btn._hlTex then btn._hlTex:Hide() end
       return
@@ -262,14 +262,14 @@ function DateTimePicker:Ensure()
     icon:Show()
     btn.Icon = icon
 
-    local hl = btn._hlTex or btn:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetPoint("CENTER")
-    hl:SetAtlas(atlas, true)
-    hl:SetSize(14, 14)
-    hl:SetBlendMode("ADD")
-    hl:Show()
-    btn._hlTex = hl
-    btn:SetHighlightTexture(hl)
+    local highlightTexture = btn._hlTex or btn:CreateTexture(nil, "HIGHLIGHT")
+    highlightTexture:SetPoint("CENTER")
+    highlightTexture:SetAtlas(atlas, true)
+    highlightTexture:SetSize(14, 14)
+    highlightTexture:SetBlendMode("ADD")
+    highlightTexture:Show()
+    btn._hlTex = highlightTexture
+    btn:SetHighlightTexture(highlightTexture)
   end
 
 
@@ -287,12 +287,12 @@ function DateTimePicker:Ensure()
   local weekdays = { "S", "M", "T", "W", "T", "F", "S" }
   pickerFrame.Weekday = {}
   for i = 1, 7 do
-    local fs = pickerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    fs:SetPoint("TOPLEFT", 16 + (i - 1) * 44, -42)
-    fs:SetJustifyH("CENTER")
-    fs:SetWidth(44)
-    fs:SetText(weekdays[i])
-    pickerFrame.Weekday[i] = fs
+    local fontString = pickerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fontString:SetPoint("TOPLEFT", 16 + (i - 1) * 44, -42)
+    fontString:SetJustifyH("CENTER")
+    fontString:SetWidth(44)
+    fontString:SetText(weekdays[i])
+    pickerFrame.Weekday[i] = fontString
   end
 
   -- Day buttons
@@ -377,20 +377,20 @@ function DateTimePicker:Ensure()
   local function setTimeUI()
     if not pickerFrame.state then return end
     local state = pickerFrame.state
-    local h12, ap = To12h(state.hour)
-    pickerFrame.HourCol.Value:SetText(pad2(h12))
+    local hour12, amPm = To12h(state.hour)
+    pickerFrame.HourCol.Value:SetText(pad2(hour12))
     pickerFrame.MinCol.Value:SetText(pad2(state.min))
-    pickerFrame.AmCol.Value:SetText(ap)
+    pickerFrame.AmCol.Value:SetText(amPm)
   end
 
   local function commitTimeFromUI()
     if not pickerFrame.state then return end
     local state = pickerFrame.state
-    local h12 = tonumber(pickerFrame.HourCol.Value:GetText() or "12") or 12
+    local hour12 = tonumber(pickerFrame.HourCol.Value:GetText() or "12") or 12
     local minuteValue = tonumber(pickerFrame.MinCol.Value:GetText() or "0") or 0
-    local ap = pickerFrame.AmCol.Value:GetText()
+    local amPm = pickerFrame.AmCol.Value:GetText()
     state.min = Clamp(minuteValue, 0, 59)
-    state.hour = From12h(h12, ap)
+    state.hour = From12h(hour12, amPm)
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end
@@ -398,18 +398,18 @@ function DateTimePicker:Ensure()
   pickerFrame.HourCol.Up:SetScript("OnClick", function()
     if not pickerFrame.state then return end
     local state = pickerFrame.state
-    local h12, ap = To12h(state.hour)
-    h12 = h12 + 1; if h12 > 12 then h12 = 1 end
-    state.hour = From12h(h12, ap)
+    local hour12, amPm = To12h(state.hour)
+    hour12 = hour12 + 1; if hour12 > 12 then hour12 = 1 end
+    state.hour = From12h(hour12, amPm)
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
   pickerFrame.HourCol.Down:SetScript("OnClick", function()
     if not pickerFrame.state then return end
     local state = pickerFrame.state
-    local h12, ap = To12h(state.hour)
-    h12 = h12 - 1; if h12 < 1 then h12 = 12 end
-    state.hour = From12h(h12, ap)
+    local hour12, amPm = To12h(state.hour)
+    hour12 = hour12 - 1; if hour12 < 1 then hour12 = 12 end
+    state.hour = From12h(hour12, amPm)
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
@@ -451,13 +451,13 @@ function DateTimePicker:Ensure()
   pickerFrame.HourCol.Value:SetScript("OnClick", function(_, button)
     if not pickerFrame.state then return end
     local state = pickerFrame.state
-    local h12, ap = To12h(state.hour)
+    local hour12, amPm = To12h(state.hour)
     if button == "RightButton" then
-      h12 = h12 - 1; if h12 < 1 then h12 = 12 end
+      hour12 = hour12 - 1; if hour12 < 1 then hour12 = 12 end
     else
-      h12 = h12 + 1; if h12 > 12 then h12 = 1 end
+      hour12 = hour12 + 1; if hour12 > 12 then hour12 = 1 end
     end
-    state.hour = From12h(h12, ap)
+    state.hour = From12h(hour12, amPm)
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
@@ -583,13 +583,13 @@ function DateTimePicker:RefreshCalendar()
     if not inMonth then
       dayButton:SetEnabled(true)
       if dayButton.GetFontString then
-        local fs = dayButton:GetFontString()
-        if fs then fs:SetTextColor(0.6, 0.6, 0.6) end
+        local fontString = dayButton:GetFontString()
+        if fontString then fontString:SetTextColor(0.6, 0.6, 0.6) end
       end
     else
       if dayButton.GetFontString then
-        local fs = dayButton:GetFontString()
-        if fs then fs:SetTextColor(1, 1, 1) end
+        local fontString = dayButton:GetFontString()
+        if fontString then fontString:SetTextColor(1, 1, 1) end
       end
     end
 
@@ -693,10 +693,10 @@ function DateTimePicker:AttachCalendarButton(editBox, onClick)
   calendarButton.Icon:SetAllPoints()
 
   calendarButton:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
-  local hl = calendarButton:GetHighlightTexture()
-  if hl then
-    hl:SetAllPoints(calendarButton)
-    hl:SetAlpha(0.85)
+  local highlightTexture = calendarButton:GetHighlightTexture()
+  if highlightTexture then
+    highlightTexture:SetAllPoints(calendarButton)
+    highlightTexture:SetAlpha(0.85)
   end
 
   -- Register this button so we can keep the day icon current (midnight rollover).

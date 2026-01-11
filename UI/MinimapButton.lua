@@ -74,8 +74,8 @@ end
 local function GetRadius()
   -- Default minimap is ~140px wide; community convention uses ~80 radius.
   -- Keep the behavior consistent across scaling and custom minimap sizes.
-  local w = Minimap and Minimap:GetWidth() or 140
-  return (w / 2) + 10
+  local minimapWidth = Minimap and Minimap:GetWidth() or 140
+  return (minimapWidth / 2) + 10
 end
 
 -- Some minimap addons may provide additional shapes (e.g. TRIANGLE). This isn't standard,
@@ -285,13 +285,13 @@ function MinimapButton:Init(db, onLeftClick, onRightClick)
     selfBtn.icon:UpdateCoord()
 
     selfBtn:SetScript("OnUpdate", function()
-      local mx, my = Minimap:GetCenter()
-      local px, py = _G.GetCursorPosition()
+      local minimapCenterX, minimapCenterY = Minimap:GetCenter()
+      local cursorX, cursorY = _G.GetCursorPosition()
       local scale = Minimap:GetEffectiveScale()
-      px, py = px / scale, py / scale
+      cursorX, cursorY = cursorX / scale, cursorY / scale
 
       if selfBtn.db then
-        selfBtn.db.minimapPos = deg(atan2(py - my, px - mx)) % 360
+        selfBtn.db.minimapPos = deg(atan2(cursorY - minimapCenterY, cursorX - minimapCenterX)) % 360
       end
 
       UpdatePosition(selfBtn)

@@ -116,59 +116,59 @@ function DateUtil:ParseUserDateTime(s, order, isEnd)
 
   -- Accepted formats (time optional):
   --   MM/DD/YYYY
-  --   MM/DD/YYYY hh:mm
-  --   MM/DD/YYYY hh:mm
+  --   MM/DD/YYYY hour:minute
+  --   MM/DD/YYYY hour:minute
   -- (and the DD/MM variants depending on order)
 
-  local p1, p2, y, hh, mm, ss =
+  local part1, part2, year, hour, minute, second =
     s:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s+(%d%d?)%s*:%s*(%d%d)%s*:%s*(%d%d)%s*$")
 
-  if not p1 then
-    p1, p2, y, hh, mm =
+  if not part1 then
+    part1, part2, year, hour, minute =
       s:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s+(%d%d?)%s*:%s*(%d%d)%s*$")
   end
 
   local dateOnly = false
-  if not p1 then
-    p1, p2, y = s:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s*$")
-    if p1 then dateOnly = true end
+  if not part1 then
+    part1, part2, year = s:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s*$")
+    if part1 then dateOnly = true end
   end
 
-  if not p1 then
+  if not part1 then
     local fmt = (order == "DMY") and "DD/MM/YYYY hh:mm or DD/MM/YYYY" or "MM/DD/YYYY hh:mm or MM/DD/YYYY"
     return nil, ("Invalid datetime. Use %s."):format(fmt)
   end
 
-  p1, p2, y = tonumber(p1), tonumber(p2), tonumber(y)
-  hh, mm, ss = tonumber(hh), tonumber(mm), tonumber(ss)
+  part1, part2, year = tonumber(part1), tonumber(part2), tonumber(year)
+  hour, minute, second = tonumber(hour), tonumber(minute), tonumber(second)
 
   if dateOnly then
     if isEnd then
-      hh, mm, ss = 23, 59, 0
+      hour, minute, second = 23, 59, 0
     else
-      hh, mm, ss = 0, 0, 0
+      hour, minute, second = 0, 0, 0
     end
   else
-    ss = ss or 0
+    second = second or 0
   end
 
   local month, day
   if order == "DMY" then
-    day, month = p1, p2
+    day, month = part1, part2
   else
-    month, day = p1, p2
+    month, day = part1, part2
   end
 
   if not month or month < 1 or month > 12 then return nil, "Invalid month." end
   if not day or day < 1 or day > 31 then return nil, "Invalid day." end
-  if not y or y < 1970 or y > 2100 then return nil, "Invalid year." end
-  if not hh or hh < 0 or hh > 23 then return nil, "Invalid hour." end
-  if not mm or mm < 0 or mm > 59 then return nil, "Invalid minute." end
-  if not ss or ss < 0 or ss > 59 then return nil, "Invalid seconds." end
+  if not year or year < 1970 or year > 2100 then return nil, "Invalid year." end
+  if not hour or hour < 0 or hour > 23 then return nil, "Invalid hour." end
+  if not minute or minute < 0 or minute > 59 then return nil, "Invalid minute." end
+  if not second or second < 0 or second > 59 then return nil, "Invalid seconds." end
 
   local epoch = time({
-    year = y, month = month, day = day,
-    hour = hh, min = mm, sec = ss,
+    year = year, month = month, day = day,
+    hour = hour, min = minute, sec = second,
     isdst = false,
   })
 

@@ -101,11 +101,11 @@ local function EnsureFrame(self)
     border:SetAlpha(0.0)
     roleButton._eventqBorder = border
 
-    local hl = roleButton:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
-    hl:SetAllPoints()
-    hl:SetBlendMode("ADD")
-    roleButton._eventqHL = hl
+    local highlightTexture = roleButton:CreateTexture(nil, "HIGHLIGHT")
+    highlightTexture:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+    highlightTexture:SetAllPoints()
+    highlightTexture:SetBlendMode("ADD")
+    roleButton._eventqHL = highlightTexture
 
     roleButton:SetScript("OnClick", function()
       if roleButton:GetChecked() then
@@ -176,11 +176,11 @@ local function EnsureFrame(self)
       end
     end
 
-    local cb = popupFrame._eventqCallback
+    local acceptCallback = popupFrame._eventqCallback
     popupFrame._eventqCallback = nil
     popupFrame:Hide()
 
-    if cb then cb() end
+    if acceptCallback then acceptCallback() end
   end)
 
   -- Enable/disable queue based on selection

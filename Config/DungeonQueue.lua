@@ -67,16 +67,16 @@ DungeonQueue.RandomTimewalkingByExpansionIndex = {
 }
 
 local function GetExpansionName(expIndex)
-  local k = "EXPANSION_NAME" .. tostring(expIndex)
-  return _G[k]
+  local expansionNameKey = "EXPANSION_NAME" .. tostring(expIndex)
+  return _G[expansionNameKey]
 end
 
 local function IsTimewalkingText(title, desc)
   title = title or ""
   desc = desc or ""
   -- Localized "Timewalking" label used by the client for the Timewalker difficulty.
-  local tw = _G.PLAYER_DIFFICULTY_TIMEWALKER or "Timewalking"
-  if title:find(tw, 1, true) or desc:find(tw, 1, true) then
+  local timewalkingLabel = _G.PLAYER_DIFFICULTY_TIMEWALKER or "Timewalking"
+  if title:find(timewalkingLabel, 1, true) or desc:find(timewalkingLabel, 1, true) then
     return true
   end
   -- Extra fallback for enUS text (or if the global is missing for some reason).

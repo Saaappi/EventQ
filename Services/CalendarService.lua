@@ -99,8 +99,8 @@ local function findEventIndexByScan(eventID, monthOffset, monthDay)
   if not eventID or monthOffset == nil or monthDay == nil then return nil end
   local numDayEvents = C_Calendar.GetNumDayEvents(monthOffset, monthDay)
   for i = 1, numDayEvents do
-    local ev = C_Calendar.GetDayEvent(monthOffset, monthDay, i)
-    if ev and ev.eventID == eventID then
+    local dayEvent = C_Calendar.GetDayEvent(monthOffset, monthDay, i)
+    if dayEvent and dayEvent.eventID == eventID then
       return { offsetMonths = monthOffset, monthDay = monthDay, eventIndex = i }
     end
   end
@@ -143,8 +143,8 @@ function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
   end
 
   -- OpenEvent is required before GetEventInfo (stateful API).
-  local ok = C_Calendar.OpenEvent(idx.offsetMonths, idx.monthDay, idx.eventIndex)
-  if ok == false then
+  local success = C_Calendar.OpenEvent(idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if success == false then
     return nil
   end
 
@@ -175,10 +175,10 @@ function CalendarService:TryFetchDescription(eventID, monthOffset, monthDay, tit
 
   -- Quick win: many HOLIDAY-type events expose their description via GetHolidayInfo.
   if calendarType == "HOLIDAY" then
-    local hd = holidayDescByName(monthOffset, monthDay, title)
-    if hd then
-      self._descCache[key] = hd
-      return hd
+    local holidayDescription = holidayDescByName(monthOffset, monthDay, title)
+    if holidayDescription then
+      self._descCache[key] = holidayDescription
+      return holidayDescription
     end
   end
 
@@ -194,8 +194,8 @@ function CalendarService:TryFetchDescription(eventID, monthOffset, monthDay, tit
   end
 
   -- OpenEvent is required before GetEventInfo (stateful API).
-  local ok = C_Calendar.OpenEvent(idx.offsetMonths, idx.monthDay, idx.eventIndex)
-  if ok == false then
+  local success = C_Calendar.OpenEvent(idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if success == false then
     -- Don't cache; could be transient.
     return nil
   end
@@ -362,22 +362,22 @@ function CalendarService:CollectWindow(maxDaysAhead)
 
     local numDayEvents = GetNumDayEvents(monthOffset, monthDay)
     for i = 1, numDayEvents do
-      local ev = GetDayEvent(monthOffset, monthDay, i)
-      if ev and ev.startTime and ev.endTime then
-        local startEpoch = dateUtil:CalendarTimeToEpoch(ev.startTime)
-        local endEpoch = dateUtil:CalendarTimeToEpoch(ev.endTime)
+      local dayEvent = GetDayEvent(monthOffset, monthDay, i)
+      if dayEvent and dayEvent.startTime and dayEvent.endTime then
+        local startEpoch = dateUtil:CalendarTimeToEpoch(dayEvent.startTime)
+        local endEpoch = dateUtil:CalendarTimeToEpoch(dayEvent.endTime)
 
         upsert({
-          id = ev.eventID or mkKey(ev.title, startEpoch, endEpoch),
-          eventID = ev.eventID,
-          title = ev.title,
+          id = dayEvent.eventID or mkKey(dayEvent.title, startEpoch, endEpoch),
+          eventID = dayEvent.eventID,
+          title = dayEvent.title,
           description = nil, -- fetched lazily on tooltip
           startEpoch = startEpoch,
           endEpoch = endEpoch,
-          icon = ev.iconTexture,
+          icon = dayEvent.iconTexture,
           iconIsCalendar = true,
-          source = "Calendar (" .. (ev.calendarType or "UNKNOWN") .. ")",
-          calendarType = ev.calendarType,
+          source = "Calendar (" .. (dayEvent.calendarType or "UNKNOWN") .. ")",
+          calendarType = dayEvent.calendarType,
           monthOffset = monthOffset,
           monthDay = monthDay,
         })

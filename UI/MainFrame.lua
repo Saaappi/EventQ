@@ -35,12 +35,12 @@ function MainFrame:SavePosition()
   local pos = EnsureWindowDefaults(db)
   if not pos then return end
 
-  local point, _, relPoint, x, y = self.frame:GetPoint(1)
-  if not point then return end
-  pos.point = point
-  pos.relPoint = relPoint or point
-  pos.x = x or 0
-  pos.y = y or 0
+  local anchorPoint, _, relativePoint, offsetX, offsetY = self.frame:GetPoint(1)
+  if not anchorPoint then return end
+  pos.point = anchorPoint
+  pos.relPoint = relativePoint or anchorPoint
+  pos.x = offsetX or 0
+  pos.y = offsetY or 0
 end
 
 local function PickCogwheelAtlas()
@@ -69,10 +69,10 @@ end
 
 
 local function CreateSectionHeader(parent, text, offsetX, offsetY)
-  local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  fs:SetPoint("TOPLEFT", offsetX, offsetY)
-  fs:SetText(text)
-  return fs
+  local titleFontString = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  titleFontString:SetPoint("TOPLEFT", oftitleFontStringetX, oftitleFontStringetY)
+  titleFontString:SetText(text)
+  return titleFontString
 end
 
 local function CreateModernList(parent, app)
@@ -115,8 +115,8 @@ local function CreateModernList(parent, app)
 
   ScrollUtil.InitScrollBoxListWithScrollBar(scrollBox, scrollBar, view)
 
-  local dp = CreateDataProvider()
-  scrollBox:SetDataProvider(dp)
+  local dataProvider = CreateDataProvider()
+  scrollBox:SetDataProvider(dataProvider)
 
   -- One more layout pass once the frame has a real size.
   if C_Timer and C_Timer.After then
@@ -127,7 +127,7 @@ local function CreateModernList(parent, app)
     end)
   end
 
-  return scrollBox, dp
+  return scrollBox, dataProvider
 end
 
 
@@ -271,22 +271,22 @@ local function EnsureDescriptionPopup(self)
   back:SetSize(110, 24)
   back:SetText("Back")
 
-  local ok = CreateFrame("Button", nil, popupFrame, "UIPanelButtonTemplate")
-  ok:SetSize(110, 24)
-  ok:SetText("Add")
+  local okButton = CreateFrame("Button", nil, popupFrame, "UIPanelButtonTemplate")
+  okButton:SetSize(110, 24)
+  okButton:SetText("Add")
 
   local gap = 20
   back:SetPoint("BOTTOM", popupFrame, "BOTTOM", -(back:GetWidth() / 2 + gap / 2), 16)
-  ok:SetPoint("LEFT", back, "RIGHT", gap, 0)
+  okButton:SetPoint("LEFT", back, "RIGHT", gap, 0)
 
   popupFrame._eventqBack = back
-  popupFrame._eventqOK = ok
+  popupFrame._eventqOK = okButton
 
   back:SetScript("OnClick", function()
     popupFrame:Hide()
   end)
 
-  ok:SetScript("OnClick", function()
+  okButton:SetScript("OnClick", function()
     if self and self._CommitCustomFromDescriptionPopup then
       self:_CommitCustomFromDescriptionPopup()
     end
@@ -359,10 +359,10 @@ function MainFrame:Constructor(app)
 
   -- Hover highlight / glow.
   cfgBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
-  local hl = cfgBtn:GetHighlightTexture()
-  if hl then
-    hl:SetAllPoints(cfgBtn)
-    hl:SetAlpha(0.85)
+  local highlightTexture = cfgBtn:GetHighlightTexture()
+  if highlightTexture then
+    highlightTexture:SetAllPoints(cfgBtn)
+    highlightTexture:SetAlpha(0.85)
   end
 
 
@@ -452,12 +452,12 @@ function MainFrame:Constructor(app)
   end
 
   local function MakeEditBox(width, anchorTo, dx, dy)
-    local eb = CreateFrame("EditBox", nil, editor, "InputBoxTemplate")
-    eb:SetAutoFocus(false)
-    eb:SetSize(width, 20)
-    eb:SetPoint("TOPLEFT", anchorTo, dx, dy)
-    eb:SetScript("OnEscapePressed", function() eb:ClearFocus() end)
-    return eb
+    local editBox = CreateFrame("EditBox", nil, editor, "InputBoxTemplate")
+    editBox:SetAutoFocus(false)
+    editBox:SetSize(width, 20)
+    editBox:SetPoint("TOPLEFT", anchorTo, dx, dy)
+    editBox:SetScript("OnEscapePressed", function() editBox:ClearFocus() end)
+    return editBox
   end
 
   local hint = self.dateUtil:FormatHint(self.app.db.settings.dateOrder)

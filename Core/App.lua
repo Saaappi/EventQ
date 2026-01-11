@@ -58,20 +58,20 @@ local function ApplyIconOverrides(app, event)
 
   -- 0) SavedVariables per-user override by eventID (persists to disk)
   if app and app.db and app.db.iconOverridesById and overrideID ~= nil then
-    local sv = app.db.iconOverridesById
-    local ico = (idNum and sv[idNum]) or (idStr and sv[idStr])
+    local savedOverrides = app.db.iconOverridesById
+    local ico = (idNum and savedOverrides[idNum]) or (idStr and savedOverrides[idStr])
     if ico then
       ApplyOverrideToEvent(event, ico)
       return
     end
   end
 
-  local ov = ns.IconOverrides
-  if not ov then return end
+  local iconOverrides = ns.IconOverrides
+  if not iconOverrides then return end
 
   -- 1) Explicit eventID override (config)
-  if overrideID ~= nil and ov.byId then
-    local ico = (idNum and ov.byId[idNum]) or (idStr and ov.byId[idStr])
+  if overrideID ~= nil and iconOverrides.byId then
+    local ico = (idNum and iconOverrides.byId[idNum]) or (idStr and iconOverrides.byId[idStr])
     if ico then
       ApplyOverrideToEvent(event, ico)
       return
@@ -79,14 +79,14 @@ local function ApplyIconOverrides(app, event)
   end
 
   -- 2) Exact title override
-  if event.title and ov.byTitle and ov.byTitle[event.title] then
-    ApplyOverrideToEvent(event, ov.byTitle[event.title])
+  if event.title and iconOverrides.byTitle and iconOverrides.byTitle[event.title] then
+    ApplyOverrideToEvent(event, iconOverrides.byTitle[event.title])
     return
   end
 
   -- 3) Substring/title-contains rules (ordered; first match wins)
-  if event.title and ov.byTitleContains then
-    for _, rule in ipairs(ov.byTitleContains) do
+  if event.title and iconOverrides.byTitleContains then
+    for _, rule in ipairs(iconOverrides.byTitleContains) do
       local needle = rule and rule[1]
       local icon = rule and rule[2]
       if needle and icon and event.title:find(needle, 1, true) then
@@ -226,7 +226,7 @@ function App:RefreshAll()
       end
     end
 
-    local ce = {
+    local customEvent = {
       id = e.id,
       eventID = nil,
       title = e.title,
@@ -237,8 +237,8 @@ function App:RefreshAll()
       source = "Custom",
       isCustom = true,
     }
-    ApplyIconOverrides(ce)
-    all[#all + 1] = ce
+    ApplyIconOverrides(customEvent)
+    all[#all + 1] = customEvent
   end
 
   local ongoing = self.ongoing

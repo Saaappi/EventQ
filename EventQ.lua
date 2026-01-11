@@ -9,10 +9,10 @@ end
 -- We intentionally *delay* constructing the App until then to ensure we bind to the persisted table.
 local app
 
-local ev = CreateFrame("Frame")
-ev:RegisterEvent("ADDON_LOADED")
-ev:RegisterEvent("PLAYER_LOGIN")
-ev:RegisterEvent("CALENDAR_UPDATE_EVENT_LIST")
+local addonFrame = CreateFrame("Frame")
+addonFrame:RegisterEvent("ADDON_LOADED")
+addonFrame:RegisterEvent("PLAYER_LOGIN")
+addonFrame:RegisterEvent("CALENDAR_UPDATE_EVENT_LIST")
 
 local function EnsureDB()
   EventQDB = EventQDB or {}
@@ -75,7 +75,7 @@ local function delayedCalendarRequest()
   end)
 end
 
-ev:SetScript("OnEvent", function(_, event, arg1)
+addonFrame:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" then
     if arg1 ~= ADDON then return end
     EnsureApp()

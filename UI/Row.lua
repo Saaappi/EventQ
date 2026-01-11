@@ -51,9 +51,9 @@ local function EnsureTexture(frame)
     if holder and icon and icon.ClearAllPoints and icon.SetPoint and icon.SetSize then
       icon:ClearAllPoints()
       icon:SetPoint("CENTER", holder, "CENTER", 0, 0)
-      local w, h = holder:GetSize()
-      if not w or w <= 0 then w, h = 32, 32 end
-      icon:SetSize(w, h)
+      local holderWidth, holderHeight = holder:GetSize()
+      if not holderWidth or holderWidth <= 0 then holderWidth, holderHeight = 32, 32 end
+      icon:SetSize(holderWidth, holderHeight)
       if icon.SetTexCoord then
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
       end
@@ -81,14 +81,14 @@ local function EnsureTexture(frame)
 
   -- Mask so icons stay neatly inside the frame (avoids odd-shaped textures spilling).
   if holder.CreateMaskTexture and icon.AddMaskTexture then
-    local ok, mask = pcall(function() return holder:CreateMaskTexture(nil, "ARTWORK") end)
-    if not ok then
+    local success, mask = pcall(function() return holder:CreateMaskTexture(nil, "ARTWORK") end)
+    if not success then
       mask = holder:CreateMaskTexture()
     end
     -- Prefer the modern squircle icon mask; fall back if missing on this client.
     pcall(mask.SetTexture, mask, "Interface/Common/common-iconmask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    local mt = mask.GetTexture and mask:GetTexture()
-    if not mt then
+    local maskTexturePath = mask.GetTexture and mask:GetTexture()
+    if not maskTexturePath then
       mask:SetTexture("Interface/CharacterFrame/TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
     end
     mask:SetAllPoints(icon)
@@ -141,20 +141,20 @@ local function EnsureUrgencyBackground(frame)
 
   -- Use a slightly higher layer than the backdrop so it is visible, but still below
   -- icon/text (ARTWORK/OVERLAY).
-  local bg = frame:CreateTexture(nil, "BORDER")
-  bg:SetAllPoints(frame)
-  bg:SetTexture("Interface/AddOns/EventQ/Media/urgency_fade.tga")
+  local urgencyBg = frame:CreateTexture(nil, "BORDER")
+  urgencyBg:SetAllPoints(frame)
+  urgencyBg:SetTexture("Interface/AddOns/EventQ/Media/urgency_fade.tga")
 
   -- Texture is white with alpha ramp to 0 near the right edge; tint red here.
-  if bg.SetVertexColor then
-    bg:SetVertexColor(1, 0, 0, 0.18)
+  if urgencyBg.SetVertexColor then
+    urgencyBg:SetVertexColor(1, 0, 0, 0.18)
   else
-    bg:SetAlpha(0.18)
+    urgencyBg:SetAlpha(0.18)
   end
-  bg:Hide()
+  urgencyBg:Hide()
 
-  frame._eventqUrgencyBg = bg
-  return bg
+  frame._eventqUrgencyBg = urgencyBg
+  return urgencyBg
 end
 
 ---@param frame Button
@@ -335,9 +335,9 @@ function Row:SetEvent(event, dateUtil)
   if self.icon and self.iconHolder and self.icon.ClearAllPoints and self.icon.SetPoint and self.icon.SetSize then
     self.icon:ClearAllPoints()
     self.icon:SetPoint("CENTER", self.iconHolder, "CENTER", 0, 0)
-    local w, h = self.iconHolder:GetSize()
-    if not w or w <= 0 then w, h = 32, 32 end
-    self.icon:SetSize(w, h)
+    local holderWidth, holderHeight = self.iconHolder:GetSize()
+    if not holderWidth or holderWidth <= 0 then holderWidth, holderHeight = 32, 32 end
+    self.icon:SetSize(holderWidth, holderHeight)
 
     if self.icon.SetTexCoord then
       local tc = event._eventqTexCoord

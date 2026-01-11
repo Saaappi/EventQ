@@ -24,10 +24,10 @@ function PVPQueue:JoinBrawl()
   if not self:CanQueueBrawl() then return false end
 
   -- Prefer "special event brawl" if queueable; otherwise normal brawl.
-  local ok, info = pcall(function()
+  local success, brawlInfo = pcall(function()
     return C_PvP.GetSpecialEventBrawlInfo and C_PvP.GetSpecialEventBrawlInfo() or nil
   end)
-  if ok and info and info.canQueue then
+  if success and brawlInfo and brawlInfo.canQueue then
     C_PvP.JoinBrawl(true)
     return true
   end
