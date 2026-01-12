@@ -48,13 +48,14 @@ local SERIES_FREQ = {
   ANNUALLY = "ANNUALLY",
 }
 
+
+local SERIES_INTERVAL_FROM = {
+  START = "START",
+  END = "END",
+}
+
 local function IsSeriesEnabled(series)
   return type(series) == "table" and series.enabled == true and type(series.frequency) == "string"
-end
-local function IsSeriesWindowBoundedFrequency(series)
-  if type(series) ~= "table" then return false end
-  local freq = series.frequency
-  return freq == SERIES_FREQ.MINUTELY or freq == SERIES_FREQ.HOURLY or freq == SERIES_FREQ.DAILY
 end
 
 local function ClampInteger(value, minValue, maxValue, fallback)
@@ -97,10 +98,22 @@ local function NormalizeSeriesConfig(_dateUtil, series, startEpoch)
     local intervalMinutes = tonumber(series.intervalMinutes) or 30
     if intervalMinutes < 1 then intervalMinutes = 1 end
     normalized.intervalMinutes = intervalMinutes
+
+    local intervalFrom = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper()
+    if intervalFrom ~= SERIES_INTERVAL_FROM.END then
+      intervalFrom = SERIES_INTERVAL_FROM.START
+    end
+    normalized.intervalFrom = intervalFrom
   elseif frequency == SERIES_FREQ.HOURLY then
     local intervalHours = tonumber(series.intervalHours) or 1
     if intervalHours < 1 then intervalHours = 1 end
     normalized.intervalHours = intervalHours
+
+    local intervalFrom = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper()
+    if intervalFrom ~= SERIES_INTERVAL_FROM.END then
+      intervalFrom = SERIES_INTERVAL_FROM.START
+    end
+    normalized.intervalFrom = intervalFrom
   elseif frequency == SERIES_FREQ.MONTHLY then
     normalized.weekOfMonth = ClampInteger(series.weekOfMonth, 1, 5, 1)
     normalized.weekday = ClampInteger(series.weekday, 1, 7, 1)
@@ -113,13 +126,31 @@ local function NormalizeSeriesConfig(_dateUtil, series, startEpoch)
   return normalized
 end
 
-local function NextSeriesStart(dateUtil, startEpoch, series)
+local function NextSeriesStart(dateUtil, startEpoch, series, durationSeconds)
   if not (dateUtil and IsSeriesEnabled(series)) then return startEpoch end
+
   local frequency = series.frequency
   if frequency == SERIES_FREQ.MINUTELY then
-    return dateUtil:AddMinutes(startEpoch, series.intervalMinutes or 30)
+    local intervalMinutes = tonumber(series.intervalMinutes) or 30
+    if intervalMinutes < 1 then intervalMinutes = 1 end
+
+    local fromEnd = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper() == SERIES_INTERVAL_FROM.END
+    local duration = tonumber(durationSeconds) or 0
+    if fromEnd and duration > 0 then
+      -- Interval is a gap after the previous end time.
+      return dateUtil:AddMinutes(startEpoch, intervalMinutes) + duration
+    end
+    return dateUtil:AddMinutes(startEpoch, intervalMinutes)
   elseif frequency == SERIES_FREQ.HOURLY then
-    return dateUtil:AddHours(startEpoch, series.intervalHours or 1)
+    local intervalHours = tonumber(series.intervalHours) or 1
+    if intervalHours < 1 then intervalHours = 1 end
+
+    local fromEnd = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper() == SERIES_INTERVAL_FROM.END
+    local duration = tonumber(durationSeconds) or 0
+    if fromEnd and duration > 0 then
+      return dateUtil:AddHours(startEpoch, intervalHours) + duration
+    end
+    return dateUtil:AddHours(startEpoch, intervalHours)
   elseif frequency == SERIES_FREQ.DAILY then
     return dateUtil:AddDays(startEpoch, 1)
   elseif frequency == SERIES_FREQ.WEEKLY then
@@ -129,6 +160,7 @@ local function NextSeriesStart(dateUtil, startEpoch, series)
   elseif frequency == SERIES_FREQ.ANNUALLY then
     return dateUtil:AddYearsByMonthDay(startEpoch, 1, series.month, series.day)
   end
+
   return dateUtil:AddDays(startEpoch, 1)
 end
 
@@ -140,7 +172,7 @@ local function CorrectSeriesStartIfNeeded(dateUtil, startEpoch, series)
   return startEpoch
 end
 
-local function NextOccurrenceStartAtOrAfter(dateUtil, firstStartEpoch, series, targetEpoch)
+local function NextOccurrenceStartAtOrAfter(dateUtil, firstStartEpoch, series, targetEpoch, durationSeconds)
   if not (dateUtil and IsSeriesEnabled(series)) then return firstStartEpoch end
   targetEpoch = tonumber(targetEpoch) or time()
   firstStartEpoch = tonumber(firstStartEpoch) or 0
@@ -150,14 +182,29 @@ local function NextOccurrenceStartAtOrAfter(dateUtil, firstStartEpoch, series, t
   if frequency == SERIES_FREQ.MINUTELY then
     local intervalMinutes = tonumber(series.intervalMinutes) or 30
     if intervalMinutes < 1 then intervalMinutes = 1 end
+
     local intervalSeconds = intervalMinutes * 60
+    local duration = tonumber(durationSeconds) or 0
+    local fromEnd = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper() == SERIES_INTERVAL_FROM.END
+    if fromEnd and duration > 0 then
+      -- Interval is a gap after the end time; cycle length is duration + gap.
+      intervalSeconds = intervalSeconds + duration
+    end
+
     local deltaSeconds = targetEpoch - firstStartEpoch
     local steps = math.floor((deltaSeconds + intervalSeconds - 1) / intervalSeconds)
     return firstStartEpoch + (steps * intervalSeconds)
   elseif frequency == SERIES_FREQ.HOURLY then
     local intervalHours = tonumber(series.intervalHours) or 1
     if intervalHours < 1 then intervalHours = 1 end
+
     local intervalSeconds = intervalHours * 3600
+    local duration = tonumber(durationSeconds) or 0
+    local fromEnd = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper() == SERIES_INTERVAL_FROM.END
+    if fromEnd and duration > 0 then
+      intervalSeconds = intervalSeconds + duration
+    end
+
     local deltaSeconds = targetEpoch - firstStartEpoch
     local steps = math.floor((deltaSeconds + intervalSeconds - 1) / intervalSeconds)
     return firstStartEpoch + (steps * intervalSeconds)
@@ -197,7 +244,7 @@ local function NextOccurrenceStartAtOrAfter(dateUtil, firstStartEpoch, series, t
   local candidate = firstStartEpoch
   local guard = 0
   while candidate < targetEpoch and guard < 500 do
-    candidate = NextSeriesStart(dateUtil, candidate, series)
+    candidate = NextSeriesStart(dateUtil, candidate, series, durationSeconds)
     guard = guard + 1
   end
   return candidate
@@ -211,34 +258,37 @@ local function AdvanceSeriesInPlace(dateUtil, dbEvent, nowEpoch)
   local endEpoch = tonumber(dbEvent.endEpoch)
   if not (startEpoch and endEpoch) then return false end
 
-  local duration = endEpoch - startEpoch
-  if duration <= 0 then
+  local durationSeconds = endEpoch - startEpoch
+  if durationSeconds <= 0 then
     -- Defensive: normalize to 1 hour.
-    duration = 3600
-    endEpoch = startEpoch + duration
+    durationSeconds = 3600
   end
 
   local series = dbEvent.series
   startEpoch = CorrectSeriesStartIfNeeded(dateUtil, startEpoch, series)
-  endEpoch = startEpoch + duration
+  endEpoch = startEpoch + durationSeconds
 
-  local changed = (startEpoch ~= dbEvent.startEpoch) or (endEpoch ~= dbEvent.endEpoch)
+  nowEpoch = tonumber(nowEpoch) or time()
 
-  local safety = 0
-  while (nowEpoch or 0) > endEpoch do
-    safety = safety + 1
-    if safety > 2000 then
-      break
-    end
-    startEpoch = NextSeriesStart(dateUtil, startEpoch, series)
-    endEpoch = startEpoch + duration
-    changed = true
+  -- Find the occurrence that is either currently active or the next upcoming.
+  local targetStart = nowEpoch - durationSeconds + 1
+  local nextStart = NextOccurrenceStartAtOrAfter(dateUtil, startEpoch, series, targetStart, durationSeconds)
+  nextStart = CorrectSeriesStartIfNeeded(dateUtil, nextStart, series)
+
+  local nextEnd = nextStart + durationSeconds
+  if nowEpoch > nextEnd then
+    -- Edge case: if we landed on a stale occurrence due to correction/rounding, step once.
+    nextStart = NextSeriesStart(dateUtil, nextStart, series, durationSeconds)
+    nextStart = CorrectSeriesStartIfNeeded(dateUtil, nextStart, series)
+    nextEnd = nextStart + durationSeconds
   end
 
+  local changed = (nextStart ~= dbEvent.startEpoch) or (nextEnd ~= dbEvent.endEpoch)
   if changed then
-    dbEvent.startEpoch = startEpoch
-    dbEvent.endEpoch = endEpoch
+    dbEvent.startEpoch = nextStart
+    dbEvent.endEpoch = nextEnd
   end
+
   return changed
 end
 
@@ -608,39 +658,36 @@ function App:GetSeriesOccurrences(rootId, count)
   local endEpoch = tonumber(dbEvent.endEpoch)
   if not (startEpoch and endEpoch) then return {} end
 
-  local duration = endEpoch - startEpoch
-  if duration <= 0 then duration = 3600 end
+  local durationSeconds = endEpoch - startEpoch
+  if durationSeconds <= 0 then durationSeconds = 3600 end
 
   local series = dbEvent.series
   local maxCount = tonumber(count) or self:GetSeriesViewCount(series)
   if maxCount < 1 then return {} end
 
   local occurrences = {}
+
+  -- Start with the currently-active occurrence (if any); otherwise the next upcoming occurrence.
   local occStart = CorrectSeriesStartIfNeeded(self.dateUtil, startEpoch, series)
-  occStart = NextOccurrenceStartAtOrAfter(self.dateUtil, occStart, series, nowEpoch)
-  local bounded = IsSeriesWindowBoundedFrequency(series)
-  local seriesEndEpoch = bounded and endEpoch or nil
+  local targetStart = nowEpoch - durationSeconds + 1
+  occStart = NextOccurrenceStartAtOrAfter(self.dateUtil, occStart, series, targetStart, durationSeconds)
 
-  for _ = 1, maxCount do
-    if seriesEndEpoch and occStart > seriesEndEpoch then
-      break
-    end
+  for index = 1, maxCount do
+    local occEnd = occStart + durationSeconds
+    occurrences[index] = {
+      startEpoch = occStart,
+      endEpoch = occEnd,
+      index = index - 1,
+    }
 
-    local occEnd = occStart + duration
-    if seriesEndEpoch and occEnd > seriesEndEpoch then
-      occEnd = seriesEndEpoch
-    end
-
-    occurrences[#occurrences + 1] = { startEpoch = occStart, endEpoch = occEnd }
-
-    local nextStart = NextSeriesStart(self.dateUtil, occStart, series)
-    if type(nextStart) ~= "number" or nextStart <= occStart then
-      break
-    end
-    occStart = nextStart
+    occStart = NextSeriesStart(self.dateUtil, occStart, series, durationSeconds)
+    occStart = CorrectSeriesStartIfNeeded(self.dateUtil, occStart, series)
   end
+
   return occurrences
 end
+
+
 
 function App:_PruneNotified(now)
   local notifiedTimestampsById = self.db.notified

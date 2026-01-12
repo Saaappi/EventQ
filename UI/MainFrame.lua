@@ -16,6 +16,11 @@ local SERIES_FREQ = {
   ANNUALLY = "ANNUALLY",
 }
 
+local SERIES_INTERVAL_FROM = {
+  START = "START",
+  END = "END",
+}
+
 local SERIES_FREQUENCY_OPTIONS = {
   { key = SERIES_FREQ.MINUTELY, label = "Minutely" },
   { key = SERIES_FREQ.HOURLY, label = "Hourly" },
@@ -492,6 +497,21 @@ local function EnsureDescriptionPopup(self)
   intervalUnit:SetPoint("LEFT", intervalEdit, "RIGHT", 6, 0)
   intervalUnit:SetText("minutes")
 
+  local intervalFromEndCheck = CreateFrame("CheckButton", nil, popupFrame, "UICheckButtonTemplate")
+  intervalFromEndCheck:SetSize(24, 24)
+  intervalFromEndCheck:SetPoint("LEFT", intervalUnit, "RIGHT", 10, 0)
+
+  local intervalFromEndLabel = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  intervalFromEndLabel:SetPoint("LEFT", intervalFromEndCheck, "RIGHT", 0, 0)
+  intervalFromEndLabel:SetText("after end")
+
+  intervalFromEndCheck:HookScript("OnEnter", function()
+    GameTooltip:SetOwner(intervalFromEndCheck, "ANCHOR_RIGHT")
+    GameTooltip:SetText("If checked, the interval is a gap after the event ends.\n\nExample: duration 6h + gap 12h.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  intervalFromEndCheck:HookScript("OnLeave", function() GameTooltip:Hide() end)
+
   local monthWeekDrop = CreateFrame("DropdownButton", nil, popupFrame, "WowStyle1DropdownTemplate")
   monthWeekDrop:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 44)
   monthWeekDrop:SetWidth(70)
@@ -507,6 +527,8 @@ local function EnsureDescriptionPopup(self)
   popupFrame._eventqIntervalLabel = intervalLabel
   popupFrame._eventqIntervalEdit = intervalEdit
   popupFrame._eventqIntervalUnit = intervalUnit
+  popupFrame._eventqIntervalFromEndCheck = intervalFromEndCheck
+  popupFrame._eventqIntervalFromEndLabel = intervalFromEndLabel
   popupFrame._eventqMonthWeekDrop = monthWeekDrop
   popupFrame._eventqMonthWeekdayDrop = monthWeekdayDrop
 
@@ -545,12 +567,28 @@ local function EnsureDescriptionPopup(self)
     local frequency = tostring(series.frequency or SERIES_FREQ.DAILY):upper()
     series.frequency = frequency
 
+    if frequency ~= SERIES_FREQ.MINUTELY and frequency ~= SERIES_FREQ.HOURLY then
+      series.intervalFrom = nil
+    end
+
     if frequency == SERIES_FREQ.MINUTELY then
       series.intervalMinutes = tonumber(series.intervalMinutes) or 30
       if series.intervalMinutes < 1 then series.intervalMinutes = 1 end
+
+      local intervalFrom = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper()
+      if intervalFrom ~= SERIES_INTERVAL_FROM.END then
+        intervalFrom = SERIES_INTERVAL_FROM.START
+      end
+      series.intervalFrom = intervalFrom
     elseif frequency == SERIES_FREQ.HOURLY then
       series.intervalHours = tonumber(series.intervalHours) or 1
       if series.intervalHours < 1 then series.intervalHours = 1 end
+
+      local intervalFrom = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper()
+      if intervalFrom ~= SERIES_INTERVAL_FROM.END then
+        intervalFrom = SERIES_INTERVAL_FROM.START
+      end
+      series.intervalFrom = intervalFrom
     elseif frequency == SERIES_FREQ.MONTHLY then
       local dateUtil = self and self.dateUtil
       local startEpoch = (payload and payload.startEpoch) or time()
@@ -576,6 +614,8 @@ local function EnsureDescriptionPopup(self)
       intervalLabel:Hide()
       intervalEdit:Hide()
       intervalUnit:Hide()
+      intervalFromEndCheck:Hide()
+      intervalFromEndLabel:Hide()
       monthWeekDrop:Hide()
       monthWeekdayDrop:Hide()
       return
@@ -591,6 +631,12 @@ local function EnsureDescriptionPopup(self)
     intervalLabel:SetShown(showInterval)
     intervalEdit:SetShown(showInterval)
     intervalUnit:SetShown(showInterval)
+    intervalFromEndCheck:SetShown(showInterval)
+    intervalFromEndLabel:SetShown(showInterval)
+
+    local fromEnd = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper() == SERIES_INTERVAL_FROM.END
+    intervalFromEndCheck:SetChecked(fromEnd)
+    intervalLabel:SetText(fromEnd and "Gap" or "Every")
 
     local showMonthly = frequency == SERIES_FREQ.MONTHLY
     monthWeekDrop:SetShown(showMonthly)
@@ -710,6 +756,19 @@ local function EnsureDescriptionPopup(self)
       series.intervalMinutes = val
     elseif tostring(series.frequency):upper() == SERIES_FREQ.HOURLY then
       series.intervalHours = val
+    end
+    UpdateSeriesUI()
+  end)
+
+  intervalFromEndCheck:SetScript("OnClick", function()
+    local payload = popupFrame._eventqPayload
+    local series = EnsureSeriesInPayload(payload)
+    if not series then return end
+
+    if intervalFromEndCheck:GetChecked() then
+      series.intervalFrom = SERIES_INTERVAL_FROM.END
+    else
+      series.intervalFrom = SERIES_INTERVAL_FROM.START
     end
     UpdateSeriesUI()
   end)
@@ -1258,10 +1317,20 @@ function MainFrame:_NormalizeSeriesPayload(payload)
   local frequency = tostring(series.frequency or SERIES_FREQ.DAILY):upper()
   series.frequency = frequency
 
+  if frequency ~= SERIES_FREQ.MINUTELY and frequency ~= SERIES_FREQ.HOURLY then
+    series.intervalFrom = nil
+  end
+
   if frequency == SERIES_FREQ.MINUTELY then
     local minutes = tonumber(series.intervalMinutes) or 30
     minutes = math.max(1, math.floor(minutes))
     series.intervalMinutes = minutes
+
+    local intervalFrom = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper()
+    if intervalFrom ~= SERIES_INTERVAL_FROM.END then
+      intervalFrom = SERIES_INTERVAL_FROM.START
+    end
+    series.intervalFrom = intervalFrom
     series.intervalHours = nil
     series.weekOfMonth = nil
     series.weekday = nil
@@ -1271,6 +1340,12 @@ function MainFrame:_NormalizeSeriesPayload(payload)
     local hours = tonumber(series.intervalHours) or 1
     hours = math.max(1, math.floor(hours))
     series.intervalHours = hours
+
+    local intervalFrom = tostring(series.intervalFrom or SERIES_INTERVAL_FROM.START):upper()
+    if intervalFrom ~= SERIES_INTERVAL_FROM.END then
+      intervalFrom = SERIES_INTERVAL_FROM.START
+    end
+    series.intervalFrom = intervalFrom
     series.intervalMinutes = nil
     series.weekOfMonth = nil
     series.weekday = nil
