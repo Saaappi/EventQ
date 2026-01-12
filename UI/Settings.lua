@@ -25,6 +25,119 @@ local function EnsureNotifyDefaults(db)
   db.notify.enabled = not not db.notify.chat
 end
 
+local function EnsureReminderDefaults(db)
+  db.reminders = db.reminders or {}
+  if type(db.reminders) ~= "table" then
+    db.reminders = {}
+  end
+
+  -- Migration: older builds stored enabled/useToasts. New builds store a single mode.
+  if db.reminders.mode == nil then
+    if db.reminders.enabled == false then
+      db.reminders.mode = "off"
+    elseif db.reminders.useToasts then
+      db.reminders.mode = "toast"
+    else
+      db.reminders.mode = "text"
+    end
+  end
+
+  if db.reminders.mode ~= "off" and db.reminders.mode ~= "text" and db.reminders.mode ~= "toast" then
+    db.reminders.mode = "text"
+  end
+
+  -- Keep legacy flags in sync for backward compatibility.
+  db.reminders.enabled = db.reminders.mode ~= "off"
+  db.reminders.useToasts = db.reminders.mode == "toast"
+
+  if type(db.reminders.sent) ~= "table" then
+    db.reminders.sent = {}
+  end
+end
+
+-- Custom Settings list element: a dropdown backed by the Settings API but using WowStyle1DropdownTemplate.
+-- This matches Blizzard's modern dropdown behavior (Settings.InitDropdown) while keeping the visual style requested.
+EventQWowStyle1DropdownControlMixin = CreateFromMixins(SettingsControlMixin)
+
+function EventQWowStyle1DropdownControlMixin:OnLoad()
+  SettingsControlMixin.OnLoad(self)
+
+  if self.Dropdown and self.Dropdown.SetWidth then
+    self.Dropdown:SetWidth(220)
+  end
+
+  if self.Dropdown then
+    Mixin(self.Dropdown, DefaultTooltipMixin)
+
+    local function OnShow()
+      local initializer = self:GetElementData()
+      if initializer and initializer.OnShow then
+        initializer.OnShow()
+      end
+    end
+
+    local function OnHide()
+      local initializer = self:GetElementData()
+      if initializer and initializer.OnHide then
+        initializer.OnHide()
+      end
+    end
+
+    if self.Dropdown.RegisterCallback and DropdownButtonMixin and DropdownButtonMixin.Event then
+      self.Dropdown:RegisterCallback(DropdownButtonMixin.Event.OnMenuOpen, OnShow)
+      self.Dropdown:RegisterCallback(DropdownButtonMixin.Event.OnMenuClose, OnHide)
+    end
+  end
+end
+
+function EventQWowStyle1DropdownControlMixin:Init(initializer)
+  SettingsControlMixin.Init(self, initializer)
+  self:InitDropdown()
+  self:EvaluateState()
+end
+
+function EventQWowStyle1DropdownControlMixin:InitDropdown()
+  if not self.Dropdown then return end
+
+  local setting = self:GetSetting()
+  local initializer = self:GetElementData()
+  local options = initializer and initializer.GetOptions and initializer:GetOptions()
+  if not (setting and options) then return end
+
+  local initTooltip = Settings.CreateOptionsInitTooltip(setting, initializer:GetName(), initializer:GetTooltip(), options)
+  local inserter = Settings.CreateDropdownOptionInserter(options)
+  Settings.InitDropdown(self.Dropdown, setting, inserter, initTooltip)
+end
+
+function EventQWowStyle1DropdownControlMixin:Release()
+  SettingsControlMixin.Release(self)
+end
+
+function EventQWowStyle1DropdownControlMixin:OnSettingValueChanged(setting, value)
+  SettingsControlMixin.OnSettingValueChanged(self, setting, value)
+
+  local initializer = self:GetElementData()
+  if initializer and initializer.reinitializeOnValueChanged then
+    self:InitDropdown()
+  end
+end
+
+function EventQWowStyle1DropdownControlMixin:SetValue(value)
+  -- Reinitialize to ensure the dropdown reflects the newly selected option.
+  self:InitDropdown()
+end
+
+function EventQWowStyle1DropdownControlMixin:EvaluateState()
+  SettingsListElementMixin.EvaluateState(self)
+
+  local enabled = self:IsEnabled()
+  if self.Dropdown and self.Dropdown.SetEnabled then
+    self.Dropdown:SetEnabled(enabled)
+  end
+  self:DisplayEnabled(enabled)
+  return enabled
+end
+
 function SettingsModule:Init(db)
   if self._inited then return end
   self._inited = true
@@ -35,6 +148,7 @@ function SettingsModule:Init(db)
   end
 
   EnsureNotifyDefaults(db)
+  EnsureReminderDefaults(db)
 
   local category, layout = Settings.RegisterVerticalLayoutCategory(CATEGORY_NAME)
   self.categoryID = category and category.GetID and category:GetID() or nil
@@ -87,6 +201,78 @@ function SettingsModule:Init(db)
 
   Settings.CreateCheckbox(category, chatSetting, "Print a chat message when an event becomes active.")
   Settings.CreateCheckbox(category, soundSetting, "Play a sound when an event becomes active.")
+
+
+  -- Reminders (custom events only)
+  if layout and layout.AddInitializer then
+    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Reminders"))
+  end
+
+  local function GetReminderMode()
+    EnsureReminderDefaults(db)
+    return db.reminders.mode
+  end
+
+  local function SetReminderMode(value)
+    EnsureReminderDefaults(db)
+    value = tostring(value or "")
+    if value ~= "off" and value ~= "text" and value ~= "toast" then
+      value = "text"
+    end
+    db.reminders.mode = value
+
+    -- Keep legacy flags in sync for backward compatibility.
+    db.reminders.enabled = value ~= "off"
+    db.reminders.useToasts = value == "toast"
+  end
+
+  local reminderModeSetting = Settings.RegisterProxySetting(
+    category,
+    "EVENTQ_CUSTOM_REMINDER_MODE",
+    Settings.VarType.String,
+    "Reminder Type",
+    "text",
+    GetReminderMode,
+    SetReminderMode
+  )
+
+  local function ReminderModeOptions()
+    return {
+      {
+        value = "text",
+        label = "Text",
+        text = "Text (UIErrorsFrame)",
+        tooltip = "Shows reminders as on-screen text similar to error messages.",
+        recommend = true,
+      },
+      {
+        value = "toast",
+        label = "Toast",
+        text = "Toast (Achievement style)",
+        tooltip = "Shows reminders as achievement-style toasts.",
+      },
+      {
+        value = "off",
+        label = "Off",
+        text = "Disabled",
+        tooltip = "Disables upcoming custom event reminders.",
+      },
+    }
+  end
+
+  local reminderTooltip = "Choose how (or if) reminders for upcoming custom events are shown."
+  local reminderModeInitializer = Settings.CreateControlInitializer(
+    "EventQWowStyle1DropdownControlTemplate",
+    reminderModeSetting,
+    ReminderModeOptions,
+    reminderTooltip
+  )
+
+  if layout and layout.AddInitializer then
+    layout:AddInitializer(reminderModeInitializer)
+  else
+    Settings.CreateDropdown(category, reminderModeSetting, ReminderModeOptions, reminderTooltip)
+  end
 
 
   -- "Window" section: allow the user to reset the main frame position.

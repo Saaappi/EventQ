@@ -35,6 +35,36 @@ local function EnsureDB()
   EventQDB.notify.enabled = not not EventQDB.notify.chat
 
 
+  -- Custom event reminders (UIErrorsFrame or toast)
+  EventQDB.reminders = EventQDB.reminders or {}
+  if type(EventQDB.reminders) ~= "table" then
+    EventQDB.reminders = {}
+  end
+
+  -- Migration: older builds stored two booleans (enabled/useToasts).
+  if EventQDB.reminders.mode == nil then
+    if EventQDB.reminders.enabled == false then
+      EventQDB.reminders.mode = "off"
+    elseif EventQDB.reminders.useToasts then
+      EventQDB.reminders.mode = "toast"
+    else
+      EventQDB.reminders.mode = "text"
+    end
+  end
+
+  if EventQDB.reminders.mode ~= "off" and EventQDB.reminders.mode ~= "text" and EventQDB.reminders.mode ~= "toast" then
+    EventQDB.reminders.mode = "text"
+  end
+
+  -- Keep legacy flags in sync for backward compatibility.
+  EventQDB.reminders.enabled = EventQDB.reminders.mode ~= "off"
+  EventQDB.reminders.useToasts = EventQDB.reminders.mode == "toast"
+
+  if type(EventQDB.reminders.sent) ~= "table" then
+    EventQDB.reminders.sent = {}
+  end
+
+
   -- Main window position (movable frame). Store an anchor + offsets relative to UIParent.
   EventQDB.window = EventQDB.window or {}
   if type(EventQDB.window) ~= "table" then

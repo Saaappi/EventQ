@@ -409,6 +409,7 @@ function App:Constructor(db)
 
   self.customStore = ns.CustomStore(db)
   self.calendar = ns.CalendarService(self.log, self.dateUtil)
+  self.reminders = ns.ReminderService and ns.ReminderService(self.log, self.dateUtil, db) or nil
   self.ui = ns.UIMainFrame(self)
 
   self.ongoing = {}
@@ -542,6 +543,12 @@ function App:RefreshAll()
   table.sort(ongoing, SortOngoing)
 
   table.sort(upcoming, SortUpcoming)
+
+  -- Custom event reminders (UIErrorsFrame or toast). This is intentionally based on the
+  -- filtered upcoming list to keep the check fast.
+  if self.reminders and self.reminders.CheckUpcoming then
+    self.reminders:CheckUpcoming(now, upcoming)
+  end
 
   -- Notify when an event transitions from UPCOMING -> ONGOING.
   local prev = self._bucketById or {}
