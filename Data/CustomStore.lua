@@ -61,18 +61,6 @@ function CustomStore:GetById(id)
 end
 
 ---@param id string
----@return table|nil
-function CustomStore:GetById(id)
-  if not id then return nil end
-  for _, e in ipairs(self.db.customEvents or {}) do
-    if e and e.id == id then
-      return e
-    end
-  end
-  return nil
-end
-
----@param id string
 ---@return boolean removed
 function CustomStore:Remove(id)
   if not id then return false end

@@ -5,6 +5,12 @@ local MainFrame = ns.Class:Create("MainFrame")
 local ROW_HEIGHT = 40
 local LIST_PADDING_TOP = 34
 
+local UPCOMING_WINDOW_SECONDS = 8 * 86400
+
+local FAR_CUSTOM_PANEL_WIDTH = 270
+local FAR_CUSTOM_PANEL_ANIM_SECONDS = 0.22
+local FAR_CUSTOM_PANEL_TAB_OFFSET_Y = -52
+
 local DEFAULT_CUSTOM_ICON = "Interface/Icons/INV_Misc_Note_01"
 
 local SERIES_FREQ = {
@@ -57,7 +63,290 @@ local function CopyTableShallow(source)
   return out
 end
 
-local ICON_TEXCOORDS = { 0.08, 0.92, 0.08, 0.92 }
+local function WipeArray(array)
+  if type(array) ~= "table" then return end
+  for index = #array, 1, -1 do
+    array[index] = nil
+  end
+end
+
+local function SmoothStep01(progress)
+  if progress <= 0 then return 0 end
+
+
+  if progress >= 1 then return 1 end
+  return progress * progress * (3 - 2 * progress)
+end
+
+-- Many Blizzard XML templates rely on their OnLoad scripts to initialize mixins / callback registries.
+-- When instantiated via CreateFrame(), those OnLoad scripts are not guaranteed to fire automatically.
+local function RunTemplateOnLoad(widget)
+  if not widget or widget._eventqDidOnLoad then return end
+  widget._eventqDidOnLoad = true
+
+  if widget.GetScript then
+    local onLoadScript = widget:GetScript("OnLoad")
+    if type(onLoadScript) == "function" then
+      pcall(onLoadScript, widget)
+    end
+  end
+
+  if type(widget.OnLoad) == "function" then
+    pcall(widget.OnLoad, widget)
+  end
+
+  if (not widget.callbackTables) and CallbackRegistryMixin and type(CallbackRegistryMixin.OnLoad) == "function" then
+    pcall(CallbackRegistryMixin.OnLoad, widget)
+  end
+
+  if type(widget.SetUndefinedEventsAllowed) == "function" then
+    pcall(widget.SetUndefinedEventsAllowed, widget, true)
+  end
+end
+
+
+-- -----------------------------------------------------------------------------
+-- Flyout panel: custom events beyond the 8-day upcoming horizon
+-- -----------------------------------------------------------------------------
+
+function MainFrame:_EnsureFarCustomFlyout()
+  if self._farPanel then return end
+  if not (self.frame and self.right) then return end
+
+  local panel = CreateFrame("Frame", nil, self.frame)
+  -- Anchor the flyout to the right side of the main frame. We intentionally
+  -- grow the panel outward (to the right), and clamp the tab to screen so it
+  -- stays reachable even if the window is placed near the screen edge.
+  panel:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", 0, 0)
+  panel:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMRIGHT", 0, 0)
+  panel:SetWidth(0)
+  panel:SetFrameStrata(self.frame:GetFrameStrata())
+  panel:SetFrameLevel(self.frame:GetFrameLevel() + 12)
+  panel:SetClampedToScreen(true)
+  panel:EnableMouse(true)
+
+  -- Content is separated from the tab so we can fade/disable it independently.
+  local content = CreateFrame("Frame", nil, panel, "BackdropTemplate")
+  content:SetAllPoints(panel)
+  content:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+  })
+  content:SetBackdropColor(0, 0, 0, 0.85)
+  content:SetAlpha(0)
+  content:Hide()
+
+  local header = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  header:SetPoint("TOPLEFT", 10, -10)
+  header:SetText("Custom (Later)")
+
+  local subheader = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  subheader:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -2)
+  subheader:SetText("Beyond the 8-day Upcoming window")
+  subheader:SetTextColor(0.75, 0.75, 0.75, 1)
+
+  local listLayout = {
+    paddingTop = 44,
+    rightInset = 20,
+    scrollBarInsetX = 6,
+    bottomInset = 8,
+  }
+  local scrollBox, dataProvider = CreateModernList(content, self.app, listLayout)
+  scrollBox:ClearAllPoints()
+  scrollBox:SetPoint("TOPLEFT", 0, -listLayout.paddingTop)
+  scrollBox:SetPoint("BOTTOMRIGHT", -listLayout.rightInset, listLayout.bottomInset)
+
+  local empty = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  empty:SetPoint("TOPLEFT", 12, -72)
+  empty:SetPoint("RIGHT", -12, 0)
+  empty:SetJustifyH("LEFT")
+  empty:SetTextColor(0.6, 0.6, 0.6, 1)
+  empty:SetText("No upcoming custom events beyond 8 days.")
+  empty:Hide()
+
+  -- Side tab button (QuestLog-style, like the professions UI).
+  -- We anchor the tab to the panel's outer edge so it animates smoothly with the flyout.
+  local tab = CreateFrame("Frame", nil, self.frame, "QuestLogTabButtonTemplate")
+  tab:SetClampedToScreen(true)
+  tab:SetFrameStrata(self.frame:GetFrameStrata())
+  tab:SetFrameLevel(panel:GetFrameLevel() + 30)
+  tab.activeAtlas = "poi-workorders"
+  tab.inactiveAtlas = "poi-workorders"
+  tab.tooltipText = "Later custom events"
+
+  if QuestLogDisplayMode and QuestLogDisplayMode.Quests then
+    tab.displayMode = QuestLogDisplayMode.Quests
+  end
+
+  RunTemplateOnLoad(tab)
+  if tab.SetChecked then
+    tab:SetChecked(false)
+  end
+
+  local function HandleTabMouseUp(_, button, upInside)
+    if button ~= "LeftButton" or (upInside == false) then return end
+    self:ToggleFarCustomFlyout()
+  end
+
+  if tab.SetCustomOnMouseUpHandler then
+    tab:SetCustomOnMouseUpHandler(HandleTabMouseUp)
+  elseif tab.customMouseUpHandler ~= nil then
+    tab.customMouseUpHandler = HandleTabMouseUp
+  else
+    tab:SetScript("OnMouseUp", function(_, button) HandleTabMouseUp(nil, button, true) end)
+  end
+
+  tab:ClearAllPoints()
+  tab:SetPoint("TOPLEFT", panel, "TOPRIGHT", -1, FAR_CUSTOM_PANEL_TAB_OFFSET_Y)
+
+  local count = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  count:SetPoint("TOPRIGHT", tab, "TOPRIGHT", -7, -7)
+  count:SetJustifyH("RIGHT")
+  count:SetText("")
+  count:Hide()
+self._farPanel = panel
+  self._farContent = content
+  self._farScrollBox = scrollBox
+  self._farDP = dataProvider
+  self._farEmptyText = empty
+  self._farTab = tab
+
+self._farTabCount = count
+  self._farOpen = false
+end
+
+function MainFrame:ToggleFarCustomFlyout()
+  self:SetFarCustomFlyoutOpen(not self._farOpen, true)
+end
+
+function MainFrame:SetFarCustomFlyoutOpen(open, animate)
+  if not self._farPanel then return end
+  open = not not open
+  if self._farOpen == open then return end
+  self._farOpen = open
+  if self._farTab and self._farTab.SetChecked then self._farTab:SetChecked(open) end
+
+  local targetWidth = open and FAR_CUSTOM_PANEL_WIDTH or 0
+  if not animate then
+    self._farPanel:SetWidth(targetWidth)
+    self:_UpdateFarCustomFlyoutVisuals(targetWidth)
+    return
+  end
+
+  self:_AnimateFarCustomFlyoutWidth(targetWidth)
+end
+
+function MainFrame:_AnimateFarCustomFlyoutWidth(targetWidth)
+  if not self._farPanel then return end
+
+  local panel = self._farPanel
+  panel:SetScript("OnUpdate", nil)
+
+  local startWidth = panel:GetWidth() or 0
+  local startTime = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
+
+  panel:SetScript("OnUpdate", function()
+    local now = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
+    local progress = (now - startTime) / FAR_CUSTOM_PANEL_ANIM_SECONDS
+    if progress >= 1 then
+      panel:SetWidth(targetWidth)
+      panel:SetScript("OnUpdate", nil)
+      self:_UpdateFarCustomFlyoutVisuals(targetWidth)
+      return
+    end
+
+    local eased = SmoothStep01(progress)
+    local width = startWidth + (targetWidth - startWidth) * eased
+    panel:SetWidth(width)
+    self:_UpdateFarCustomFlyoutVisuals(width)
+  end)
+end
+
+function MainFrame:_UpdateFarCustomFlyoutVisuals(currentWidth)
+  if not self._farContent then return end
+  local width = tonumber(currentWidth) or 0
+  local fraction = 0
+  if FAR_CUSTOM_PANEL_WIDTH > 0 then
+    fraction = math.min(1, math.max(0, width / FAR_CUSTOM_PANEL_WIDTH))
+  end
+
+  local content = self._farContent
+  if fraction <= 0.01 then
+    content:SetAlpha(0)
+    content:Hide()
+    return
+  end
+
+  content:Show()
+  content:SetAlpha(fraction)
+end
+
+function MainFrame:_CollectFarCustomEvents(nowEpoch, horizonEpoch)
+  local allEvents = (self.app and self.app._allEvents) or {}
+  local out = self._farCustomScratch or {}
+  self._farCustomScratch = out
+  WipeArray(out)
+
+  local now = tonumber(nowEpoch) or time()
+  local horizon = tonumber(horizonEpoch) or (now + UPCOMING_WINDOW_SECONDS)
+
+  for _, eventData in ipairs(allEvents) do
+    if eventData and eventData.isCustom and eventData.startEpoch and eventData.startEpoch > horizon and (eventData.endEpoch or 0) >= now then
+      out[#out + 1] = eventData
+    end
+  end
+
+  table.sort(out, function(left, right)
+    local leftStart = (left and left.startEpoch) or 0
+    local rightStart = (right and right.startEpoch) or 0
+    if leftStart ~= rightStart then
+      return leftStart < rightStart
+    end
+    local leftTitle = (left and left.title) or ""
+    local rightTitle = (right and right.title) or ""
+    return leftTitle < rightTitle
+  end)
+
+  return out
+end
+
+function MainFrame:_UpdateFarCustomFlyoutData(nowEpoch, horizonEpoch)
+  if not (self._farDP and self._farScrollBox) then return end
+
+  local events = self:_CollectFarCustomEvents(nowEpoch, horizonEpoch)
+  self._farDP:Flush()
+  for _, eventData in ipairs(events) do
+    self._farDP:Insert(eventData)
+  end
+  self._farScrollBox:SetDataProvider(self._farDP)
+
+  local count = #events
+  if self._farEmptyText then
+    self._farEmptyText:SetShown(count == 0)
+  end
+
+  if self._farTabCount then
+    if count > 0 then
+      self._farTabCount:SetText(tostring(count))
+      self._farTabCount:Show()
+    else
+      self._farTabCount:SetText("")
+      self._farTabCount:Hide()
+    end
+  end
+
+  if self._farTab then
+    if count == 1 then
+      self._farTab.tooltipText = "1 custom event beyond 8 days"
+    elseif count > 1 then
+      self._farTab.tooltipText = ("%d custom events beyond 8 days"):format(count)
+    else
+      self._farTab.tooltipText = "Later custom events"
+    end
+  end
+end
 
 local ICON_INSET = 3
 local function SetCroppedIconTexture(textureObj, texturePathOrId)
@@ -154,6 +443,7 @@ local function PickCogwheelAtlas()
 end
 
 
+
 local function CreateSectionHeader(parent, text, offsetX, offsetY)
   local titleFontString = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   titleFontString:SetPoint("TOPLEFT", offsetX, offsetY)
@@ -161,41 +451,20 @@ local function CreateSectionHeader(parent, text, offsetX, offsetY)
   return titleFontString
 end
 
-local function CreateModernList(parent, app)
+CreateModernList = function(parent, app, layout)
+  layout = type(layout) == "table" and layout or nil
+  local paddingTop = (layout and layout.paddingTop) or LIST_PADDING_TOP
+  local rightInset = (layout and layout.rightInset) or 20
+  local scrollBarInsetX = (layout and layout.scrollBarInsetX) or 6
+  local bottomInset = (layout and layout.bottomInset) or 6
+
   local scrollBox = CreateFrame("Frame", nil, parent, "WowScrollBoxList")
-  scrollBox:SetPoint("TOPLEFT", 0, -LIST_PADDING_TOP)
-  scrollBox:SetPoint("BOTTOMRIGHT", -20, 6)
+  scrollBox:SetPoint("TOPLEFT", 0, -paddingTop)
+  scrollBox:SetPoint("BOTTOMRIGHT", -rightInset, bottomInset)
 
   local scrollBar = CreateFrame("Slider", nil, parent, "MinimalScrollBar")
-  scrollBar:SetPoint("TOPRIGHT", -6, -LIST_PADDING_TOP)
-  scrollBar:SetPoint("BOTTOMRIGHT", -6, 6)
-
-  -- ScrollUtil relies on ScrollBox/ScrollBar callback events. When these widgets are created dynamically,
-  -- their XML OnLoad scripts do not automatically fire, so we run any available OnLoad initialization.
-  local function RunTemplateOnLoad(widget)
-    if not widget or widget._eventqDidOnLoad then return end
-    widget._eventqDidOnLoad = true
-
-    if widget.GetScript then
-      local onLoadScript = widget:GetScript("OnLoad")
-      if type(onLoadScript) == "function" then
-        pcall(onLoadScript, widget)
-      end
-    end
-
-    if type(widget.OnLoad) == "function" then
-      pcall(widget.OnLoad, widget)
-    end
-
-    -- As a last resort, initialize CallbackRegistryMixin tables so RegisterCallback() cannot crash.
-    if (not widget.callbackTables) and CallbackRegistryMixin and type(CallbackRegistryMixin.OnLoad) == "function" then
-      pcall(CallbackRegistryMixin.OnLoad, widget)
-    end
-
-    if type(widget.SetUndefinedEventsAllowed) == "function" then
-      pcall(widget.SetUndefinedEventsAllowed, widget, true)
-    end
-  end
+  scrollBar:SetPoint("TOPRIGHT", -scrollBarInsetX, -paddingTop)
+  scrollBar:SetPoint("BOTTOMRIGHT", -scrollBarInsetX, bottomInset)
 
   RunTemplateOnLoad(scrollBox)
   RunTemplateOnLoad(scrollBar)
@@ -207,7 +476,7 @@ local function CreateModernList(parent, app)
     -- Ensure a usable element width. scrollBox:GetWidth() can be 0 during early layout.
     local elementWidth = scrollBox:GetWidth() or 0
     if elementWidth < 50 then
-      elementWidth = (parent:GetWidth() or 0) - 20
+      elementWidth = (parent:GetWidth() or 0) - rightInset
     end
     if elementWidth < 50 then
       elementWidth = 340
@@ -943,31 +1212,8 @@ function MainFrame:Constructor(app)
   self.leftScrollBox, self.leftDP = CreateModernList(self.left, self.app)
   self.rightScrollBox, self.rightDP = CreateModernList(self.right, self.app)
 
-  -- Indicator for custom events that fall outside the 8-day Upcoming filter.
-  local moreCustom = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  moreCustom:SetPoint("TOP", self.right, "BOTTOM", 0, -2)
-  moreCustom:SetPoint("LEFT", self.right, "LEFT", 10, 0)
-  moreCustom:SetPoint("RIGHT", self.right, "RIGHT", -10, 0)
-  moreCustom:SetJustifyH("CENTER")
-  if moreCustom.SetWordWrap then moreCustom:SetWordWrap(true) end
-  moreCustom:SetTextColor(0.6, 0.6, 0.6, 0.85)
-  moreCustom:SetText("")
-  moreCustom:Hide()
-  moreCustom:EnableMouse(true)
-
-  moreCustom:SetScript("OnEnter", function()
-    local upcomingCustomCount = moreCustom._eventqCount or 0
-    if upcomingCustomCount <= 0 then return end
-
-    local red, green, blue = NORMAL_FONT_COLOR:GetRGB()
-    GameTooltip:SetOwner(moreCustom, "ANCHOR_TOP")
-    local suffix = (upcomingCustomCount == 1) and "" or "s"
-    GameTooltip:SetText(("You have %d upcoming custom event%s scheduled beyond the 8-day upcoming filter.\nThey will appear in the Upcoming list above as their date approaches."):format(upcomingCustomCount, suffix), red, green, blue, true)
-    GameTooltip:Show()
-  end)
-  moreCustom:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-  self.moreCustom = moreCustom
+  -- Flyout panel for custom events beyond the 8-day upcoming window.
+  self:_EnsureFarCustomFlyout()
 
   -- Editor fields
   local function MakeLabel(text, anchorTo, offsetX, offsetY)
@@ -1486,41 +1732,20 @@ function MainFrame:UpdateLists()
   local upcoming = self.app.upcoming or {}
 
   self.leftDP:Flush()
-  for _, e in ipairs(ongoing) do
-    self.leftDP:Insert(e)
+  for _, eventData in ipairs(ongoing) do
+    self.leftDP:Insert(eventData)
   end
   self.leftScrollBox:SetDataProvider(self.leftDP)
 
   self.rightDP:Flush()
-  for _, e in ipairs(upcoming) do
-    self.rightDP:Insert(e)
+  for _, eventData in ipairs(upcoming) do
+    self.rightDP:Insert(eventData)
   end
   self.rightScrollBox:SetDataProvider(self.rightDP)
 
-  -- Update the "more custom events" indicator (custom events that start beyond the 8-day window).
-  if self.moreCustom and self.app and self.app.customStore and self.app.customStore.GetAll then
-    local now = time()
-    local horizon = now + 8 * 86400
-    local upcomingCustomCount = 0
-    for _, customEvent in ipairs(self.app.customStore:GetAll() or {}) do
-      if customEvent and customEvent.startEpoch and customEvent.startEpoch > horizon and (customEvent.endEpoch or 0) >= now then
-        upcomingCustomCount = upcomingCustomCount + 1
-      end
-    end
-
-    self.moreCustom._eventqCount = upcomingCustomCount
-    if upcomingCustomCount > 0 then
-      if upcomingCustomCount == 1 then
-        self.moreCustom:SetText("1 custom event is on its way!")
-      else
-        self.moreCustom:SetText(("%d custom events are on their way!"):format(upcomingCustomCount))
-      end
-      self.moreCustom:Show()
-    else
-      self.moreCustom:SetText("")
-      self.moreCustom:Hide()
-    end
-  end
+  local nowEpoch = time()
+  local horizonEpoch = nowEpoch + UPCOMING_WINDOW_SECONDS
+  self:_UpdateFarCustomFlyoutData(nowEpoch, horizonEpoch)
 end
 
 ns.UIMainFrame = MainFrame
