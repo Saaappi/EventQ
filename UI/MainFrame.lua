@@ -7,9 +7,9 @@ local LIST_PADDING_TOP = 34
 
 local UPCOMING_WINDOW_SECONDS = 8 * 86400
 
-local FAR_CUSTOM_PANEL_WIDTH = 270
-local FAR_CUSTOM_PANEL_ANIM_SECONDS = 0.22
-local FAR_CUSTOM_PANEL_TAB_OFFSET_Y = -52
+local SIDE_TAB_ANCHOR_X = 3
+local SIDE_TAB_ANCHOR_Y = -28
+local SIDE_TAB_GAP_Y = -3
 
 local DEFAULT_CUSTOM_ICON = "Interface/Icons/INV_Misc_Note_01"
 
@@ -72,8 +72,6 @@ end
 
 local function SmoothStep01(progress)
   if progress <= 0 then return 0 end
-
-
   if progress >= 1 then return 1 end
   return progress * progress * (3 - 2 * progress)
 end
@@ -106,45 +104,117 @@ end
 
 
 -- -----------------------------------------------------------------------------
--- Flyout panel: custom events beyond the 8-day upcoming horizon
+-- Side tabs: Main + Events
 -- -----------------------------------------------------------------------------
 
-function MainFrame:_EnsureFarCustomFlyout()
-  if self._farPanel then return end
-  if not (self.frame and self.right) then return end
+local TAB_KEY = {
+  MAIN = "MAIN",
+  EVENTS = "EVENTS",
+}
 
-  local panel = CreateFrame("Frame", nil, self.frame)
-  -- Anchor the flyout to the right side of the main frame. We intentionally
-  -- grow the panel outward (to the right), and clamp the tab to screen so it
-  -- stays reachable even if the window is placed near the screen edge.
-  panel:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", 0, 0)
-  panel:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMRIGHT", 0, 0)
-  panel:SetWidth(0)
-  panel:SetFrameStrata(self.frame:GetFrameStrata())
-  panel:SetFrameLevel(self.frame:GetFrameLevel() + 12)
-  panel:SetClampedToScreen(true)
-  panel:EnableMouse(true)
+local function SetTabChecked(tabFrame, checked)
+  if tabFrame and tabFrame.SetChecked then
+    tabFrame:SetChecked(checked)
+  end
+end
 
-  -- Content is separated from the tab so we can fade/disable it independently.
-  local content = CreateFrame("Frame", nil, panel, "BackdropTemplate")
-  content:SetAllPoints(panel)
-  content:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 16,
-    insets = { left = 4, right = 4, top = 4, bottom = 4 },
-  })
-  content:SetBackdropColor(0, 0, 0, 0.85)
-  content:SetAlpha(0)
-  content:Hide()
+function MainFrame:_EnsureSideTabs()
+  if self._sideTabs then return end
+  if not self.frame then return end
 
-  local header = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  header:SetPoint("TOPLEFT", 10, -10)
+  -- Match Blizzard's quest log side tabs: top tab anchors to the frame's TOPRIGHT, subsequent
+  -- tabs anchor to the previous tab with a small vertical gap.
+  local function CreateSideTab(tabKey, activeAtlas, inactiveAtlas)
+    local tab = CreateFrame("Frame", nil, self.frame, "QuestLogTabButtonTemplate")
+    tab:SetClampedToScreen(true)
+    tab:SetFrameStrata(self.frame:GetFrameStrata())
+    tab:SetFrameLevel(self.frame:GetFrameLevel() + 30)
+
+    tab._eventqTabKey = tabKey
+    tab.activeAtlas = activeAtlas
+    tab.inactiveAtlas = inactiveAtlas
+
+    RunTemplateOnLoad(tab)
+
+    -- The tab icons are self-explanatory; suppress the default tooltip to avoid localization overhead.
+    tab:SetScript("OnEnter", nil)
+    tab:SetScript("OnLeave", nil)
+
+    SetTabChecked(tab, false)
+
+    local function HandleMouseUp(_, button, upInside)
+      if button ~= "LeftButton" or (upInside == false) then return end
+      self:SetActiveTab(tabKey)
+    end
+
+    if tab.SetCustomOnMouseUpHandler then
+      tab:SetCustomOnMouseUpHandler(HandleMouseUp)
+    else
+      tab.customMouseUpHandler = HandleMouseUp
+    end
+
+    return tab
+  end
+
+  local mainTab = CreateSideTab(TAB_KEY.MAIN, "questlog-tab-icon-quest", "questlog-tab-icon-quest-inactive")
+  mainTab:ClearAllPoints()
+  mainTab:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", SIDE_TAB_ANCHOR_X, SIDE_TAB_ANCHOR_Y)
+
+  local eventsTab = CreateSideTab(TAB_KEY.EVENTS, "questlog-tab-icon-event", "questlog-tab-icon-event-inactive")
+  eventsTab:ClearAllPoints()
+  eventsTab:SetPoint("TOP", mainTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
+
+  local count = eventsTab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  count:SetPoint("BOTTOMRIGHT", eventsTab, "BOTTOMRIGHT", -6, 6)
+  count:SetJustifyH("RIGHT")
+  count:SetText("")
+  count:Hide()
+
+  self._sideTabs = {
+    [TAB_KEY.MAIN] = mainTab,
+    [TAB_KEY.EVENTS] = eventsTab,
+  }
+  self._eventsTabCount = count
+end
+
+function MainFrame:SetActiveTab(tabKey)
+  if not tabKey then return end
+  if self._activeTab == tabKey then return end
+  self._activeTab = tabKey
+
+  local mainTab = self._sideTabs and self._sideTabs[TAB_KEY.MAIN] or nil
+  local eventsTab = self._sideTabs and self._sideTabs[TAB_KEY.EVENTS] or nil
+  SetTabChecked(mainTab, tabKey == TAB_KEY.MAIN)
+  SetTabChecked(eventsTab, tabKey == TAB_KEY.EVENTS)
+
+  local showMain = (tabKey == TAB_KEY.MAIN)
+  if self.left then self.left:SetShown(showMain) end
+  if self.right then self.right:SetShown(showMain) end
+  if self.editor then self.editor:SetShown(showMain) end
+  if self.eventsPanel then self.eventsPanel:SetShown(not showMain) end
+end
+
+
+-- -----------------------------------------------------------------------------
+-- Events tab: custom events beyond the 8-day upcoming horizon
+-- -----------------------------------------------------------------------------
+
+function MainFrame:_EnsureEventsPanel()
+  if self.eventsPanel then return end
+  if not self.frame then return end
+
+  local panel = CreateFrame("Frame", nil, self.frame, "BackdropTemplate")
+  panel:SetPoint("TOPLEFT", 12, -40)
+  panel:SetPoint("BOTTOMRIGHT", -12, 12)
+  panel:Hide()
+
+  local header = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  header:SetPoint("TOPLEFT", 8, -8)
   header:SetText("Custom (Later)")
 
-  local subheader = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local subheader = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   subheader:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -2)
-  subheader:SetText("Beyond the 8-day Upcoming window")
+  subheader:SetText("Upcoming custom events beyond 8 days")
   subheader:SetTextColor(0.75, 0.75, 0.75, 1)
 
   local listLayout = {
@@ -153,12 +223,13 @@ function MainFrame:_EnsureFarCustomFlyout()
     scrollBarInsetX = 6,
     bottomInset = 8,
   }
-  local scrollBox, dataProvider = CreateModernList(content, self.app, listLayout)
+
+  local scrollBox, dataProvider = CreateModernList(panel, self.app, listLayout)
   scrollBox:ClearAllPoints()
   scrollBox:SetPoint("TOPLEFT", 0, -listLayout.paddingTop)
   scrollBox:SetPoint("BOTTOMRIGHT", -listLayout.rightInset, listLayout.bottomInset)
 
-  local empty = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local empty = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   empty:SetPoint("TOPLEFT", 12, -72)
   empty:SetPoint("RIGHT", -12, 0)
   empty:SetJustifyH("LEFT")
@@ -166,133 +237,23 @@ function MainFrame:_EnsureFarCustomFlyout()
   empty:SetText("No upcoming custom events beyond 8 days.")
   empty:Hide()
 
-  -- Side tab button (QuestLog-style, like the professions UI).
-  -- We anchor the tab to the panel's outer edge so it animates smoothly with the flyout.
-  local tab = CreateFrame("Frame", nil, self.frame, "QuestLogTabButtonTemplate")
-  tab:SetClampedToScreen(true)
-  tab:SetFrameStrata(self.frame:GetFrameStrata())
-  tab:SetFrameLevel(panel:GetFrameLevel() + 30)
-  tab.activeAtlas = "poi-workorders"
-  tab.inactiveAtlas = "poi-workorders"
-  tab.tooltipText = "Later custom events"
-
-  if QuestLogDisplayMode and QuestLogDisplayMode.Quests then
-    tab.displayMode = QuestLogDisplayMode.Quests
-  end
-
-  RunTemplateOnLoad(tab)
-  if tab.SetChecked then
-    tab:SetChecked(false)
-  end
-
-  local function HandleTabMouseUp(_, button, upInside)
-    if button ~= "LeftButton" or (upInside == false) then return end
-    self:ToggleFarCustomFlyout()
-  end
-
-  if tab.SetCustomOnMouseUpHandler then
-    tab:SetCustomOnMouseUpHandler(HandleTabMouseUp)
-  elseif tab.customMouseUpHandler ~= nil then
-    tab.customMouseUpHandler = HandleTabMouseUp
-  else
-    tab:SetScript("OnMouseUp", function(_, button) HandleTabMouseUp(nil, button, true) end)
-  end
-
-  tab:ClearAllPoints()
-  tab:SetPoint("TOPLEFT", panel, "TOPRIGHT", -1, FAR_CUSTOM_PANEL_TAB_OFFSET_Y)
-
-  local count = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  count:SetPoint("TOPRIGHT", tab, "TOPRIGHT", -7, -7)
-  count:SetJustifyH("RIGHT")
-  count:SetText("")
-  count:Hide()
-self._farPanel = panel
-  self._farContent = content
-  self._farScrollBox = scrollBox
-  self._farDP = dataProvider
-  self._farEmptyText = empty
-  self._farTab = tab
-
-self._farTabCount = count
-  self._farOpen = false
+  self.eventsPanel = panel
+  self.eventsScrollBox = scrollBox
+  self.eventsDP = dataProvider
+  self.eventsEmptyText = empty
 end
 
-function MainFrame:ToggleFarCustomFlyout()
-  self:SetFarCustomFlyoutOpen(not self._farOpen, true)
-end
-
-function MainFrame:SetFarCustomFlyoutOpen(open, animate)
-  if not self._farPanel then return end
-  open = not not open
-  if self._farOpen == open then return end
-  self._farOpen = open
-  if self._farTab and self._farTab.SetChecked then self._farTab:SetChecked(open) end
-
-  local targetWidth = open and FAR_CUSTOM_PANEL_WIDTH or 0
-  if not animate then
-    self._farPanel:SetWidth(targetWidth)
-    self:_UpdateFarCustomFlyoutVisuals(targetWidth)
-    return
-  end
-
-  self:_AnimateFarCustomFlyoutWidth(targetWidth)
-end
-
-function MainFrame:_AnimateFarCustomFlyoutWidth(targetWidth)
-  if not self._farPanel then return end
-
-  local panel = self._farPanel
-  panel:SetScript("OnUpdate", nil)
-
-  local startWidth = panel:GetWidth() or 0
-  local startTime = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
-
-  panel:SetScript("OnUpdate", function()
-    local now = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
-    local progress = (now - startTime) / FAR_CUSTOM_PANEL_ANIM_SECONDS
-    if progress >= 1 then
-      panel:SetWidth(targetWidth)
-      panel:SetScript("OnUpdate", nil)
-      self:_UpdateFarCustomFlyoutVisuals(targetWidth)
-      return
-    end
-
-    local eased = SmoothStep01(progress)
-    local width = startWidth + (targetWidth - startWidth) * eased
-    panel:SetWidth(width)
-    self:_UpdateFarCustomFlyoutVisuals(width)
-  end)
-end
-
-function MainFrame:_UpdateFarCustomFlyoutVisuals(currentWidth)
-  if not self._farContent then return end
-  local width = tonumber(currentWidth) or 0
-  local fraction = 0
-  if FAR_CUSTOM_PANEL_WIDTH > 0 then
-    fraction = math.min(1, math.max(0, width / FAR_CUSTOM_PANEL_WIDTH))
-  end
-
-  local content = self._farContent
-  if fraction <= 0.01 then
-    content:SetAlpha(0)
-    content:Hide()
-    return
-  end
-
-  content:Show()
-  content:SetAlpha(fraction)
-end
-
-function MainFrame:_CollectFarCustomEvents(nowEpoch, horizonEpoch)
+function MainFrame:_CollectCustomEventsBeyondUpcoming(nowEpoch, horizonEpoch)
   local allEvents = (self.app and self.app._allEvents) or {}
-  local out = self._farCustomScratch or {}
-  self._farCustomScratch = out
+  local out = self._eventsScratch or {}
+  self._eventsScratch = out
   WipeArray(out)
 
   local now = tonumber(nowEpoch) or time()
   local horizon = tonumber(horizonEpoch) or (now + UPCOMING_WINDOW_SECONDS)
 
   for _, eventData in ipairs(allEvents) do
+    -- Only list CUSTOM events that start after the built-in upcoming window.
     if eventData and eventData.isCustom and eventData.startEpoch and eventData.startEpoch > horizon and (eventData.endEpoch or 0) >= now then
       out[#out + 1] = eventData
     end
@@ -312,38 +273,28 @@ function MainFrame:_CollectFarCustomEvents(nowEpoch, horizonEpoch)
   return out
 end
 
-function MainFrame:_UpdateFarCustomFlyoutData(nowEpoch, horizonEpoch)
-  if not (self._farDP and self._farScrollBox) then return end
+function MainFrame:_UpdateEventsTabData(nowEpoch, horizonEpoch)
+  if not (self.eventsDP and self.eventsScrollBox) then return end
 
-  local events = self:_CollectFarCustomEvents(nowEpoch, horizonEpoch)
-  self._farDP:Flush()
+  local events = self:_CollectCustomEventsBeyondUpcoming(nowEpoch, horizonEpoch)
+  self.eventsDP:Flush()
   for _, eventData in ipairs(events) do
-    self._farDP:Insert(eventData)
+    self.eventsDP:Insert(eventData)
   end
-  self._farScrollBox:SetDataProvider(self._farDP)
+  self.eventsScrollBox:SetDataProvider(self.eventsDP)
 
   local count = #events
-  if self._farEmptyText then
-    self._farEmptyText:SetShown(count == 0)
+  if self.eventsEmptyText then
+    self.eventsEmptyText:SetShown(count == 0)
   end
 
-  if self._farTabCount then
+  if self._eventsTabCount then
     if count > 0 then
-      self._farTabCount:SetText(tostring(count))
-      self._farTabCount:Show()
+      self._eventsTabCount:SetText(tostring(count))
+      self._eventsTabCount:Show()
     else
-      self._farTabCount:SetText("")
-      self._farTabCount:Hide()
-    end
-  end
-
-  if self._farTab then
-    if count == 1 then
-      self._farTab.tooltipText = "1 custom event beyond 8 days"
-    elseif count > 1 then
-      self._farTab.tooltipText = ("%d custom events beyond 8 days"):format(count)
-    else
-      self._farTab.tooltipText = "Later custom events"
+      self._eventsTabCount:SetText("")
+      self._eventsTabCount:Hide()
     end
   end
 end
@@ -1212,8 +1163,9 @@ function MainFrame:Constructor(app)
   self.leftScrollBox, self.leftDP = CreateModernList(self.left, self.app)
   self.rightScrollBox, self.rightDP = CreateModernList(self.right, self.app)
 
-  -- Flyout panel for custom events beyond the 8-day upcoming window.
-  self:_EnsureFarCustomFlyout()
+  self:_EnsureEventsPanel()
+  self:_EnsureSideTabs()
+  self:SetActiveTab(TAB_KEY.MAIN)
 
   -- Editor fields
   local function MakeLabel(text, anchorTo, offsetX, offsetY)
@@ -1288,60 +1240,67 @@ function MainFrame:Constructor(app)
   addBtn:SetText("Next")
   self.addBtn = addBtn
   addBtn:SetScript("OnClick", function() self:OnNextCustom() end)
-local credit = editor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-credit:SetPoint("TOP", addBtn, "BOTTOM", 0, -2)
-credit:SetText("Crafted with |TInterface/AddOns/EventQ/Media/heart.tga:12:12:0:0|t by LightskyGG")
-self.credit = credit
 
-self.status = editor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-self.status:SetPoint("TOP", addBtn, "BOTTOM", 0, -2)
-self.status:SetPoint("LEFT", editor, "LEFT", 8, 0)
-self.status:SetPoint("RIGHT", editor, "RIGHT", -8, 0)
-self.status:SetJustifyH("CENTER")
-if self.status.SetWordWrap then self.status:SetWordWrap(true) end
-self.status:SetText("")
-self.status:Hide()
-self._statusToken = 0
+  local credit = editor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  credit:SetPoint("TOP", addBtn, "BOTTOM", 0, -2)
+  credit:SetText("Crafted with |TInterface/AddOns/EventQ/Media/heart.tga:12:12:0:0|t by LightskyGG")
+  self.credit = credit
 
-function self:_SetStatusVisible(visible)
-  if visible then
-    self.status:Show()
-    self.credit:ClearAllPoints()
-    self.credit:SetPoint("TOP", self.status, "BOTTOM", 0, -2)
-  else
-    self.status:Hide()
-    self.credit:ClearAllPoints()
-    self.credit:SetPoint("TOP", addBtn, "BOTTOM", 0, -2)
+  local status = editor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  status:SetPoint("TOP", addBtn, "BOTTOM", 0, -2)
+  status:SetPoint("LEFT", editor, "LEFT", 8, 0)
+  status:SetPoint("RIGHT", editor, "RIGHT", -8, 0)
+  status:SetJustifyH("CENTER")
+  if status.SetWordWrap then status:SetWordWrap(true) end
+  status:SetText("")
+  status:Hide()
+
+  self.status = status
+  self._statusToken = 0
+
+  function self:_SetStatusVisible(visible)
+    if visible then
+      status:Show()
+      credit:ClearAllPoints()
+      credit:SetPoint("TOP", status, "BOTTOM", 0, -2)
+    else
+      status:Hide()
+      credit:ClearAllPoints()
+      credit:SetPoint("TOP", addBtn, "BOTTOM", 0, -2)
+    end
   end
-end
 
----Shows a transient message between the Add button and the credit line.
----Auto-hides after `seconds`, then restores the credit line position.
-function self:ShowTransientMessage(messageText, red, green, blue, durationSeconds)
-  self._statusToken = (self._statusToken or 0) + 1
-  local token = self._statusToken
+  ---Shows a transient message between the Add button and the credit line.
+  ---Auto-hides after `durationSeconds`, then restores the credit line position.
+  function self:ShowTransientMessage(messageText, red, green, blue, durationSeconds)
+    self._statusToken = (self._statusToken or 0) + 1
+    local token = self._statusToken
 
-  self.status:SetTextColor(red or 1, green or 1, blue or 1)
-  self.status:SetText(messageText or "")
-  self:_SetStatusVisible(true)
+    status:SetTextColor(red or 1, green or 1, blue or 1)
+    status:SetText(messageText or "")
+    self:_SetStatusVisible(true)
 
-  if durationSeconds and durationSeconds > 0 and C_Timer and C_Timer.After then
-    C_Timer.After(durationSeconds, function()
-      if self._statusToken ~= token then return end
-      self.status:SetText("")
+    if durationSeconds and durationSeconds > 0 and C_Timer and C_Timer.After then
+      C_Timer.After(durationSeconds, function()
+        if self._statusToken ~= token then return end
+        status:SetText("")
+        self:_SetStatusVisible(false)
+      end)
+    end
+  end
+
+  function self:SetStatus(messageText)
+    self._statusToken = (self._statusToken or 0) + 1
+
+    if messageText and messageText ~= "" then
+      status:SetTextColor(1, 1, 1)
+      status:SetText(messageText)
+      self:_SetStatusVisible(true)
+    else
+      status:SetText("")
       self:_SetStatusVisible(false)
-    end)
+    end
   end
-end
-
-function self:SetStatus(msg)
-  -- Non-transient status (rare); keep visible until overwritten.
-  self._statusToken = (self._statusToken or 0) + 1
-  self.status:SetTextColor(1, 1, 1)
-  self.status:SetText(msg or "")
-  self:_SetStatusVisible(msg and msg ~= "")
-end
-mainFrame:Hide()
 
   mainFrame:SetScript("OnShow", function()
     -- Calendar APIs can return empty results until the calendar has been opened and populated.
@@ -1373,6 +1332,13 @@ end
 
 function MainFrame:BeginEditCustom(event)
   if not event or not event.isCustom then return end
+
+  -- Editing uses the Main tab's editor widgets. If the user starts editing from the Events tab
+  -- (right-click -> Edit), automatically switch back so the editor is visible.
+  if self._activeTab == TAB_KEY.EVENTS and self.SetActiveTab then
+    self:SetActiveTab(TAB_KEY.MAIN)
+  end
+
   self.editingId = event.id
 
 
@@ -1745,7 +1711,7 @@ function MainFrame:UpdateLists()
 
   local nowEpoch = time()
   local horizonEpoch = nowEpoch + UPCOMING_WINDOW_SECONDS
-  self:_UpdateFarCustomFlyoutData(nowEpoch, horizonEpoch)
+  self:_UpdateEventsTabData(nowEpoch, horizonEpoch)
 end
 
 ns.UIMainFrame = MainFrame
