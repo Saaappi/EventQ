@@ -97,7 +97,9 @@ function SeriesViewer:Constructor(parentFrame, app)
   frame:Hide()
 
   frame:SetSize(360, parentFrame:GetHeight())
-  frame:SetPoint("TOPLEFT", parentFrame, "TOPRIGHT", 12, 0)
+  -- The Series viewer is a side panel. With the Main/Events tabs living on the right edge,
+  -- anchor this panel on the left to avoid overlapping the tab strip.
+  frame:SetPoint("TOPRIGHT", parentFrame, "TOPLEFT", -12, 0)
   frame:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
     edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
