@@ -7,7 +7,8 @@ local LIST_PADDING_TOP = 34
 
 local UPCOMING_WINDOW_SECONDS = 8 * 86400
 
-local SIDE_TAB_ANCHOR_X = 3
+-- Match the QuestLog tab positioning, but keep tabs flush to the frame edge.
+local SIDE_TAB_ANCHOR_X = 0
 local SIDE_TAB_ANCHOR_Y = -28
 local SIDE_TAB_GAP_Y = -3
 
@@ -165,8 +166,9 @@ function MainFrame:_EnsureSideTabs()
   eventsTab:SetPoint("TOP", mainTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
 
   local count = eventsTab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  count:SetPoint("BOTTOMRIGHT", eventsTab, "BOTTOMRIGHT", -6, 6)
-  count:SetJustifyH("RIGHT")
+  -- Place the badge directly under the tab icon so it reads as a simple count indicator.
+  count:SetPoint("TOP", eventsTab.Icon, "BOTTOM", 0, -1)
+  count:SetJustifyH("CENTER")
   count:SetText("")
   count:Hide()
 
