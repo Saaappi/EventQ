@@ -432,9 +432,24 @@ function CalendarService:CollectWindow(maxDaysAhead)
     byKey[key] = chosen
   end
 
-  for dayOffset = 0, maxDaysAhead do
+		-- NOTE: Calling CalendarAPI.SetMonth() triggers CALENDAR_UPDATE_EVENT_LIST.
+		-- EventQ listens to that event and refreshes its data, which would re-enter
+		-- CollectWindow() and cause a recursion/stack overflow.
+		-- We guard internal month switching so the event handler can ignore updates
+		-- that originate from this routine.
+		local loadedMonthOffset = nil
+		self._eventListUpdateSuppressed = false
+		for dayOffset = 0, maxDaysAhead do
     local dayEpoch = startDayEpoch + dayOffset * 86400
     local monthOffset, monthDay = dateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
+
+			-- Holiday/event data for a given month is loaded on demand. Ensure the target month is active
+			-- before querying day events/holidays so year-wide searches can see distant holidays.
+			if CalendarAPI.SetMonth and monthOffset ~= loadedMonthOffset then
+				self._eventListUpdateSuppressed = true
+				CalendarAPI.SetMonth(monthOffset)
+				loadedMonthOffset = monthOffset
+			end
 
     local numDayEvents = GetNumDayEvents(monthOffset, monthDay)
     for eventIndex = 1, numDayEvents do
@@ -466,35 +481,40 @@ function CalendarService:CollectWindow(maxDaysAhead)
       end
     end
 
-    -- Holidays (already include description field).
-    if monthOffset == 0 or monthOffset == 1 then
-      for i = 1, 50 do
-        local holidayInfo = GetHolidayInfo(monthOffset, monthDay, i)
-        if not holidayInfo then break end
-        local holidayID = holidayInfo.holidayID or holidayInfo.holidayId or holidayInfo.id or holidayInfo.ID
+		-- Holidays (already include description field). Holiday info is backed by the active month,
+		-- so we query every day to catch multi-day holidays across months.
+			for holidayIndex = 1, 50 do
+				local holidayInfo = GetHolidayInfo(monthOffset, monthDay, holidayIndex)
+			if not holidayInfo then break end
+			local holidayID = holidayInfo.holidayID or holidayInfo.holidayId or holidayInfo.id or holidayInfo.ID
 
-        local startEpoch = holidayInfo.startTime and dateUtil:CalendarTimeToEpoch(holidayInfo.startTime) or dayEpoch
-        local endEpoch = holidayInfo.endTime and dateUtil:CalendarTimeToEpoch(holidayInfo.endTime) or (dayEpoch + 86399)
-        local holidayTexture = holidayTextureByName(monthOffset, monthDay, holidayInfo.name) or holidayInfo.texture
+			local startEpoch = holidayInfo.startTime and dateUtil:CalendarTimeToEpoch(holidayInfo.startTime) or dayEpoch
+			local endEpoch = holidayInfo.endTime and dateUtil:CalendarTimeToEpoch(holidayInfo.endTime) or (dayEpoch + 86399)
+			local holidayTexture = holidayTextureByName(monthOffset, monthDay, holidayInfo.name) or holidayInfo.texture
 
-        upsert({
-          id = "holiday:" .. mkKey(holidayInfo.name, startEpoch, endEpoch),
-          eventID = nil,
-          holidayID = holidayID,
-          title = holidayInfo.name,
-          description = holidayInfo.description,
-          startEpoch = startEpoch,
-          endEpoch = endEpoch,
-          icon = holidayTexture,
-          iconIsCalendar = false,
-          source = "Holiday",
-          calendarType = "HOLIDAY",
-          monthOffset = monthOffset,
-          monthDay = monthDay,
-        })
-      end
-    end
+			upsert({
+				id = "holiday:" .. mkKey(holidayInfo.name, startEpoch, endEpoch),
+				eventID = nil,
+				holidayID = holidayID,
+				title = holidayInfo.name,
+				description = holidayInfo.description,
+				startEpoch = startEpoch,
+				endEpoch = endEpoch,
+				icon = holidayTexture,
+				iconIsCalendar = false,
+				source = "Holiday",
+				calendarType = "HOLIDAY",
+				monthOffset = monthOffset,
+				monthDay = monthDay,
+			})
+		end
   end
+
+		if CalendarAPI.SetMonth and loadedMonthOffset and loadedMonthOffset ~= 0 then
+			self._eventListUpdateSuppressed = true
+			CalendarAPI.SetMonth(0)
+		end
+		self._eventListUpdateSuppressed = false
 
   local filtered = self._tmpFiltered
   wipeArray(filtered)
@@ -508,6 +528,11 @@ function CalendarService:CollectWindow(maxDaysAhead)
   table.sort(filtered, SortByStartThenTitle)
 
   return filtered
+end
+
+
+function CalendarService:IsSuppressingEventListUpdates()
+	return self._eventListUpdateSuppressed == true
 end
 
 ns.CalendarService = CalendarService

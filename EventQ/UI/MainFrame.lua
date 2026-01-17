@@ -105,17 +105,37 @@ end
 
 
 -- -----------------------------------------------------------------------------
--- Side tabs: Main + Events
+-- Side tabs: Main + Events + Search
 -- -----------------------------------------------------------------------------
 
 local TAB_KEY = {
   MAIN = "MAIN",
   EVENTS = "EVENTS",
+  SEARCH = "SEARCH",
 }
 
+local SEARCH_TAB_COLOR = { r = 0.937, g = 0.812, b = 0.075 } -- #efcf13
+
 local function SetTabChecked(tabFrame, checked)
-  if tabFrame and tabFrame.SetChecked then
+  if not tabFrame then return end
+  if tabFrame.SetChecked then
     tabFrame:SetChecked(checked)
+  end
+
+  if tabFrame.Icon and tabFrame._eventqActiveColor and tabFrame.Icon.SetVertexColor then
+    local color = checked and tabFrame._eventqActiveColor or tabFrame._eventqInactiveColor
+    if color then
+      tabFrame.Icon:SetVertexColor(color.r, color.g, color.b)
+    end
+  end
+
+  -- Some icons (e.g., the search tab) don't have separate active/inactive atlases.
+  -- When requested, desaturate + dim the icon while inactive so the selected state is still clear.
+  if tabFrame.Icon and tabFrame._eventqDesaturateInactive and tabFrame.Icon.SetDesaturated then
+    tabFrame.Icon:SetDesaturated(not checked)
+    if tabFrame.Icon.SetAlpha then
+      tabFrame.Icon:SetAlpha(checked and 1 or 0.65)
+    end
   end
 end
 
@@ -134,6 +154,8 @@ function MainFrame:_EnsureSideTabs()
     tab._eventqTabKey = tabKey
     tab.activeAtlas = activeAtlas
     tab.inactiveAtlas = inactiveAtlas
+
+    tab._eventqDesaturateInactive = (activeAtlas == inactiveAtlas)
 
     RunTemplateOnLoad(tab)
 
@@ -165,9 +187,15 @@ function MainFrame:_EnsureSideTabs()
   eventsTab:ClearAllPoints()
   eventsTab:SetPoint("TOP", mainTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
 
+  local searchTab = CreateSideTab(TAB_KEY.SEARCH, "uitools-icon-search", "uitools-icon-search")
+  searchTab:ClearAllPoints()
+  searchTab:SetPoint("TOP", eventsTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
+  searchTab._eventqActiveColor = SEARCH_TAB_COLOR
+  searchTab._eventqInactiveColor = { r = 0.6, g = 0.6, b = 0.6 }
+
   local count = eventsTab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   -- Place the badge directly under the tab icon so it reads as a simple count indicator.
-  count:SetPoint("TOP", eventsTab.Icon, "BOTTOM", 0, 2)
+  count:SetPoint("TOP", eventsTab.Icon, "BOTTOM", 0, 5)
   count:SetJustifyH("CENTER")
   count:SetText("")
   count:Hide()
@@ -175,25 +203,40 @@ function MainFrame:_EnsureSideTabs()
   self._sideTabs = {
     [TAB_KEY.MAIN] = mainTab,
     [TAB_KEY.EVENTS] = eventsTab,
+    [TAB_KEY.SEARCH] = searchTab,
   }
   self._eventsTabCount = count
 end
 
 function MainFrame:SetActiveTab(tabKey)
-  if not tabKey then return end
+  tabKey = tabKey or TAB_KEY.MAIN
   if self._activeTab == tabKey then return end
   self._activeTab = tabKey
 
-  local mainTab = self._sideTabs and self._sideTabs[TAB_KEY.MAIN] or nil
-  local eventsTab = self._sideTabs and self._sideTabs[TAB_KEY.EVENTS] or nil
-  SetTabChecked(mainTab, tabKey == TAB_KEY.MAIN)
-  SetTabChecked(eventsTab, tabKey == TAB_KEY.EVENTS)
+  self:_EnsureSideTabs()
+
+  -- Update tab visuals for the whole group.
+  local tabs = self._sideTabs or {}
+  for key, tab in pairs(tabs) do
+    SetTabChecked(tab, key == tabKey)
+  end
 
   local showMain = (tabKey == TAB_KEY.MAIN)
+  local showEvents = (tabKey == TAB_KEY.EVENTS)
+  local showSearch = (tabKey == TAB_KEY.SEARCH)
+
+  if showEvents then
+    self:_EnsureEventsPanel()
+  elseif showSearch then
+    self:_EnsureSearchPanel()
+  end
+
   if self.left then self.left:SetShown(showMain) end
   if self.right then self.right:SetShown(showMain) end
   if self.editor then self.editor:SetShown(showMain) end
-  if self.eventsPanel then self.eventsPanel:SetShown(not showMain) end
+
+  if self.eventsPanel then self.eventsPanel:SetShown(showEvents) end
+  if self.searchPanel then self.searchPanel:SetShown(showSearch) end
 end
 
 
@@ -298,6 +341,327 @@ function MainFrame:_UpdateEventsTabData(nowEpoch, horizonEpoch)
       self._eventsTabCount:SetText("")
       self._eventsTabCount:Hide()
     end
+  end
+end
+
+
+
+-- -----------------------------------------------------------------------------
+-- Search tab: find calendar + custom events within the next year
+-- -----------------------------------------------------------------------------
+
+local function IsSeriesEnabled(series)
+  return type(series) == "table" and series.enabled == true and type(series.frequency) == "string"
+end
+
+local function ComputeOneYearHorizonEpoch(dateUtil, nowEpoch)
+  -- The "next year" boundary is defined as the same month/day in the following year.
+  -- Example: Dec 1, 2025 -> Dec 1, 2026 (not "365 days" which would drift during leap years).
+  local parts = date("*t", nowEpoch or time())
+  if not (dateUtil and dateUtil.AddYearsByMonthDay and parts and parts.month and parts.day) then
+    return (nowEpoch or time()) + 365 * 86400
+  end
+  return dateUtil:AddYearsByMonthDay(nowEpoch, 1, parts.month, parts.day)
+end
+
+local function NormalizeSearchText(inputText)
+  local trimmed = (type(inputText) == "string") and strtrim(inputText) or ""
+  if trimmed == "" then return nil end
+	trimmed = trimmed:gsub("%s+", " ")
+	return trimmed:lower()
+end
+
+local function NormalizeHaystack(text)
+  if type(text) ~= "string" then return "" end
+
+  -- Strip common Blizzard formatting sequences so that plain substring searches behave as expected.
+	local cleaned = text
+	cleaned = cleaned:gsub("|c%x%x%x%x%x%x%x%x", "")
+	cleaned = cleaned:gsub("|r", "")
+	cleaned = cleaned:gsub("|T.-|t", "")
+	cleaned = cleaned:gsub("%s+", " ")
+
+  return cleaned:lower()
+end
+
+function MainFrame:_EnsureSearchPanel()
+  if self.searchPanel then return end
+  if not self.frame then return end
+
+  local panel = CreateFrame("Frame", nil, self.frame, "BackdropTemplate")
+  panel:SetPoint("TOPLEFT", 12, -40)
+  panel:SetPoint("BOTTOMRIGHT", -12, 12)
+  panel:Hide()
+
+  local header = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  header:SetPoint("TOPLEFT", 8, -8)
+  header:SetText("Search")
+
+  local searchBox = CreateFrame("EditBox", nil, panel, "SearchBoxTemplate")
+  searchBox:SetSize(240, 24)
+  searchBox:SetPoint("TOPRIGHT", -14, -10)
+  searchBox:SetAutoFocus(false)
+  RunTemplateOnLoad(searchBox)
+	if type(SearchBoxTemplate_OnTextChanged) == "function" then
+		SearchBoxTemplate_OnTextChanged(searchBox)
+	end
+
+	local hint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	-- A separate hint string avoids having to localize the edit box's internal instruction text.
+	hint:SetText("Type to search for calendar and custom events")
+	hint:SetTextColor(0.75, 0.75, 0.75, 1)
+	hint:SetJustifyH("RIGHT")
+	hint:SetPoint("BOTTOMRIGHT", searchBox, "TOPRIGHT", 0, 2)
+
+  local function ScheduleRefresh()
+    if self._searchRefreshPending then return end
+    self._searchRefreshPending = true
+    if C_Timer and C_Timer.After then
+      C_Timer.After(0.15, function()
+        self._searchRefreshPending = false
+        if self.searchPanel and self.searchPanel:IsShown() then
+          self:_UpdateSearchResults()
+        end
+      end)
+    else
+      self._searchRefreshPending = false
+      self:_UpdateSearchResults()
+    end
+  end
+
+	searchBox:SetScript("OnTextChanged", function(_, userInput)
+		if type(SearchBoxTemplate_OnTextChanged) == "function" then
+			SearchBoxTemplate_OnTextChanged(searchBox)
+		end
+
+		self._searchQuery = searchBox:GetText() or ""
+		-- Avoid rebuilding the year-sized event cache on every keystroke.
+		if userInput then
+			ScheduleRefresh()
+		end
+	end)
+
+  searchBox:SetScript("OnEnterPressed", function()
+    searchBox:ClearFocus()
+    self._searchQuery = searchBox:GetText() or ""
+    self:_UpdateSearchResults()
+  end)
+
+  local listLayout = {
+    paddingTop = 62,
+    rightInset = 20,
+    scrollBarInsetX = 6,
+    bottomInset = 8,
+  }
+
+  local scrollBox, dataProvider = CreateModernList(panel, self.app, listLayout)
+  scrollBox:ClearAllPoints()
+  scrollBox:SetPoint("TOPLEFT", 0, -listLayout.paddingTop)
+  scrollBox:SetPoint("BOTTOMRIGHT", -listLayout.rightInset, listLayout.bottomInset)
+
+	local empty = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  empty:SetPoint("TOPLEFT", 12, -78)
+  empty:SetPoint("RIGHT", -12, 0)
+  empty:SetJustifyH("LEFT")
+  empty:SetTextColor(0.6, 0.6, 0.6, 1)
+	empty:SetText("No matches within the next year.")
+	empty:Hide()
+
+  self.searchPanel = panel
+  self.searchBox = searchBox
+	self.searchHintText = hint
+  self.searchScrollBox = scrollBox
+  self.searchDP = dataProvider
+  self.searchEmptyText = empty
+  self._searchScratch = self._searchScratch or {}
+end
+
+local function SortByStartThenTitle(leftEvent, rightEvent)
+  local leftStart = (leftEvent and leftEvent.startEpoch) or 0
+  local rightStart = (rightEvent and rightEvent.startEpoch) or 0
+  if leftStart ~= rightStart then
+    return leftStart < rightStart
+  end
+  return ((leftEvent and leftEvent.title) or "") < ((rightEvent and rightEvent.title) or "")
+end
+
+function MainFrame:_UpdateSearchResults()
+  if not (self.searchDP and self.searchScrollBox and self.searchEmptyText) then return end
+
+  local queryLower = NormalizeSearchText(self._searchQuery)
+  self.searchDP:Flush()
+
+  if not queryLower then
+    self.searchEmptyText:Hide()
+    self.searchScrollBox:SetDataProvider(self.searchDP)
+    return
+  end
+
+  local app = self.app
+  local dateUtil = app and app.dateUtil
+  local nowEpoch = time()
+  local horizonEpoch = ComputeOneYearHorizonEpoch(dateUtil, nowEpoch)
+
+  local maxDaysAhead = math.ceil((horizonEpoch - nowEpoch) / 86400)
+  if maxDaysAhead < 1 then maxDaysAhead = 1 end
+
+  local results = self._searchScratch
+  WipeArray(results)
+
+  local function CalendarSeriesKey(eventData)
+    if not eventData then return nil end
+    if eventData.holidayID ~= nil then
+      return "holiday:" .. tostring(eventData.holidayID)
+    end
+    if eventData.eventID ~= nil then
+      return "event:" .. tostring(eventData.eventID)
+    end
+    return "title:" .. NormalizeHaystack(eventData.title)
+  end
+
+  local function IsOccurrenceRelevant(eventData)
+    local startEpoch = eventData and eventData.startEpoch
+    local endEpoch = eventData and eventData.endEpoch
+    if not (startEpoch and endEpoch) then return false end
+    if endEpoch < nowEpoch then return false end
+    if startEpoch > horizonEpoch then return false end
+    return true
+  end
+
+  local function OccurrencePriority(eventData)
+    if not eventData then return nil end
+    if eventData.startEpoch <= nowEpoch and eventData.endEpoch >= nowEpoch then
+      return 0 -- currently active
+    end
+    if eventData.startEpoch >= nowEpoch then
+      return 1 -- upcoming
+    end
+    return nil
+  end
+
+  local function ChooseBetterOccurrence(existing, candidate)
+    if not existing then return candidate end
+
+    local existingPriority = OccurrencePriority(existing)
+    local candidatePriority = OccurrencePriority(candidate)
+    if candidatePriority == nil then return existing end
+    if existingPriority == nil then return candidate end
+
+    if candidatePriority ~= existingPriority then
+      return (candidatePriority < existingPriority) and candidate or existing
+    end
+
+    return (candidate.startEpoch < existing.startEpoch) and candidate or existing
+  end
+
+  -- Calendar events (holidays + player/guild/community events)
+  -- Many calendar events span multiple days; the search tab should only surface the *next* occurrence.
+  if app and app.calendar and app.calendar.CollectWindow then
+    local bestBySeriesKey = {}
+    local calendarEvents = app.calendar:CollectWindow(maxDaysAhead)
+
+    for _, eventData in ipairs(calendarEvents) do
+      if eventData and IsOccurrenceRelevant(eventData) then
+        local titleLower = NormalizeHaystack(eventData.title)
+        local descLower = NormalizeHaystack(eventData.description)
+        if titleLower:find(queryLower, 1, true) or descLower:find(queryLower, 1, true) then
+          local seriesKey = CalendarSeriesKey(eventData)
+          if seriesKey then
+            bestBySeriesKey[seriesKey] = ChooseBetterOccurrence(bestBySeriesKey[seriesKey], eventData)
+          end
+        end
+      end
+    end
+
+    for _, eventData in pairs(bestBySeriesKey) do
+      if eventData then
+        if app.calendar.EnhanceEventIcon then
+          app.calendar:EnhanceEventIcon(eventData)
+        end
+        if app.ApplyIconOverrides then
+          app:ApplyIconOverrides(eventData)
+        end
+        results[#results + 1] = eventData
+      end
+    end
+  end
+
+  -- Custom events (including series occurrences)
+  if app and app.customStore and app.customStore.GetAll then
+    local customDbEvents = app.customStore:GetAll() or {}
+    for _, dbEvent in ipairs(customDbEvents) do
+      if dbEvent and dbEvent.title and dbEvent.startEpoch and dbEvent.endEpoch then
+        local titleLower = NormalizeHaystack(dbEvent.title)
+        local desc = (type(dbEvent.description) == "string") and strtrim(dbEvent.description) or nil
+        if desc == "" then desc = nil end
+        local descLower = NormalizeHaystack(desc)
+
+        local matchText = titleLower:find(queryLower, 1, true) or descLower:find(queryLower, 1, true)
+        if matchText then
+          if IsSeriesEnabled(dbEvent.series) and app.GetNextSeriesOccurrenceWithin then
+            local occ = app:GetNextSeriesOccurrenceWithin(dbEvent.id, horizonEpoch)
+            local occStart = occ and occ.startEpoch
+            local occEnd = occ and occ.endEpoch
+            if occStart and occEnd and occEnd >= nowEpoch and occStart <= horizonEpoch then
+              local occEvent = {
+                id = ("%s#occ:%d:%d"):format(dbEvent.id, occ.index or 0, occStart),
+                title = dbEvent.title,
+                description = desc or "Custom event",
+                startEpoch = occStart,
+                endEpoch = occEnd,
+                icon = dbEvent.icon or DEFAULT_CUSTOM_ICON,
+                source = "Custom",
+                isCustom = true,
+                isSeriesOccurrence = true,
+                seriesRootId = dbEvent.id,
+                series = dbEvent.series,
+              }
+              if app.ApplyIconOverrides then
+                app:ApplyIconOverrides(occEvent)
+              end
+              results[#results + 1] = occEvent
+            end
+          else
+            -- Non-series (or older builds without GetSeriesOccurrencesWithin): include the base event if it overlaps the window.
+            local startEpoch = tonumber(dbEvent.startEpoch)
+            local endEpoch = tonumber(dbEvent.endEpoch)
+            if startEpoch and endEpoch and endEpoch >= nowEpoch and startEpoch <= horizonEpoch then
+              local customEvent = {
+                id = dbEvent.id,
+                title = dbEvent.title,
+                description = desc or "Custom event",
+                startEpoch = startEpoch,
+                endEpoch = endEpoch,
+                icon = dbEvent.icon or DEFAULT_CUSTOM_ICON,
+                source = "Custom",
+                isCustom = true,
+                isSeriesRoot = IsSeriesEnabled(dbEvent.series) or nil,
+                series = IsSeriesEnabled(dbEvent.series) and dbEvent.series or nil,
+                seriesRootId = IsSeriesEnabled(dbEvent.series) and dbEvent.id or nil,
+              }
+              if app.ApplyIconOverrides then
+                app:ApplyIconOverrides(customEvent)
+              end
+              results[#results + 1] = customEvent
+            end
+          end
+        end
+      end
+    end
+  end
+
+  table.sort(results, SortByStartThenTitle)
+
+  for _, eventData in ipairs(results) do
+    self.searchDP:Insert(eventData)
+  end
+  self.searchScrollBox:SetDataProvider(self.searchDP)
+
+  if #results == 0 then
+    self.searchEmptyText:SetText("No matches within the next year.")
+    self.searchEmptyText:Show()
+  else
+    self.searchEmptyText:Hide()
   end
 end
 
@@ -1341,9 +1705,9 @@ end
 function MainFrame:BeginEditCustom(event)
   if not event or not event.isCustom then return end
 
-  -- Editing uses the Main tab's editor widgets. If the user starts editing from the Events tab
-  -- (right-click -> Edit), automatically switch back so the editor is visible.
-  if self._activeTab == TAB_KEY.EVENTS and self.SetActiveTab then
+  -- Editing uses the Main tab's editor widgets. If the user starts editing from
+  -- a non-Main tab (right-click -> Edit), automatically switch back so the editor is visible.
+  if self._activeTab ~= TAB_KEY.MAIN and self.SetActiveTab then
     self:SetActiveTab(TAB_KEY.MAIN)
   end
 
@@ -1720,6 +2084,15 @@ function MainFrame:UpdateLists()
   local nowEpoch = time()
   local horizonEpoch = nowEpoch + UPCOMING_WINDOW_SECONDS
   self:_UpdateEventsTabData(nowEpoch, horizonEpoch)
+  
+
+  -- Refresh search results only when the Search tab is active and the user has entered a query.
+  if self._activeTab == TAB_KEY.SEARCH then
+    local queryText = (self._searchQuery and strtrim(self._searchQuery)) or ""
+    if queryText ~= "" then
+      self:_UpdateSearchResults()
+    end
+  end
 end
 
 ns.UIMainFrame = MainFrame

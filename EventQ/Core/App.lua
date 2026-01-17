@@ -356,6 +356,11 @@ local function ApplyIconOverrides(app, event)
   end
 end
 
+-- Expose icon override application for UI helpers (e.g., search results).
+function App:ApplyIconOverrides(event)
+  ApplyIconOverrides(self, event)
+end
+
 
 local NOTIFIED_TTL = 60 * 86400 -- cap notified history to reduce SavedVariables growth
 
@@ -694,6 +699,107 @@ function App:GetSeriesOccurrences(rootId, count)
   return occurrences
 end
 
+
+
+
+---@param rootId string
+---@param horizonEpoch integer
+---@param maxCount integer|nil
+---@return table[] occurrences {startEpoch,endEpoch,index}
+function App:GetSeriesOccurrencesWithin(rootId, horizonEpoch, maxCount)
+  if not rootId then return {} end
+  local dbEvent = (self.customStore and self.customStore.GetById) and self.customStore:GetById(rootId) or nil
+  if not (dbEvent and IsSeriesEnabled(dbEvent.series)) then return {} end
+
+  -- Keep the series config normalized and advance the root to the next/active occurrence.
+  -- This mirrors RefreshAll() behavior so that search results match what the UI shows elsewhere.
+  local normalized = NormalizeSeriesConfig(self.dateUtil, dbEvent.series, dbEvent.startEpoch)
+  if normalized then
+    dbEvent.series = normalized
+  end
+
+  local nowEpoch = time()
+  AdvanceSeriesInPlace(self.dateUtil, dbEvent, nowEpoch)
+
+  local startEpoch = tonumber(dbEvent.startEpoch)
+  local endEpoch = tonumber(dbEvent.endEpoch)
+  if not (startEpoch and endEpoch) then return {} end
+
+  local durationSeconds = endEpoch - startEpoch
+  if durationSeconds <= 0 then durationSeconds = 3600 end
+
+  local series = dbEvent.series
+  local horizon = tonumber(horizonEpoch) or (nowEpoch + 365 * 86400)
+
+  -- Series can be configured at very small intervals (e.g., minutely). Searching a full year could
+  -- explode into hundreds of thousands of occurrences, so enforce a hard cap.
+  local hardCap = tonumber(maxCount) or 2000
+  if hardCap < 1 then hardCap = 1 end
+
+  local occurrences = {}
+
+  -- Start with the currently-active occurrence (if any); otherwise the next upcoming occurrence.
+  local occStart = CorrectSeriesStartIfNeeded(self.dateUtil, startEpoch, series)
+  local targetStart = nowEpoch - durationSeconds + 1
+  occStart = NextOccurrenceStartAtOrAfter(self.dateUtil, occStart, series, targetStart, durationSeconds)
+
+  local count = 0
+  while occStart and occStart <= horizon and count < hardCap do
+    local occEnd = occStart + durationSeconds
+    if occEnd >= nowEpoch then
+      count = count + 1
+      occurrences[count] = {
+        startEpoch = occStart,
+        endEpoch = occEnd,
+        index = count - 1,
+      }
+    end
+
+    occStart = NextSeriesStart(self.dateUtil, occStart, series, durationSeconds)
+    occStart = CorrectSeriesStartIfNeeded(self.dateUtil, occStart, series)
+  end
+
+  return occurrences
+end
+
+---@param rootId string
+---@param horizonEpoch integer
+---@return table|nil occurrence {startEpoch,endEpoch,index}
+function App:GetNextSeriesOccurrenceWithin(rootId, horizonEpoch)
+  if not rootId then return nil end
+  local dbEvent = (self.customStore and self.customStore.GetById) and self.customStore:GetById(rootId) or nil
+  if not (dbEvent and IsSeriesEnabled(dbEvent.series)) then return nil end
+
+  -- Keep the series config normalized and advance the root to the next/active occurrence.
+  local normalized = NormalizeSeriesConfig(self.dateUtil, dbEvent.series, dbEvent.startEpoch)
+  if normalized then
+    dbEvent.series = normalized
+  end
+
+  local nowEpoch = time()
+  AdvanceSeriesInPlace(self.dateUtil, dbEvent, nowEpoch)
+
+  local startEpoch = tonumber(dbEvent.startEpoch)
+  local endEpoch = tonumber(dbEvent.endEpoch)
+  if not (startEpoch and endEpoch) then return nil end
+
+  local durationSeconds = endEpoch - startEpoch
+  if durationSeconds <= 0 then durationSeconds = 3600 end
+
+  local series = dbEvent.series
+  local horizon = tonumber(horizonEpoch) or (nowEpoch + 365 * 86400)
+
+  local occStart = CorrectSeriesStartIfNeeded(self.dateUtil, startEpoch, series)
+  local targetStart = nowEpoch - durationSeconds + 1
+  occStart = NextOccurrenceStartAtOrAfter(self.dateUtil, occStart, series, targetStart, durationSeconds)
+  if not occStart or occStart > horizon then return nil end
+
+  return {
+    startEpoch = occStart,
+    endEpoch = occStart + durationSeconds,
+    index = 0,
+  }
+end
 
 
 function App:_PruneNotified(now)

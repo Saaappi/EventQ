@@ -169,8 +169,15 @@ addonFrame:SetScript("OnEvent", function(_, event, arg1)
     end)
 
   elseif event == "CALENDAR_UPDATE_EVENT_LIST" then
-    if app then
-      app:RefreshAll()
+		if app then
+			-- CollectWindow() may temporarily call CalendarAPI.SetMonth() to load holiday data
+			-- for distant months. That API call fires CALENDAR_UPDATE_EVENT_LIST, so we must
+			-- ignore updates that originate from our own scan to avoid re-entrancy.
+			local calendar = app.calendar
+			if calendar and calendar.IsSuppressingEventListUpdates and calendar:IsSuppressingEventListUpdates() then
+				return
+			end
+			app:RefreshAll()
     else
       pendingCalendarUpdate = true
     end
