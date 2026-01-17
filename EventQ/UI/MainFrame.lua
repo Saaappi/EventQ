@@ -167,7 +167,7 @@ function MainFrame:_EnsureSideTabs()
 
   local count = eventsTab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   -- Place the badge directly under the tab icon so it reads as a simple count indicator.
-  count:SetPoint("TOP", eventsTab.Icon, "BOTTOM", 0, 5)
+  count:SetPoint("TOP", eventsTab.Icon, "BOTTOM", 0, 2)
   count:SetJustifyH("CENTER")
   count:SetText("")
   count:Hide()
