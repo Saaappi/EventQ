@@ -917,4 +917,285 @@ function CalendarService:CollectWindow(maxDaysAhead)
   return filtered
 end
 
+
+
+-- -----------------------------------------------------------------------------
+-- Custom calendar event creation + invite management
+-- -----------------------------------------------------------------------------
+
+local function IsAcceptedInviteStatus(inviteStatus)
+  if not inviteStatus then return false end
+  if Enum and Enum.CalendarStatus then
+    return inviteStatus == Enum.CalendarStatus.Available
+      or inviteStatus == Enum.CalendarStatus.Confirmed
+      or inviteStatus == Enum.CalendarStatus.Signedup
+  end
+  return false
+end
+
+local function ResolveEventIndexInfo(eventID, monthOffset, monthDay)
+  if not eventID or monthOffset == nil or monthDay == nil then return nil end
+
+  local indexInfo = C_Calendar.GetEventIndexInfo(eventID, monthOffset, monthDay)
+  if indexInfo then
+    return indexInfo
+  end
+
+  return findEventIndexByScan(eventID, monthOffset, monthDay)
+end
+
+---@class CalendarEventSignature
+---@field title string
+---@field year number
+---@field month number
+---@field day number
+---@field hour number
+---@field minute number
+---@field eventType CalendarEventType
+
+local function SignatureFromEpoch(title, startEpoch, eventType)
+  local startParts = date("*t", startEpoch or time())
+  return {
+    title = title,
+    year = startParts.year,
+    month = startParts.month,
+    day = startParts.day,
+    hour = startParts.hour,
+    minute = startParts.min,
+    eventType = eventType,
+  }
+end
+
+local function SignatureIsValid(signature)
+  return type(signature) == "table"
+    and type(signature.title) == "string" and signature.title ~= ""
+    and type(signature.year) == "number" and type(signature.month) == "number"
+    and type(signature.day) == "number" and type(signature.hour) == "number"
+    and type(signature.minute) == "number"
+end
+
+---@param signature CalendarEventSignature
+---@return string|nil eventID
+---@return table|nil indexInfo CalendarEventIndexInfo
+function CalendarService:FindPlayerEventBySignature(signature)
+  if not SignatureIsValid(signature) then
+    return nil, nil
+  end
+
+  if not self:_EnsureCalendarLoaded() then
+    return nil, nil
+  end
+
+  local ok = SafeCalendarCall(C_Calendar.OpenCalendar)
+  if not ok then
+    return nil, nil
+  end
+
+  -- Calendar event queries are scoped by a "current" month. Navigating the month lets us
+  -- scan with offsetMonths=0 (avoiding date math for month offsets).
+  SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
+
+  local numDayEvents = C_Calendar.GetNumDayEvents(0, signature.day)
+  for eventIndex = 1, numDayEvents do
+    local dayEvent = C_Calendar.GetDayEvent(0, signature.day, eventIndex)
+    if dayEvent
+      and dayEvent.calendarType == "PLAYER"
+      and dayEvent.title == signature.title
+      and dayEvent.eventType == signature.eventType
+      and dayEvent.startTime
+      and dayEvent.startTime.hour == signature.hour
+      and dayEvent.startTime.minute == signature.minute then
+      return dayEvent.eventID, { offsetMonths = 0, monthDay = signature.day, eventIndex = eventIndex }
+    end
+  end
+
+  return nil, nil
+end
+
+---@param spec table
+---@return CalendarEventSignature|nil
+---@return string|nil err
+function CalendarService:CreatePlayerEvent(spec)
+  if type(spec) ~= "table" then
+    return nil, "Invalid event data."
+  end
+
+  if not self:_EnsureCalendarLoaded() then
+    return nil, "Calendar UI is unavailable."
+  end
+
+  local title = strtrim(spec.title or "")
+  if title == "" then
+    return nil, "Calendar events require a name."
+  end
+
+  local startEpoch = tonumber(spec.startEpoch)
+  if not startEpoch then
+    return nil, "Calendar events require a start time."
+  end
+
+  local startParts = date("*t", startEpoch)
+  if not (startParts and startParts.year and startParts.month and startParts.day) then
+    return nil, "Invalid start time."
+  end
+
+  local eventType = spec.eventType
+  if eventType == nil and Enum and Enum.CalendarEventType then
+    eventType = Enum.CalendarEventType.Other
+  end
+  if eventType == nil then
+    eventType = 4
+  end
+
+  local description = tostring(spec.description or "")
+  local invitees = (type(spec.invitees) == "table") and spec.invitees or nil
+
+  local okOpen = SafeCalendarCall(C_Calendar.OpenCalendar)
+  if not okOpen then
+    return nil, "Calendar is not accessible right now (possibly in combat)."
+  end
+
+  SafeCalendarCall(C_Calendar.SetAbsMonth, startParts.month, startParts.year)
+
+  local okCreate = SafeCalendarCall(C_Calendar.CreatePlayerEvent)
+  if not okCreate then
+    return nil, "Unable to start a new calendar event."
+  end
+
+  SafeCalendarCall(C_Calendar.EventSetTitle, title)
+  SafeCalendarCall(C_Calendar.EventSetDescription, description)
+  SafeCalendarCall(C_Calendar.EventSetType, eventType)
+  SafeCalendarCall(C_Calendar.EventSetDate, startParts.month, startParts.day, startParts.year)
+  SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
+
+  if invitees then
+    for _, inviteeName in ipairs(invitees) do
+      local trimmed = strtrim(inviteeName or "")
+      if trimmed ~= "" then
+        SafeCalendarCall(C_Calendar.EventInvite, trimmed)
+      end
+    end
+  end
+
+  local okAdd = SafeCalendarCall(C_Calendar.AddEvent)
+  if not okAdd then
+    return nil, "Calendar refused to create the event."
+  end
+
+  return SignatureFromEpoch(title, startEpoch, eventType), nil
+end
+
+---@param eventID string
+---@param signature CalendarEventSignature
+---@return table|nil invites
+---@return string|nil err
+function CalendarService:GetInviteSnapshot(eventID, signature)
+  if not eventID or not SignatureIsValid(signature) then
+    return nil, "Event not selected."
+  end
+
+  if not self:_EnsureCalendarLoaded() then
+    return nil, "Calendar UI is unavailable."
+  end
+
+  local okOpen = SafeCalendarCall(C_Calendar.OpenCalendar)
+  if not okOpen then
+    return nil, "Calendar is not accessible right now (possibly in combat)."
+  end
+
+  SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
+
+  local idx = ResolveEventIndexInfo(eventID, 0, signature.day)
+  if not idx then
+    return nil, "Could not locate the calendar event (data may still be loading)."
+  end
+
+  local okEvent = SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if not okEvent then
+    return nil, "Could not open the calendar event."
+  end
+
+  local okCount, numInvites = SafeCalendarCall(C_Calendar.GetNumInvites)
+  if not okCount or not numInvites then
+    return {}, nil
+  end
+
+  local invites = {}
+  for inviteIndex = 1, numInvites do
+    local okInvite, inviteInfo = SafeCalendarCall(C_Calendar.EventGetInvite, inviteIndex)
+    if okInvite and inviteInfo then
+      invites[#invites + 1] = inviteInfo
+    end
+  end
+
+  return invites, nil
+end
+
+---@param eventID string
+---@param signature CalendarEventSignature
+---@return number|nil invitedCount
+---@return string|nil err
+function CalendarService:InviteAcceptedToGroup(eventID, signature)
+  if InCombatLockdown and InCombatLockdown() then
+    return nil, "Cannot invite while in combat."
+  end
+
+  local invites, err = self:GetInviteSnapshot(eventID, signature)
+  if not invites then
+    return nil, err
+  end
+
+  local acceptedCount = 0
+  for _, inviteInfo in ipairs(invites) do
+    local inviteName = inviteInfo and inviteInfo.name
+    if inviteName and IsAcceptedInviteStatus(inviteInfo.inviteStatus) and not UnitInParty(inviteName) and not UnitInRaid(inviteName) then
+      acceptedCount = acceptedCount + 1
+    end
+  end
+
+  if acceptedCount == 0 then
+    return 0, nil
+  end
+
+  local realNumGroupMembers = GetNumGroupMembers(LE_PARTY_CATEGORY_HOME)
+  local inRaid = IsInRaid(LE_PARTY_CATEGORY_HOME)
+
+  -- The Blizzard calendar UI converts to a raid before inviting if the accepted list would overflow a party.
+  -- We keep the same behavior, but we only invite accepted players (confirmed/signed-up/available).
+  if not inRaid and (realNumGroupMembers + acceptedCount > MAX_PARTY_MEMBERS + 1) then
+    if realNumGroupMembers > 0 and C_PartyInfo and C_PartyInfo.ConvertToRaid then
+      C_PartyInfo.ConvertToRaid()
+      return 0, "Converted to raid; click Invite Accepted again once the raid is formed."
+    end
+  end
+
+  local maxInviteCount
+  if IsInRaid(LE_PARTY_CATEGORY_HOME) then
+    maxInviteCount = MAX_RAID_MEMBERS - realNumGroupMembers
+  else
+    maxInviteCount = MAX_PARTY_MEMBERS + 1 - realNumGroupMembers
+  end
+
+  local invitedCount = 0
+  local playerName = UnitName("player")
+  for _, inviteInfo in ipairs(invites) do
+    if invitedCount >= maxInviteCount then
+      break
+    end
+
+    local inviteName = inviteInfo and inviteInfo.name
+    if inviteName
+      and inviteName ~= playerName
+      and IsAcceptedInviteStatus(inviteInfo.inviteStatus)
+      and not UnitInParty(inviteName)
+      and not UnitInRaid(inviteName) then
+      if C_PartyInfo and C_PartyInfo.InviteUnit then
+        pcall(C_PartyInfo.InviteUnit, inviteName)
+        invitedCount = invitedCount + 1
+      end
+    end
+  end
+
+  return invitedCount, nil
+end
 ns.CalendarService = CalendarService

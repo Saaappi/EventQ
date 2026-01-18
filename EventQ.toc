@@ -2,8 +2,8 @@
 ## Title: EventQ
 ## Notes: Queue for dungeon and PvP events directly from the interface, search for events, add custom events, and an optional portable mode for a smaller visual footprint and quick queues.
 ## SavedVariables: EventQDB
-## Author: LightskyGG.
-## Version: 2.0.1
+## Author: LightskyGG
+## Version: 2.1.0
 EventQ.xml
 Core/Class.lua
 Core/ImportExport.lua
@@ -15,6 +15,7 @@ Config/PVPQueue.lua
 UI/Settings.lua
 UI/RolePopup.lua
 UI/ImportExportPopup.lua
+UI/CalendarEventPopup.lua
 UI/Row.lua
 UI/DateTimePicker.lua
 Data/IconFileNames.lua

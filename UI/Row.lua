@@ -515,6 +515,24 @@ function Row:Constructor(frame, app)
         end
         UIDropDownMenu_AddButton(exportInfo, level)
 
+        local addCalInfo = UIDropDownMenu_CreateInfo()
+        addCalInfo.notCheckable = true
+        addCalInfo.text = "Add to Calendar..."
+        addCalInfo.func = function()
+          local ev = MENU._eventqData
+          local ui = MENU._eventqApp and MENU._eventqApp.ui
+          if ui and ui.ShowCalendarEventPopup and ev then
+            ui:ShowCalendarEventPopup({
+              title = ev.title,
+              description = ev.description,
+              startEpoch = ev.startEpoch,
+              endEpoch = ev.endEpoch,
+              eventType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or nil,
+            })
+          end
+        end
+        UIDropDownMenu_AddButton(addCalInfo, level)
+
         if menuData and menuData.isSeriesOccurrence then
           return
         end

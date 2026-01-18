@@ -17,6 +17,8 @@ local addonFrame = CreateFrame("Frame")
 addonFrame:RegisterEvent("ADDON_LOADED")
 addonFrame:RegisterEvent("PLAYER_LOGIN")
 addonFrame:RegisterEvent("CALENDAR_UPDATE_EVENT_LIST")
+addonFrame:RegisterEvent("CALENDAR_UPDATE_INVITE_LIST")
+addonFrame:RegisterEvent("CALENDAR_UPDATE_EVENT")
 
 local function EnsureDB()
   EventQDB = EventQDB or {}
@@ -246,7 +248,7 @@ addonFrame:SetScript("OnEvent", function(_, event, arg1)
       end
     end)
 
-  elseif event == "CALENDAR_UPDATE_EVENT_LIST" then
+  elseif event == "CALENDAR_UPDATE_EVENT_LIST" or event == "CALENDAR_UPDATE_INVITE_LIST" or event == "CALENDAR_UPDATE_EVENT" then
     ScheduleCalendarRefresh()
   end
 end)

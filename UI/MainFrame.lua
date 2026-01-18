@@ -309,6 +309,12 @@ function MainFrame:_EnsureEventsPanel()
   exportAllBtn:SetPoint("RIGHT", importBtn, "LEFT", -8, 0)
   exportAllBtn:SetScript("OnClick", function() self:ShowExportAllCustomEvents() end)
 
+  local calendarBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  calendarBtn:SetSize(150, 24)
+  calendarBtn:SetText("Calendar Event")
+  calendarBtn:SetPoint("RIGHT", exportAllBtn, "LEFT", -8, 0)
+  calendarBtn:SetScript("OnClick", function() self:ShowCalendarEventPopup() end)
+
   local listLayout = {
     paddingTop = 44,
     rightInset = 20,
@@ -1103,6 +1109,27 @@ function MainFrame:ShowImportCustomEvents()
   popup:ShowImport(function(text)
     return self.app:ImportCustomEvents(text)
   end)
+end
+
+
+-- -----------------------------------------------------------------------------
+-- Calendar Event Popup
+-- -----------------------------------------------------------------------------
+
+function MainFrame:_EnsureCalendarEventPopup()
+  if self._calendarEventPopup then return self._calendarEventPopup end
+  if ns.CalendarEventPopup then
+    self._calendarEventPopup = ns.CalendarEventPopup()
+  end
+  return self._calendarEventPopup
+end
+
+---@param preset table|nil
+function MainFrame:ShowCalendarEventPopup(preset)
+  local popup = self:_EnsureCalendarEventPopup()
+  if popup and popup.Show then
+    popup:Show(self.app, preset)
+  end
 end
 
 local function PickCogwheelAtlas()
