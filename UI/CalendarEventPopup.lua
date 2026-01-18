@@ -167,12 +167,28 @@ local function EnsureFrame(self)
   popup:SetPoint("CENTER")
   popup:Hide()
 
+  -- Match EventQ main window behavior: movable + Escape-close modal.
+  popup:SetMovable(true)
+  popup:EnableMouse(true)
+
+  -- Drag handle confined to the title region so dragging never interferes with editboxes.
+  local dragRegion = CreateFrame("Frame", nil, popup)
+  dragRegion:SetPoint("TOPLEFT", 0, 0)
+  dragRegion:SetPoint("TOPRIGHT", 0, 0)
+  dragRegion:SetHeight(34)
+  dragRegion:EnableMouse(true)
+  dragRegion:RegisterForDrag("LeftButton")
+  dragRegion:SetScript("OnDragStart", function() popup:StartMoving() end)
+  dragRegion:SetScript("OnDragStop", function() popup:StopMovingOrSizing() end)
+  popup._eventqDragRegion = dragRegion
+
   popup:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 8, right = 8, top = 8, bottom = 8 },
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
   })
+  popup:SetBackdropColor(0, 0, 0, 0.85)
 
   local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -14)
@@ -218,7 +234,8 @@ local function EnsureFrame(self)
   -- Reduce width by 30% to give the category + datetime rows more breathing room.
   nameBox:SetSize(210, 24)
   nameBox:SetAutoFocus(false)
-  nameBox:SetPoint("TOPLEFT", nameLabel, "BOTTOMLEFT", -2, -6)
+  nameBox:SetScript("OnEscapePressed", function() popup:Hide() end)
+  nameBox:SetPoint("TOPLEFT", nameLabel, "BOTTOMLEFT", 5, -6)
   popup._eventqName = nameBox
 
   local typeLabel = AddLabel(left, "Category", nameBox)
@@ -226,7 +243,7 @@ local function EnsureFrame(self)
   -- Use the modern DropdownButton (WowStyle1DropdownTemplate) instead of UIDropDownMenu.
   -- This matches how Dragonflight-era Blizzard UIs build selection menus (SetupMenu + menu descriptors).
   local dropdown = CreateFrame("DropdownButton", "EventQCalendarEventCategoryDropdown", left, "WowStyle1DropdownTemplate")
-  dropdown:SetPoint("TOPLEFT", typeLabel, "BOTTOMLEFT", 0, -4)
+  dropdown:SetPoint("TOPLEFT", typeLabel, "BOTTOMLEFT", 5, -4)
   dropdown:SetWidth(225)
   dropdown:SetDefaultText("Other")
   popup._eventqCategoryDrop = dropdown
@@ -236,23 +253,26 @@ local function EnsureFrame(self)
   -- Reduce width by 25% so the text never collides with the calendar picker button.
   startBox:SetSize(225, 24)
   startBox:SetAutoFocus(false)
-  startBox:SetPoint("TOPLEFT", startLabel, "BOTTOMLEFT", -2, -6)
+  startBox:SetScript("OnEscapePressed", function() popup:Hide() end)
+  startBox:SetPoint("TOPLEFT", startLabel, "BOTTOMLEFT", 5, -6)
   popup._eventqStart = startBox
 
   local endLabel = AddLabel(left, "End (optional, not used by calendar)", startBox)
   local endBox = CreateFrame("EditBox", nil, left, "InputBoxTemplate")
   endBox:SetSize(225, 24)
   endBox:SetAutoFocus(false)
-  endBox:SetPoint("TOPLEFT", endLabel, "BOTTOMLEFT", -2, -6)
+  endBox:SetScript("OnEscapePressed", function() popup:Hide() end)
+  endBox:SetPoint("TOPLEFT", endLabel, "BOTTOMLEFT", 5, -6)
   popup._eventqEnd = endBox
 
   local descLabel = AddLabel(left, "Description", endBox)
   local descScroll = CreateFrame("ScrollFrame", nil, left, "UIPanelInputScrollFrameTemplate")
   descScroll:SetSize(280, 150)
-  descScroll:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", -2, -6)
+  descScroll:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 5, -6)
   local descEdit = descScroll.EditBox
   descEdit:SetFontObject("ChatFontNormal")
   descEdit:SetAutoFocus(false)
+  descEdit:SetScript("OnEscapePressed", function() popup:Hide() end)
   descEdit:SetWidth(250)
   popup._eventqDescScroll = descScroll
 
@@ -276,6 +296,7 @@ local function EnsureFrame(self)
   local inviteEdit = inviteScroll.EditBox
   inviteEdit:SetFontObject("ChatFontNormal")
   inviteEdit:SetAutoFocus(false)
+  inviteEdit:SetScript("OnEscapePressed", function() popup:Hide() end)
   inviteEdit:SetWidth(250)
   popup._eventqInviteScroll = inviteScroll
 
@@ -347,8 +368,20 @@ local function EnsureFrame(self)
 
   closeBtn:ClearAllPoints()
   closeBtn:SetPoint("LEFT", inviteBtn, "RIGHT", gap, 0)
-
-  tinsert(UISpecialFrames, "EventQCalendarEventPopup")
+  -- Allow closing with Escape (even if the user changed the global UISpecialFrames list).
+  local popupName = popup:GetName()
+  if popupName and UISpecialFrames then
+    local isRegistered = false
+    for index = 1, #UISpecialFrames do
+      if UISpecialFrames[index] == popupName then
+        isRegistered = true
+        break
+      end
+    end
+    if not isRegistered then
+      tinsert(UISpecialFrames, popupName)
+    end
+  end
 
   self.frame = popup
   return popup
@@ -389,7 +422,9 @@ local function InitializeDropdown(frame)
     for _, entry in ipairs(CATEGORIES) do
       rootDescription:CreateRadio(entry.label, IsSelected, SetSelected, entry.eventType)
     end
-    rootDescription:SetMaximumWidth(140)
+    local menuMinWidth = math.floor((dropdown.GetWidth and dropdown:GetWidth()) or 180)
+    rootDescription:SetMinimumWidth(menuMinWidth)
+    rootDescription:SetMaximumWidth(menuMinWidth + 60)
   end)
 
   frame._eventqSelectedType = frame._eventqSelectedType or CATEGORIES[#CATEGORIES].eventType
