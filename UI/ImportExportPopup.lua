@@ -141,18 +141,26 @@ function ImportExportPopup:ShowImport(importFunc)
     end
 
     local text = editBox and editBox:GetText() or ""
-    local importedCount, err = fn(text)
+    local importedCount, err, skipped = fn(text)
     if not importedCount then
       SetStatus(popup, err or "Import failed.", 1, 0.1, 0.1)
       return
     end
 
     if importedCount <= 0 then
-      SetStatus(popup, "No events imported.", 1, 0.82, 0)
+      if skipped and skipped > 0 then
+        SetStatus(popup, string.format("No events imported. Skipped %d duplicate(s).", skipped), 1, 0.82, 0)
+      else
+        SetStatus(popup, "No events imported.", 1, 0.82, 0)
+      end
       return
     end
 
-    SetStatus(popup, string.format("Imported %d custom event(s).", importedCount), 0.2, 1, 0.2)
+    if skipped and skipped > 0 then
+      SetStatus(popup, string.format("Imported %d custom event(s). Skipped %d duplicate(s).", importedCount, skipped), 0.2, 1, 0.2)
+    else
+      SetStatus(popup, string.format("Imported %d custom event(s).", importedCount), 0.2, 1, 0.2)
+    end
   end)
 
   SetStatus(popup, "")

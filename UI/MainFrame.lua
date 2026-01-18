@@ -2202,7 +2202,77 @@ function MainFrame:EnsureSeriesViewer()
   end
 
   self.seriesViewer = ns.SeriesViewer(self.frame, self.app)
+
+  -- When the Series panel hides, restore the MainFrame position if we had to
+  -- shift it on-screen to make room.
+  local viewerFrame = self.seriesViewer and self.seriesViewer.frame
+  if viewerFrame and viewerFrame.HookScript then
+    viewerFrame:HookScript("OnHide", function() self:_RestoreAfterSeriesViewer() end)
+  end
   return self.seriesViewer
+end
+
+-- The Series panel is anchored to the left of the MainFrame. If the MainFrame is
+-- dragged near the left edge of the screen, the panel can end up off-screen.
+-- When showing the panel, shift the MainFrame right just enough so the panel
+-- remains visible. When the panel closes, restore the prior position.
+function MainFrame:_MaybeShiftForSeriesViewer(viewerFrame)
+  if not (viewerFrame and self.frame and self.frame.GetLeft and UIParent) then return end
+
+  local mainFrame = self.frame
+  if not mainFrame:IsShown() then return end
+
+  local viewerWidth = viewerFrame:GetWidth() or 0
+  local gap = 12
+  local requiredLeft = viewerWidth + gap
+
+  local left = mainFrame:GetLeft()
+  if not left then return end
+
+  if left >= requiredLeft then
+    return
+  end
+
+  local screenWidth = UIParent:GetWidth() or 0
+  local frameWidth = mainFrame:GetWidth() or 0
+  if screenWidth <= 0 or frameWidth <= 0 then return end
+
+  -- Save the original anchor once so repeated ShowSeries calls don't stack shifts.
+  if not self._eventqSeriesSavedPoint then
+    local point, relativeTo, relativePoint, xOfs, yOfs = mainFrame:GetPoint(1)
+    self._eventqSeriesSavedPoint = { point, relativeTo, relativePoint, xOfs or 0, yOfs or 0 }
+  end
+
+  local maxLeft = screenWidth - frameWidth
+  if maxLeft < 0 then maxLeft = 0 end
+
+  local targetLeft = requiredLeft
+  if targetLeft > maxLeft then
+    targetLeft = maxLeft
+  end
+
+  local shift = targetLeft - left
+  if shift <= 0 then return end
+
+  local saved = self._eventqSeriesSavedPoint
+  local point, relativeTo, relativePoint, xOfs, yOfs = saved[1], saved[2], saved[3], saved[4], saved[5]
+  mainFrame:ClearAllPoints()
+  mainFrame:SetPoint(point or "CENTER", relativeTo or UIParent, relativePoint or point or "CENTER", xOfs + shift, yOfs)
+end
+
+function MainFrame:_RestoreAfterSeriesViewer()
+  if not (self._eventqSeriesSavedPoint and self.frame and self.frame.SetPoint) then return end
+
+  local viewerShown = self.seriesViewer and self.seriesViewer.frame and self.seriesViewer.frame.IsShown and self.seriesViewer.frame:IsShown()
+  if viewerShown then
+    return
+  end
+
+  local saved = self._eventqSeriesSavedPoint
+  self._eventqSeriesSavedPoint = nil
+
+  self.frame:ClearAllPoints()
+  self.frame:SetPoint(saved[1] or "CENTER", saved[2] or UIParent, saved[3] or saved[1] or "CENTER", saved[4] or 0, saved[5] or 0)
 end
 
 function MainFrame:ShowSeries(rootId)
@@ -2216,6 +2286,7 @@ function MainFrame:ShowSeries(rootId)
     ns.IconPicker:Hide()
   end
 
+  self:_MaybeShiftForSeriesViewer(viewer.frame)
   viewer:ShowSeries(rootId)
 end
 

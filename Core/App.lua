@@ -496,6 +496,7 @@ end
 ---@param exportText string
 ---@return integer|nil importedCount
 ---@return string|nil err
+---@return integer|nil skippedDuplicates
 function App:ImportCustomEvents(exportText)
   if not (self.importExport and self.importExport.DecodeEvents) then
     return nil, "Import unavailable"
@@ -506,11 +507,82 @@ function App:ImportCustomEvents(exportText)
     return nil, err or "Invalid import data"
   end
 
+  -- Duplicate protection:
+  -- Import assigns new ids, so we cannot rely on ids alone. Instead, build a
+  -- stable content fingerprint and skip any imported event that already exists.
+  --
+  -- Fingerprint inputs intentionally include time (epoch), title, icon,
+  -- description, and a normalized series definition (if any).
+  local function BuildEventFingerprint(event)
+    if type(event) ~= "table" then return nil end
+
+    local title = strtrim(event.title or "")
+    title = title:gsub("%s+", " ")
+    local description = strtrim(event.description or "")
+    description = description:gsub("%s+", " ")
+    local icon = tostring(event.icon or "")
+    -- Imports may omit an icon (empty string). The store will default to a note
+    -- icon, so normalize here to keep duplicate detection stable.
+    if icon == "" then
+      icon = "Interface/Icons/INV_Misc_Note_01"
+    end
+
+    local startEpoch = tonumber(event.startEpoch) or 0
+    local endEpoch = tonumber(event.endEpoch) or 0
+
+    local seriesKey = ""
+    if type(event.series) == "table" and event.series.enabled == true then
+      local normalized = NormalizeSeriesConfig(self.dateUtil, event.series, startEpoch)
+      if normalized then
+        local frequency = tostring(normalized.frequency or "")
+        if frequency == "MINUTELY" then
+          seriesKey = string.format("M:%s:%s", tostring(normalized.intervalMinutes or ""), tostring(normalized.intervalFrom or ""))
+        elseif frequency == "HOURLY" then
+          seriesKey = string.format("H:%s:%s", tostring(normalized.intervalHours or ""), tostring(normalized.intervalFrom or ""))
+        elseif frequency == "MONTHLY" then
+          seriesKey = string.format("MO:%s:%s", tostring(normalized.weekOfMonth or ""), tostring(normalized.weekday or ""))
+        elseif frequency == "ANNUALLY" then
+          seriesKey = string.format("Y:%s:%s", tostring(normalized.month or ""), tostring(normalized.day or ""))
+        else
+          seriesKey = frequency
+        end
+      end
+    end
+
+    return table.concat({
+      title,
+      tostring(startEpoch),
+      tostring(endEpoch),
+      icon,
+      description,
+      seriesKey,
+    }, "\31")
+  end
+
+  local existingByFingerprint = {}
+  if self.customStore and self.customStore.GetAll then
+    for _, existing in ipairs(self.customStore:GetAll() or {}) do
+      local key = BuildEventFingerprint(existing)
+      if key then
+        existingByFingerprint[key] = true
+      end
+    end
+  end
+
   local imported = 0
+  local skipped = 0
   for _, dbEvent in ipairs(dbEvents) do
     if dbEvent and self.customStore and self.customStore.Add then
-      self.customStore:Add(dbEvent)
-      imported = imported + 1
+      local key = BuildEventFingerprint(dbEvent)
+      if key and existingByFingerprint[key] then
+        skipped = skipped + 1
+      else
+        self.customStore:Add(dbEvent)
+        imported = imported + 1
+        if key then
+          existingByFingerprint[key] = true
+        end
+      end
     end
   end
 
@@ -518,7 +590,7 @@ function App:ImportCustomEvents(exportText)
     self:RefreshAll()
   end
 
-  return imported, nil
+  return imported, nil, skipped
 end
 
 function App:ToggleUI()
