@@ -102,6 +102,8 @@ local function Base64Decode(text)
 
   local cleaned = text:gsub("%s+", "")
   local out = {}
+  -- Keep the working buffer small to avoid floating point precision loss.
+  -- (Lua 5.1 numbers are doubles; large integers lose exactness quickly.)
   local buffer = 0
   local bits = 0
 
@@ -116,9 +118,10 @@ local function Base64Decode(text)
       buffer = buffer * 64 + val
       bits = bits + 6
 
-      if bits >= 8 then
+      while bits >= 8 do
         bits = bits - 8
-        local byte = math.floor(buffer / (2 ^ bits)) % 256
+        local byte = math.floor(buffer / (2 ^ bits))
+        buffer = buffer % (2 ^ bits)
         out[#out + 1] = string.char(byte)
       end
     end

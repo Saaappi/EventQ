@@ -306,7 +306,8 @@ function MainFrame:_EnsureEventsPanel()
   scrollBox:SetPoint("BOTTOMRIGHT", -listLayout.rightInset, listLayout.bottomInset)
 
   local empty = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  empty:SetPoint("TOPLEFT", 12, -72)
+  -- Align with the "Custom (Later)" header text.
+  empty:SetPoint("TOPLEFT", 8, -72)
   empty:SetPoint("RIGHT", -12, 0)
   empty:SetJustifyH("LEFT")
   empty:SetTextColor(0.6, 0.6, 0.6, 1)
