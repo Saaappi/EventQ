@@ -13,6 +13,9 @@ local PORTABLE_FRAME_HEIGHT = 320
 local PORTABLE_ICON_EXTENT = 44
 local PORTABLE_ICON_SIZE = 32
 
+-- Match the queueable-event title color used in the full mode list (see UI/Row.lua).
+local PORTABLE_TITLE_R, PORTABLE_TITLE_G, PORTABLE_TITLE_B = 0.4, 0.8, 1.0 -- #66CCFF
+
 
 local UPCOMING_WINDOW_SECONDS = 8 * 86400
 
@@ -1268,8 +1271,13 @@ local function TryQueuePortableEvent(queueInfo)
   if not queueInfo then return false end
 
   if queueInfo.dungeonID and LFG_JoinDungeon then
-    LFG_JoinDungeon(LE_LFG_CATEGORY_LFD, queueInfo.dungeonID, LFDDungeonList, LFDHiddenByCollapseList)
-    return true
+    -- Patch 12.0+ marks some queue APIs as "AllowedWhenUntainted".
+    -- Use pcall so a protected-action error won't break the addon UI.
+    if InCombatLockdown and InCombatLockdown() then
+      return false
+    end
+    local ok = pcall(LFG_JoinDungeon, LE_LFG_CATEGORY_LFD, queueInfo.dungeonID, LFDDungeonList, LFDHiddenByCollapseList)
+    return ok and true or false
   end
 
   if queueInfo.isBrawl and ns.PVPQueue and ns.PVPQueue.JoinBrawl then
@@ -1378,7 +1386,7 @@ function MainFrame:_EnsurePortablePanel()
       nameText:SetPoint("RIGHT", button, "RIGHT", -6, 0)
       nameText:SetJustifyH("LEFT")
       nameText:SetWordWrap(false)
-
+      nameText:SetTextColor(PORTABLE_TITLE_R, PORTABLE_TITLE_G, PORTABLE_TITLE_B)
       button._eventqIconHolder = holder
       button._eventqIcon = icon
       button._eventqIconBorder = border
@@ -1412,11 +1420,10 @@ function MainFrame:_EnsurePortablePanel()
     -- No per-event tooltips in portable mode (keeps the compact view unobtrusive).
     button:SetScript("OnEnter", nil)
     button:SetScript("OnLeave", nil)
-
-	    button:SetScript("OnClick", function(_, mouseButton)
-	      if mouseButton ~= "LeftButton" then return end
-	      TryQueuePortableEventWithRoles(queueInfo)
-	    end)
+    button:SetScript("OnClick", function(_, mouseButton)
+      if mouseButton ~= "LeftButton" then return end
+      TryQueuePortableEventWithRoles(queueInfo)
+    end)
   end)
 
   ScrollUtil.InitScrollBoxListWithScrollBar(scrollBox, scrollBar, view)

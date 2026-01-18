@@ -104,8 +104,15 @@ end
 
 local function TryQueueLFD(dungeonID)
   if not dungeonID then return false end
-  LFG_JoinDungeon(LE_LFG_CATEGORY_LFD, dungeonID, LFDDungeonList, LFDHiddenByCollapseList)
-  return true
+  if not LFG_JoinDungeon then return false end
+  -- Patch 12.0+ protects more queue entry points. When protected, attempting to call the
+  -- API from insecure code can throw (or be blocked). Wrap in pcall so the row can
+  -- gracefully fall back to the user's normal queue UI.
+  if InCombatLockdown and InCombatLockdown() then
+    return false
+  end
+  local ok = pcall(LFG_JoinDungeon, LE_LFG_CATEGORY_LFD, dungeonID, LFDDungeonList, LFDHiddenByCollapseList)
+  return ok and true or false
 end
 
 local function TryQueueBrawl()

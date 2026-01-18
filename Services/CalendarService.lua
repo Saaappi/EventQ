@@ -10,6 +10,14 @@ end
 local wipe = _G.wipe or function(tableToWipe)
   for key in pairs(tableToWipe) do tableToWipe[key] = nil end
 end
+local function SafeCalendarCall(func, ...)
+  if not func then return false end
+  if InCombatLockdown and InCombatLockdown() then return false end
+  local ok, result1, result2 = pcall(func, ...)
+  if not ok then return false end
+  return true, result1, result2
+end
+
 local function wipeArray(array)
   for i = #array, 1, -1 do
     array[i] = nil
@@ -205,7 +213,7 @@ function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
     return cached, nil
   end
 
-  -- Resolve event index from eventID; if missing, don'textureInfo cache failure (data may not be loaded yet).
+  -- Resolve event index from eventID; if missing, don't cache a failure (data may not be loaded yet).
   local idx = C_Calendar.GetEventIndexInfo(eventID, monthOffset, monthDay)
   if not idx then
     idx = findEventIndexByScan(eventID, monthOffset, monthDay)
@@ -214,17 +222,18 @@ function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
     end
   end
 
-  -- OpenEvent is required before GetEventInfo (stateful API).
-  local success = C_Calendar.OpenEvent(idx.offsetMonths, idx.monthDay, idx.eventIndex)
-  if success == false then
+  -- Calendar is a stateful API: OpenEvent() seeds GetEventInfo().
+  -- Patch 12.0+ marks several calendar functions as "AllowedWhenUntainted"; if a call becomes protected
+  -- or blocked in combat, treat it as a transient miss rather than crashing the addon.
+  local okOpen, opened = SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if not okOpen or opened == false then
     return nil
   end
 
-  local info = C_Calendar.GetEventInfo()
-  -- GetEventInfo exposes textureIndex referencing EventGetTextures(eventType).
-  if info and info.eventType and info.textureIndex then
-    local textures = C_Calendar.EventGetTextures(info.eventType)
-    local textureInfo = textures and textures[info.textureIndex]
+  local okInfo, info = SafeCalendarCall(C_Calendar.GetEventInfo)
+  if okInfo and info and info.eventType and info.textureIndex then
+    local okTextures, textures = SafeCalendarCall(C_Calendar.EventGetTextures, info.eventType)
+    local textureInfo = okTextures and textures and textures[info.textureIndex] or nil
     local icon = textureInfo and textureInfo.iconTexture
     if icon then
       self._iconCache[key] = { icon = icon, textureIndex = info.textureIndex }
@@ -235,6 +244,7 @@ function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
   self._iconCache[key] = false
   return nil
 end
+
 
 function CalendarService:TryFetchDescription(eventID, monthOffset, monthDay, title, calendarType)
   if not eventID then return nil end
@@ -266,13 +276,16 @@ function CalendarService:TryFetchDescription(eventID, monthOffset, monthDay, tit
   end
 
   -- OpenEvent is required before GetEventInfo (stateful API).
-  local success = C_Calendar.OpenEvent(idx.offsetMonths, idx.monthDay, idx.eventIndex)
-  if success == false then
+  local okOpen, success = SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if not okOpen or success == false then
     -- Don't cache; could be transient.
     return nil
   end
 
-  local info = C_Calendar.GetEventInfo()
+  local okInfo, info = SafeCalendarCall(C_Calendar.GetEventInfo)
+  if not okInfo then
+    return nil
+  end
   local desc = info and info.description or nil
   if not isBlank(desc) then
     self._descCache[key] = desc
@@ -306,13 +319,16 @@ function CalendarService:TryFetchCreator(eventID, monthOffset, monthDay)
   end
 
   -- OpenEvent is required before GetEventInfo (stateful API).
-  local success = C_Calendar.OpenEvent(idx.offsetMonths, idx.monthDay, idx.eventIndex)
-  if success == false then
+  local okOpen, success = SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if not okOpen or success == false then
     -- Don't cache; could be transient.
     return nil
   end
 
-  local info = C_Calendar.GetEventInfo()
+  local okInfo, info = SafeCalendarCall(C_Calendar.GetEventInfo)
+  if not okInfo then
+    return nil
+  end
   local creator = info and info.creator or nil
   if not isBlank(creator) then
     creator = strtrim(creator)
@@ -611,7 +627,13 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
   for monthOffset = 0, maxMonthOffset do
     if CalendarAPI.SetAbsMonth then
       local month, year = monthYearForOffset(monthOffset)
-      CalendarAPI.SetAbsMonth(month, year)
+      -- SetAbsMonth is a stateful month switch; in Patch 12.0+ it may be protected.
+      -- If it fails, continue scanning the currently loaded month only.
+      local okSet = SafeCalendarCall(CalendarAPI.SetAbsMonth, month, year)
+      if not okSet then
+        -- If month switching is protected/blocked, fall back to only the currently loaded month.
+        break
+      end
     end
 
     local monthInfo = GetMonthInfo and GetMonthInfo() or nil
@@ -745,7 +767,7 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
   end
 
   if CalendarAPI.SetAbsMonth and originalMonth and originalYear then
-    CalendarAPI.SetAbsMonth(originalMonth, originalYear)
+    SafeCalendarCall(CalendarAPI.SetAbsMonth, originalMonth, originalYear)
   end
 
   for _, event in pairs(bestByKey) do
