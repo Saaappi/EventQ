@@ -749,6 +749,279 @@ function MainFrame:SavePosition()
   pos.y = offsetY or 0
 end
 
+-- ---------------------------------------------------------------------------
+-- Custom event edit controls (Undo + Exit)
+-- ---------------------------------------------------------------------------
+
+local function SeriesEquals(a, b)
+  if a == b then return true end
+  if type(a) ~= "table" or type(b) ~= "table" then return false end
+
+  for key, value in pairs(a) do
+    if b[key] ~= value then
+      return false
+    end
+  end
+  for key, value in pairs(b) do
+    if a[key] ~= value then
+      return false
+    end
+  end
+  return true
+end
+
+-- Creates the two small atlas-backed buttons used during edit mode.
+--
+-- Undo (Refresh): Reverts all *unsaved* changes back to the original event values.
+-- Exit: Reverts unsaved changes and leaves edit mode (clears the editor back to defaults).
+function MainFrame:_EnsureEditActionButtons(editor)
+  if self._editButtonsCreated then
+    return
+  end
+  self._editButtonsCreated = true
+
+  local function CreateAtlasButton(atlasBase)
+    local button = CreateFrame("Button", nil, editor)
+    button:SetSize(18, 18)
+    button:RegisterForClicks("LeftButtonUp")
+
+    local icon = button:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    button._eventqIcon = icon
+
+    local function UpdateAtlas()
+      local suffix = ""
+      if not button:IsEnabled() then
+        suffix = "-Disabled"
+      elseif button._eventqPressed then
+        suffix = "-Pressed"
+      end
+      icon:SetAtlas(atlasBase .. suffix, true)
+    end
+
+    button:SetScript("OnMouseDown", function()
+      if not button:IsEnabled() then return end
+      button._eventqPressed = true
+      UpdateAtlas()
+    end)
+    button:SetScript("OnMouseUp", function()
+      if button._eventqPressed then
+        button._eventqPressed = false
+        UpdateAtlas()
+      end
+    end)
+    button:SetScript("OnHide", function()
+      button._eventqPressed = false
+      UpdateAtlas()
+    end)
+    button:SetScript("OnEnable", function()
+      button._eventqPressed = false
+      UpdateAtlas()
+    end)
+    button:SetScript("OnDisable", function()
+      button._eventqPressed = false
+      UpdateAtlas()
+    end)
+
+    -- Initialize.
+    UpdateAtlas()
+    return button
+  end
+
+  local undo = CreateAtlasButton("128-RedButton-Refresh")
+  undo:SetPoint("LEFT", self.edTitle, "RIGHT", 6, 0)
+  undo:Disable()
+  undo:SetScript("OnClick", function()
+    if self and self.UndoEditCustom then
+      self:UndoEditCustom()
+    end
+  end)
+  undo:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(undo, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Undo changes", 1, 1, 1)
+    GameTooltip:AddLine("Revert this edit session back to the original event values.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  undo:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+  local exit = CreateAtlasButton("128-RedButton-Exit")
+  exit:SetPoint("LEFT", undo, "RIGHT", 6, 0)
+  exit:SetScript("OnClick", function()
+    if self and self.CancelEditCustom then
+      self:CancelEditCustom()
+    end
+  end)
+  exit:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(exit, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Cancel edit", 1, 1, 1)
+    GameTooltip:AddLine("Discard unsaved changes and exit edit mode.", 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  exit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+  self.undoBtn = undo
+  self.exitBtn = exit
+  self:_SetEditActionButtonsVisible(false)
+end
+
+function MainFrame:_SetEditActionButtonsVisible(visible)
+  if self.undoBtn then
+    self.undoBtn:SetShown(not not visible)
+  end
+  if self.exitBtn then
+    self.exitBtn:SetShown(not not visible)
+  end
+end
+
+function MainFrame:_CaptureEditOriginal(event)
+  if not event then
+    self._editingOriginal = nil
+    return
+  end
+
+  local order = self.app.db.settings.dateOrder
+  local startText = self.dateUtil:FormatUserDateTime(event.startEpoch, order)
+  local endText = self.dateUtil:FormatUserDateTime(event.endEpoch, order)
+
+  local rawDescription = (type(event.description) == "string") and event.description or ""
+  local trimmed = strtrim(rawDescription)
+  if trimmed == "" or trimmed == "Custom event" then
+    trimmed = ""
+  end
+
+  self._editingOriginal = {
+    id = event.id,
+    title = event.title or "",
+    startText = startText,
+    endText = endText,
+    icon = event.icon or DEFAULT_CUSTOM_ICON,
+    desc = trimmed,
+    series = CopyTableShallow(event.series),
+  }
+end
+
+function MainFrame:_GetCurrentEditSnapshot()
+  local snapshot = {
+    title = (self.nameBox and self.nameBox.GetText) and (self.nameBox:GetText() or "") or "",
+    startText = (self.startBox and self.startBox.GetText) and (self.startBox:GetText() or "") or "",
+    endText = (self.endBox and self.endBox.GetText) and (self.endBox:GetText() or "") or "",
+    icon = DEFAULT_CUSTOM_ICON,
+    desc = "",
+    series = nil,
+  }
+
+  local popup = self._descPopup
+  local payload = (popup and popup._eventqPayload) or self._pendingCustomPayload
+
+  snapshot.icon = (payload and payload.icon) or (popup and popup._eventqSelectedIcon) or self._editingIcon or DEFAULT_CUSTOM_ICON
+
+  if popup and popup._eventqEditBox and popup._eventqEditBox.GetText then
+    snapshot.desc = strtrim(popup._eventqEditBox:GetText() or "")
+  else
+    -- If the popup hasn't been opened yet, treat the description as the current seed.
+    -- Otherwise we'd incorrectly mark an edit as "dirty" just because the popup UI isn't initialized.
+    snapshot.desc = strtrim(self._editingDescSeed or "")
+  end
+
+  snapshot.series = (payload and payload.series) or self._editingSeries or nil
+  return snapshot
+end
+
+function MainFrame:_IsEditDirty()
+  if not self.editingId then return false end
+  local original = self._editingOriginal
+  if not original then return true end
+
+  local current = self:_GetCurrentEditSnapshot()
+
+  if strtrim(current.title) ~= strtrim(original.title) then return true end
+  if current.startText ~= original.startText then return true end
+  if current.endText ~= original.endText then return true end
+  if current.icon ~= original.icon then return true end
+  if strtrim(current.desc or "") ~= strtrim(original.desc or "") then return true end
+  if not SeriesEquals(current.series, original.series) then return true end
+
+  return false
+end
+
+function MainFrame:_UpdateEditActionButtons()
+  local isEditing = not not self.editingId
+  self:_SetEditActionButtonsVisible(isEditing)
+  if not isEditing then
+    return
+  end
+
+  if self.undoBtn then
+    if self:_IsEditDirty() then
+      self.undoBtn:Enable()
+    else
+      self.undoBtn:Disable()
+    end
+  end
+end
+
+function MainFrame:_RevertEditToOriginal()
+  local original = self._editingOriginal
+  if not original then
+    return
+  end
+
+  -- Reset the editor fields first so the visible state matches what we're tracking.
+  if self.nameBox then self.nameBox:SetText(original.title or "") end
+  if self.startBox then self.startBox:SetText(original.startText or "") end
+  if self.endBox then self.endBox:SetText(original.endText or "") end
+
+  -- Clear any staged payload and restore edit-mode seeds.
+  self._pendingCustomPayload = nil
+  self._editingIcon = original.icon or DEFAULT_CUSTOM_ICON
+  self._editingSeries = CopyTableShallow(original.series)
+  self._editingDescSeed = original.desc or ""
+
+  -- If the popup is open or contains stale data, reset it back to the original state.
+  local popup = self._descPopup
+  if popup then
+    popup._eventqPayload = nil
+    if popup._eventqEditBox and popup._eventqEditBox.SetText then
+      popup._eventqEditBox:SetText(original.desc or "")
+      if popup._eventqEditBox.ClearFocus then
+        popup._eventqEditBox:ClearFocus()
+      end
+    end
+    SetDescriptionPopupIcon(popup, original.icon or DEFAULT_CUSTOM_ICON)
+    if popup._eventqUpdateSeriesUI then
+      popup._eventqUpdateSeriesUI()
+    end
+    if popup.IsShown and popup:IsShown() then
+      popup:Hide()
+    end
+  end
+
+  -- Hide any auxiliary edit UIs so the user always returns to a predictable baseline.
+  if ns.IconPicker and ns.IconPicker.Hide then
+    ns.IconPicker:Hide()
+  end
+  if self.seriesViewer and self.seriesViewer.frame and self.seriesViewer.frame.Hide then
+    self.seriesViewer.frame:Hide()
+  end
+end
+
+function MainFrame:UndoEditCustom()
+  if not self.editingId then return end
+  self:_RevertEditToOriginal()
+  if self.edTitle then self.edTitle:SetText("Edit Custom Event") end
+  if self.addBtn then self.addBtn:SetText("Next") end
+  self:ShowTransientMessage("Reverted unsaved changes.", 1, 1, 1, 3)
+  self:_UpdateEditActionButtons()
+end
+
+function MainFrame:CancelEditCustom()
+  if not self.editingId then return end
+  self:_RevertEditToOriginal()
+  self:ClearEdit()
+  self:ShowTransientMessage("Edit cancelled.", 1, 1, 1, 3)
+  self:_UpdateEditActionButtons()
+end
+
 local function PickCogwheelAtlas()
   if not (C_Texture and C_Texture.GetAtlasInfo) then return nil end
 
@@ -961,6 +1234,11 @@ local function EnsureDescriptionPopup(self)
       if type(payload) == "table" then
         payload.icon = selectedTexture
       end
+
+      local owner = popupFrame._eventqOwner
+      if owner and owner._UpdateEditActionButtons then
+        owner:_UpdateEditActionButtons()
+      end
     end, { height = desiredHeight })
   end)
   local scrollBg = CreateFrame("Frame", nil, popupFrame, "BackdropTemplate")
@@ -1016,6 +1294,11 @@ local function EnsureDescriptionPopup(self)
   editBox:SetScript("OnTextChanged", function(_, user)
     if user then
       scrollFrame:UpdateScrollChildRect()
+
+      local owner = popupFrame._eventqOwner
+      if owner and owner._UpdateEditActionButtons then
+        owner:_UpdateEditActionButtons()
+      end
     end
   end)
   editBox:SetScript("OnCursorChanged", function()
@@ -1268,6 +1551,11 @@ local function EnsureDescriptionPopup(self)
       payload.series = nil
     end
     UpdateSeriesUI()
+
+    local owner = popupFrame._eventqOwner
+    if owner and owner._UpdateEditActionButtons then
+      owner:_UpdateEditActionButtons()
+    end
   end)
 
   local function IsSeriesFrequencySelected(frequencyKey)
@@ -1285,6 +1573,11 @@ local function EnsureDescriptionPopup(self)
     series.frequency = tostring(frequencyKey):upper()
     ApplyFrequencyDefaults(payload, series)
     UpdateSeriesUI()
+
+    local owner = popupFrame._eventqOwner
+    if owner and owner._UpdateEditActionButtons then
+      owner:_UpdateEditActionButtons()
+    end
   end
 
   freqDrop:SetupMenu(function(_, rootDescription)
@@ -1309,6 +1602,11 @@ local function EnsureDescriptionPopup(self)
     end
     series.weekOfMonth = tonumber(weekKey)
     UpdateSeriesUI()
+
+    local owner = popupFrame._eventqOwner
+    if owner and owner._UpdateEditActionButtons then
+      owner:_UpdateEditActionButtons()
+    end
   end
 
   monthWeekDrop:SetupMenu(function(_, rootDescription)
@@ -1333,6 +1631,11 @@ local function EnsureDescriptionPopup(self)
     end
     series.weekday = tonumber(weekdayKey)
     UpdateSeriesUI()
+
+    local owner = popupFrame._eventqOwner
+    if owner and owner._UpdateEditActionButtons then
+      owner:_UpdateEditActionButtons()
+    end
   end
 
   monthWeekdayDrop:SetupMenu(function(_, rootDescription)
@@ -1358,6 +1661,11 @@ local function EnsureDescriptionPopup(self)
       series.intervalHours = val
     end
     UpdateSeriesUI()
+
+    local owner = popupFrame._eventqOwner
+    if owner and owner._UpdateEditActionButtons then
+      owner:_UpdateEditActionButtons()
+    end
   end)
 
   intervalFromEndCheck:SetScript("OnClick", function()
@@ -1371,6 +1679,11 @@ local function EnsureDescriptionPopup(self)
       series.intervalFrom = SERIES_INTERVAL_FROM.START
     end
     UpdateSeriesUI()
+
+    local owner = popupFrame._eventqOwner
+    if owner and owner._UpdateEditActionButtons then
+      owner:_UpdateEditActionButtons()
+    end
   end)
 
   -- Default to hidden until the payload is bound.
@@ -1394,6 +1707,11 @@ local function EnsureDescriptionPopup(self)
 
   back:SetScript("OnClick", function()
     popupFrame:Hide()
+
+    local owner = popupFrame._eventqOwner
+    if owner and owner._UpdateEditActionButtons then
+      owner:_UpdateEditActionButtons()
+    end
   end)
 
   okButton:SetScript("OnClick", function()
@@ -1526,6 +1844,10 @@ function MainFrame:Constructor(app)
   self.edTitle:SetPoint("TOPLEFT", 8, -16)
   self.edTitle:SetText("Add Custom Event")
 
+  -- Edit-mode action buttons (Undo + Exit). These are only shown while editing an existing custom event.
+  -- Using texture atlases keeps visuals consistent across themes/HD settings.
+  self:_EnsureEditActionButtons(editor)
+
   -- Lists anchored to editor (no overlap)
   self.left = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
   self.left:SetPoint("TOPLEFT", 12, -40)
@@ -1613,6 +1935,32 @@ function MainFrame:Constructor(app)
   end
 
   SetupTabNavigation({ self.nameBox, self.startBox, self.endBox })
+
+  -- Enable/disable the Undo button in real-time while the user edits fields.
+  local function HookDirtyWatcher(editBox)
+    if not editBox then return end
+
+    local function OnChanged(_, userInput)
+      if not userInput then return end
+      if self and self.editingId and self._UpdateEditActionButtons then
+        self:_UpdateEditActionButtons()
+      end
+    end
+
+    if editBox.HookScript then
+      editBox:HookScript("OnTextChanged", OnChanged)
+    else
+      local prev = editBox.GetScript and editBox:GetScript("OnTextChanged") or nil
+      editBox:SetScript("OnTextChanged", function(...)
+        if prev then prev(...) end
+        OnChanged(...)
+      end)
+    end
+  end
+
+  HookDirtyWatcher(self.nameBox)
+  HookDirtyWatcher(self.startBox)
+  HookDirtyWatcher(self.endBox)
 
   local addBtn = CreateFrame("Button", nil, editor, "UIPanelButtonTemplate")
   addBtn:SetSize(160, 24)
@@ -1721,6 +2069,10 @@ function MainFrame:BeginEditCustom(event)
 
   self.editingId = event.id
 
+  -- Capture a snapshot of the original event so we can compute "dirty" state
+  -- and support an in-session undo without touching saved data.
+  self:_CaptureEditOriginal(event)
+
 
   self._editingIcon = event.icon or DEFAULT_CUSTOM_ICON
   self._editingSeries = CopyTableShallow(event.series)
@@ -1742,15 +2094,20 @@ function MainFrame:BeginEditCustom(event)
   if self.edTitle then self.edTitle:SetText("Edit Custom Event") end
   if self.addBtn then self.addBtn:SetText("Next") end
   self:ShowTransientMessage("Editing custom event — click Next to edit description and save.", 1, 1, 1, 4)
+
+  self:_UpdateEditActionButtons()
 end
 
 function MainFrame:ClearEdit()
   self.editingId = nil
+  self._editingOriginal = nil
   self._editingDescSeed = nil
   self._editingIcon = nil
   self._editingSeries = nil
   if self.edTitle then self.edTitle:SetText("Add Custom Event") end
   if self.addBtn then self.addBtn:SetText("Next") end
+
+  self:_UpdateEditActionButtons()
 
   local hint = self.dateUtil:FormatHint(self.app.db.settings.dateOrder)
   self.nameBox:SetText("")
@@ -1895,6 +2252,8 @@ function MainFrame:OnNextCustom()
   if popup._eventqEditBox and popup._eventqEditBox.SetFocus then
     popup._eventqEditBox:SetFocus()
   end
+
+  self:_UpdateEditActionButtons()
 end
 
 function MainFrame:_NormalizeSeriesPayload(payload)
@@ -2023,18 +2382,11 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
   -- Finalize/clean series settings (if enabled), including any required date correction.
   self:_NormalizeSeriesPayload(payload)
 
-  if self.editingId then
+  local wasEditing = not not self.editingId
+  if wasEditing then
     self.app:ReplaceCustomEvent(self.editingId, payload)
-    self.editingId = nil
-    self._editingDescSeed = nil
-    self._editingIcon = nil
-    self._editingSeries = nil
-    if self.edTitle then self.edTitle:SetText("Add Custom Event") end
-    if self.addBtn then self.addBtn:SetText("Next") end
-    self:ShowTransientMessage("Updated.", 0.4, 1, 0.4, 4)
   else
     self.app:ReplaceCustomEvent(nil, payload)
-    self:ShowTransientMessage("Added.", 0.4, 1, 0.4, 4)
   end
 
   self._pendingCustomPayload = nil
@@ -2053,23 +2405,9 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
   end
   popup:Hide()
 
-  -- Clear inputs back to hint after action (same as the previous single-step flow)
-  local hint = self.dateUtil:FormatHint(self.app.db.settings.dateOrder)
-  self.nameBox:SetText("")
-  self.startBox:SetText(hint)
-  if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
-    ns.DateTimePicker:AttachCalendarButton(self.startBox, function()
-      local order = self.app.db.settings.dateOrder
-      ns.DateTimePicker:Open(self.startBox, order, false, self.dateUtil)
-    end)
-  end
-  self.endBox:SetText(hint)
-  if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
-    ns.DateTimePicker:AttachCalendarButton(self.endBox, function()
-      local order = self.app.db.settings.dateOrder
-      ns.DateTimePicker:Open(self.endBox, order, true, self.dateUtil)
-    end)
-  end
+  -- Always reset the editor back to its default ("Add") state after saving.
+  self:ClearEdit()
+  self:ShowTransientMessage(wasEditing and "Updated." or "Added.", 0.4, 1, 0.4, 4)
 end
 
 
