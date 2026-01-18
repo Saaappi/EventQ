@@ -157,6 +157,78 @@ local function LayoutInviteRows(scrollChild, names)
   scrollChild:SetHeight(math.max(#names * rowHeight, 1))
 end
 
+local function CreateScrollingMultilineEditBox(parent, width, height, onEscapePressed)
+  local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+  frame:SetSize(width, height)
+  frame:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+  })
+  frame:SetBackdropColor(0, 0, 0, 0.35)
+
+  local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+  scrollFrame:SetPoint("TOPLEFT", 6, -6)
+  scrollFrame:SetPoint("BOTTOMRIGHT", -26, 6)
+
+  local editBox = CreateFrame("EditBox", nil, scrollFrame)
+  editBox:SetMultiLine(true)
+  editBox:SetAutoFocus(false)
+  editBox:SetFontObject("ChatFontNormal")
+  editBox:SetJustifyH("LEFT")
+  editBox:SetTextInsets(4, 4, 4, 4)
+  editBox:ClearAllPoints()
+  editBox:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", 0, 0)
+  editBox:SetWidth(width)
+  editBox:SetHeight(height)
+
+  if onEscapePressed then
+    editBox:SetScript("OnEscapePressed", onEscapePressed)
+  end
+
+  editBox:SetScript("OnTextChanged", function(_, isUserInput)
+    if isUserInput then
+      scrollFrame:UpdateScrollChildRect()
+    end
+  end)
+
+  editBox:SetScript("OnCursorChanged", function()
+    scrollFrame:UpdateScrollChildRect()
+  end)
+
+  scrollFrame:SetScrollChild(editBox)
+
+  local function ResizeToViewport()
+    local viewportWidth = scrollFrame:GetWidth() or 0
+    local viewportHeight = scrollFrame:GetHeight() or 0
+
+    if viewportWidth > 1 then
+      editBox:SetWidth(viewportWidth)
+    end
+
+    if viewportHeight > 1 and editBox:GetHeight() < viewportHeight then
+      editBox:SetHeight(viewportHeight)
+    end
+
+    scrollFrame:UpdateScrollChildRect()
+  end
+
+  scrollFrame:SetScript("OnSizeChanged", ResizeToViewport)
+  frame:SetScript("OnShow", ResizeToViewport)
+
+  -- Some parts of the scroll viewport won't be covered by the EditBox until the first layout pass.
+  -- Treat clicks anywhere inside the viewport as focusing the field.
+  scrollFrame:EnableMouse(true)
+  scrollFrame:HookScript("OnMouseDown", function()
+    if editBox and editBox.SetFocus then
+      editBox:SetFocus()
+    end
+  end)
+
+  return frame, scrollFrame, editBox
+end
+
 local function EnsureFrame(self)
   if self.frame then return self.frame end
 
@@ -231,50 +303,46 @@ local function EnsureFrame(self)
   nameLabel:SetTextColor(0.85, 0.85, 0.85, 1)
 
   local nameBox = CreateFrame("EditBox", nil, left, "InputBoxTemplate")
-  -- Reduce width by 30% to give the category + datetime rows more breathing room.
   nameBox:SetSize(210, 24)
   nameBox:SetAutoFocus(false)
   nameBox:SetScript("OnEscapePressed", function() popup:Hide() end)
   nameBox:SetPoint("TOPLEFT", nameLabel, "BOTTOMLEFT", 5, -6)
   popup._eventqName = nameBox
 
+  -- Layout note: anchor the rest of the left-column widgets to prior widgets with a 0px X offset.
+  -- This prevents cumulative horizontal drift and keeps everything aligned to the Name editbox.
   local typeLabel = AddLabel(left, "Category", nameBox)
 
   -- Use the modern DropdownButton (WowStyle1DropdownTemplate) instead of UIDropDownMenu.
   -- This matches how Dragonflight-era Blizzard UIs build selection menus (SetupMenu + menu descriptors).
   local dropdown = CreateFrame("DropdownButton", "EventQCalendarEventCategoryDropdown", left, "WowStyle1DropdownTemplate")
-  dropdown:SetPoint("TOPLEFT", typeLabel, "BOTTOMLEFT", 5, -4)
-  dropdown:SetWidth(225)
+  dropdown:SetPoint("TOPLEFT", typeLabel, "BOTTOMLEFT", -3, -4)
+  dropdown:SetWidth(210)
   dropdown:SetDefaultText("Other")
   popup._eventqCategoryDrop = dropdown
 
   local startLabel = AddLabel(left, "Start", dropdown)
   local startBox = CreateFrame("EditBox", nil, left, "InputBoxTemplate")
-  -- Reduce width by 25% so the text never collides with the calendar picker button.
-  startBox:SetSize(225, 24)
+  startBox:SetSize(210, 24)
   startBox:SetAutoFocus(false)
   startBox:SetScript("OnEscapePressed", function() popup:Hide() end)
-  startBox:SetPoint("TOPLEFT", startLabel, "BOTTOMLEFT", 5, -6)
+  startBox:SetPoint("TOPLEFT", startLabel, "BOTTOMLEFT", 4, -6)
   popup._eventqStart = startBox
 
-  local endLabel = AddLabel(left, "End (optional, not used by calendar)", startBox)
-  local endBox = CreateFrame("EditBox", nil, left, "InputBoxTemplate")
-  endBox:SetSize(225, 24)
-  endBox:SetAutoFocus(false)
-  endBox:SetScript("OnEscapePressed", function() popup:Hide() end)
-  endBox:SetPoint("TOPLEFT", endLabel, "BOTTOMLEFT", 5, -6)
-  popup._eventqEnd = endBox
+  local descLabel = AddLabel(left, "Description", startBox)
 
-  local descLabel = AddLabel(left, "Description", endBox)
-  local descScroll = CreateFrame("ScrollFrame", nil, left, "UIPanelInputScrollFrameTemplate")
-  descScroll:SetSize(280, 150)
-  descScroll:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 5, -6)
-  local descEdit = descScroll.EditBox
-  descEdit:SetFontObject("ChatFontNormal")
-  descEdit:SetAutoFocus(false)
-  descEdit:SetScript("OnEscapePressed", function() popup:Hide() end)
-  descEdit:SetWidth(250)
+  -- We intentionally avoid UIPanelInputScrollFrameTemplate here.
+  -- At certain UI scales that template can desync the caret position from the rendered glyphs,
+  -- making the cursor appear several characters to the right of the text. Using a plain
+  -- EditBox + ScrollFrame keeps caret placement, hit testing, and wrapping measurements on the
+  -- same FontString.
+  local descFrame, descScroll, descEdit = CreateScrollingMultilineEditBox(left, 240, 150, function()
+    popup:Hide()
+  end)
+  descFrame:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -6)
+  popup._eventqDescFrame = descFrame
   popup._eventqDescScroll = descScroll
+  popup._eventqDescEdit = descEdit
 
   local inviteLabel = right:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   inviteLabel:SetPoint("TOPLEFT", right, "TOPLEFT", 0, 0)
@@ -290,15 +358,13 @@ local function EnsureFrame(self)
   inviteTip:SetText("|cff00ff00Tip:|r One player name per line. Include the realm if needed (Name-Realm).")
   inviteTip:SetTextColor(0.65, 0.65, 0.65, 1)
 
-  local inviteScroll = CreateFrame("ScrollFrame", nil, right, "UIPanelInputScrollFrameTemplate")
-  inviteScroll:SetSize(280, 150)
-  inviteScroll:SetPoint("TOPLEFT", inviteTip, "BOTTOMLEFT", -2, -6)
-  local inviteEdit = inviteScroll.EditBox
-  inviteEdit:SetFontObject("ChatFontNormal")
-  inviteEdit:SetAutoFocus(false)
-  inviteEdit:SetScript("OnEscapePressed", function() popup:Hide() end)
-  inviteEdit:SetWidth(250)
+  local inviteFrame, inviteScroll, inviteEdit = CreateScrollingMultilineEditBox(right, 280, 150, function()
+    popup:Hide()
+  end)
+  inviteFrame:SetPoint("TOPLEFT", inviteTip, "BOTTOMLEFT", -2, -6)
+  popup._eventqInviteFrame = inviteFrame
   popup._eventqInviteScroll = inviteScroll
+  popup._eventqInviteEdit = inviteEdit
 
   local statusLabel = AddLabel(right, "Invitee Status", inviteScroll)
 
@@ -594,10 +660,10 @@ function CalendarEventPopup:Show(app, preset)
       frame._eventqName:SetText("")
     end
 
-    if preset.description and frame._eventqDescScroll and frame._eventqDescScroll.EditBox then
-      frame._eventqDescScroll.EditBox:SetText(preset.description)
-    elseif frame._eventqDescScroll and frame._eventqDescScroll.EditBox then
-      frame._eventqDescScroll.EditBox:SetText("")
+    if preset.description and frame._eventqDescEdit then
+      frame._eventqDescEdit:SetText(preset.description)
+    elseif frame._eventqDescEdit then
+      frame._eventqDescEdit:SetText("")
     end
 
     if preset.startEpoch and dateUtil and dateUtil.FormatUserDateTime then
@@ -613,18 +679,18 @@ function CalendarEventPopup:Show(app, preset)
     frame._eventqSelectedType = preset.eventType or frame._eventqSelectedType
     frame._eventqCategoryDrop:SetText(FindCategoryLabel(frame._eventqSelectedType))
 
-    if preset.inviteText and frame._eventqInviteScroll and frame._eventqInviteScroll.EditBox then
-      frame._eventqInviteScroll.EditBox:SetText(preset.inviteText)
-    elseif frame._eventqInviteScroll and frame._eventqInviteScroll.EditBox then
-      frame._eventqInviteScroll.EditBox:SetText("")
+    if preset.inviteText and frame._eventqInviteEdit then
+      frame._eventqInviteEdit:SetText(preset.inviteText)
+    elseif frame._eventqInviteEdit then
+      frame._eventqInviteEdit:SetText("")
     end
   else
     frame._eventqName:SetText("")
-    if frame._eventqDescScroll and frame._eventqDescScroll.EditBox then
-      frame._eventqDescScroll.EditBox:SetText("")
+    if frame._eventqDescEdit then
+      frame._eventqDescEdit:SetText("")
     end
-    if frame._eventqInviteScroll and frame._eventqInviteScroll.EditBox then
-      frame._eventqInviteScroll.EditBox:SetText("")
+    if frame._eventqInviteEdit then
+      frame._eventqInviteEdit:SetText("")
     end
   end
 
@@ -656,8 +722,8 @@ function CalendarEventPopup:Show(app, preset)
       return
     end
 
-    local descText = (frame._eventqDescScroll and frame._eventqDescScroll.EditBox and frame._eventqDescScroll.EditBox:GetText()) or ""
-    local inviteText = (frame._eventqInviteScroll and frame._eventqInviteScroll.EditBox and frame._eventqInviteScroll.EditBox:GetText()) or ""
+    local descText = (frame._eventqDescEdit and frame._eventqDescEdit:GetText()) or ""
+    local inviteText = (frame._eventqInviteEdit and frame._eventqInviteEdit:GetText()) or ""
 
     local invitees = ParseInviteList(inviteText)
 
