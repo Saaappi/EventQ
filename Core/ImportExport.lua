@@ -413,7 +413,9 @@ local function SerializeEvent(dbEvent)
   local title = EscapeField(dbEvent.title or "")
   local startEpoch = tostring(tonumber(dbEvent.startEpoch) or "")
   local endEpoch = tostring(tonumber(dbEvent.endEpoch) or "")
-  local icon = EscapeField(dbEvent.icon or "")
+  -- Icons can be either a texture path (string) or a FileID (number).
+  -- The export format is text-based, so always serialize as a string.
+  local icon = EscapeField(tostring(dbEvent.icon or ""))
   local description = EscapeField(dbEvent.description or "")
   local series = EncodeSeries(dbEvent.series)
 
@@ -427,7 +429,7 @@ local function DeserializeEvent(record)
   local title = UnescapeField(fields[1] or "")
   local startEpoch = tonumber(fields[2] or "")
   local endEpoch = tonumber(fields[3] or "")
-  local icon = UnescapeField(fields[4] or "")
+  local icon = strtrim(UnescapeField(fields[4] or ""))
   local description = UnescapeField(fields[5] or "")
   local series = DecodeSeries(fields[6] or "")
 
@@ -449,7 +451,14 @@ local function DeserializeEvent(record)
   }
 
   if icon ~= "" then
-    event.icon = icon
+    -- Preserve FileID icons by turning purely-numeric strings back into numbers.
+    -- (SetTexture supports FileIDs, but not their numeric-string representations.)
+    local fileId = tonumber(icon)
+    if fileId and icon:match("^%d+$") then
+      event.icon = fileId
+    else
+      event.icon = icon
+    end
   end
 
   description = strtrim(description)
