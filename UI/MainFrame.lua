@@ -1406,7 +1406,12 @@ function MainFrame:_EnsurePortableToggleButtons()
 
     button:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
     local hi = button:GetHighlightTexture()
-    if hi then hi:SetAllPoints(button) end
+    if hi then
+      -- UI-Common-MouseHilight has its own baked-in left padding; nudge it right so it centers on the atlas.
+      hi:ClearAllPoints()
+      hi:SetPoint("TOPLEFT", button, "TOPLEFT", 3, 0)
+      hi:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 3, 0)
+    end
 
     return button
   end
@@ -1478,6 +1483,11 @@ function MainFrame:SetPortableMode(enabled)
   if self._portableMode == enabled then return end
 
   self._portableMode = enabled
+  -- Persist the chosen layout so the window opens in the same mode after /reload or relog.
+  if self.app and self.app.db and self.app.db.window then
+    self.app.db.window.mode = enabled and "portable" or "full"
+  end
+
   self:_EnsurePortablePanel()
 
   if enabled then
@@ -2460,6 +2470,18 @@ function MainFrame:Constructor(app)
   end
 
   mainFrame:SetScript("OnShow", function()
+    -- Apply the persisted layout mode once per session.
+    if not self._didApplyPersistedMode then
+      self._didApplyPersistedMode = true
+      local wantPortable = false
+      if self.app and self.app.db and self.app.db.window then
+        wantPortable = (self.app.db.window.mode == "portable")
+      end
+      if wantPortable ~= (not not self._portableMode) then
+        self:SetPortableMode(wantPortable)
+      end
+    end
+
     -- Calendar APIs can return empty results until the calendar has been opened and populated.
     -- Request a refresh on open so the lists populate reliably.
     if self.app and self.app.RequestCalendar then

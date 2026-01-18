@@ -77,6 +77,12 @@ local function EnsureDB()
   EventQDB.window.x = tonumber(EventQDB.window.x) or 0
   EventQDB.window.y = tonumber(EventQDB.window.y) or 0
 
+  -- Persist the last window mode so the UI reopens in the same layout after /reload or logout.
+  EventQDB.window.mode = EventQDB.window.mode or "full"
+  if EventQDB.window.mode ~= "full" and EventQDB.window.mode ~= "portable" then
+    EventQDB.window.mode = "full"
+  end
+
 
   -- Minimap button (position + visibility)
   EventQDB.minimap = EventQDB.minimap or {}
