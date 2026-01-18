@@ -339,7 +339,7 @@ local function EnsureFrame(self)
   local descFrame, descScroll, descEdit = CreateScrollingMultilineEditBox(left, 240, 150, function()
     popup:Hide()
   end)
-  descFrame:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -6)
+  descFrame:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", -4, -6)
   popup._eventqDescFrame = descFrame
   popup._eventqDescScroll = descScroll
   popup._eventqDescEdit = descEdit
