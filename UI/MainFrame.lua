@@ -179,7 +179,7 @@ function MainFrame:_EnsureSideTabs()
     return tab
   end
 
-  local mainTab = CreateSideTab(TAB_KEY.MAIN, "questlog-tab-icon-quest", "questlog-tab-icon-quest-inactive")
+  local mainTab = CreateSideTab(TAB_KEY.MAIN, "QuestLog-tab-icon-MapLegend", "QuestLog-tab-icon-MapLegend")
   mainTab._eventqActiveColor = TAB_ACTIVE_COLOR
   mainTab._eventqInactiveColor = TAB_INACTIVE_COLOR
   mainTab._eventqForceDesaturate = true
@@ -823,7 +823,6 @@ function MainFrame:_EnsureEditActionButtons(editor)
       UpdateAtlas()
     end)
 
-    -- Initialize.
     UpdateAtlas()
     return button
   end
@@ -838,7 +837,7 @@ function MainFrame:_EnsureEditActionButtons(editor)
   end)
   undo:SetScript("OnEnter", function()
     GameTooltip:SetOwner(undo, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Undo changes", 1, 1, 1)
+    GameTooltip:SetText("Undo Changes", 1, 0.82, 0)
     GameTooltip:AddLine("Revert this edit session back to the original event values.", 1, 1, 1, true)
     GameTooltip:Show()
   end)
@@ -853,7 +852,7 @@ function MainFrame:_EnsureEditActionButtons(editor)
   end)
   exit:SetScript("OnEnter", function()
     GameTooltip:SetOwner(exit, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Cancel edit", 1, 1, 1)
+    GameTooltip:SetText("Cancel Edit", 1, 0.82, 0)
     GameTooltip:AddLine("Discard unsaved changes and exit edit mode.", 1, 1, 1, true)
     GameTooltip:Show()
   end)
