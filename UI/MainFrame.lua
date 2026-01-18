@@ -577,7 +577,6 @@ function MainFrame:_UpdateSearchResults()
 
   local app = self.app
   local dateUtil = app and app.dateUtil
-  local nowEpoch = time()
   local horizonEpoch = ComputeOneYearHorizonEpoch(dateUtil, nowEpoch)
 
   local maxDaysAhead = math.ceil((horizonEpoch - nowEpoch) / 86400)
@@ -1296,8 +1295,23 @@ function MainFrame:_EnsurePortablePanel()
       holder:SetPoint("LEFT", 6, 0)
 
       local icon = holder:CreateTexture(nil, "ARTWORK")
-      icon:SetAllPoints(holder)
+      icon:ClearAllPoints()
+      icon:SetPoint("CENTER", holder, "CENTER", 0, 0)
+      icon:SetSize(PORTABLE_ICON_SIZE, PORTABLE_ICON_SIZE)
       icon:SetTexCoord(ICON_TEXCOORD_LEFT, ICON_TEXCOORD_RIGHT, ICON_TEXCOORD_TOP, ICON_TEXCOORD_BOTTOM)
+
+      -- Match the icon masking used in the main list so all event textures share a consistent shape.
+      if holder.CreateMaskTexture and icon.AddMaskTexture then
+        local ok, mask = pcall(function() return holder:CreateMaskTexture(nil, "ARTWORK") end)
+        if not ok then mask = holder:CreateMaskTexture() end
+        pcall(mask.SetTexture, mask, "Interface/Common/common-iconmask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        if not (mask.GetTexture and mask:GetTexture()) then
+          mask:SetTexture("Interface/CharacterFrame/TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        end
+        mask:SetAllPoints(icon)
+        icon:AddMaskTexture(mask)
+        button._eventqIconMask = mask
+      end
 
       local border = holder:CreateTexture(nil, "OVERLAY")
       border:SetTexture("Interface/Common/WhiteIconFrame")
@@ -1305,9 +1319,16 @@ function MainFrame:_EnsurePortablePanel()
       border:SetTexCoord(0.08, 0.92, 0.08, 0.92)
       border:SetAlpha(0.95)
 
+      local nameText = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+      nameText:SetPoint("LEFT", holder, "RIGHT", 8, 0)
+      nameText:SetPoint("RIGHT", button, "RIGHT", -6, 0)
+      nameText:SetJustifyH("LEFT")
+      nameText:SetWordWrap(false)
+
       button._eventqIconHolder = holder
       button._eventqIcon = icon
       button._eventqIconBorder = border
+      button._eventqPortableName = nameText
     end
 
     local eventData = elementData and elementData.event
@@ -1315,6 +1336,11 @@ function MainFrame:_EnsurePortablePanel()
 
     button._eventqPortableEvent = eventData
     button._eventqPortableQueueInfo = queueInfo
+
+
+    if button._eventqPortableName then
+      button._eventqPortableName:SetText((eventData and eventData.title) or "")
+    end
 
     local iconTexture = button._eventqIcon
     if iconTexture then
@@ -1329,16 +1355,9 @@ function MainFrame:_EnsurePortablePanel()
       end
     end
 
-    button:SetScript("OnEnter", function()
-      if not (GameTooltip and eventData) then return end
-      GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-      GameTooltip:SetText(eventData.title or "", 1, 1, 1)
-      GameTooltip:Show()
-    end)
-
-    button:SetScript("OnLeave", function()
-      if GameTooltip then GameTooltip:Hide() end
-    end)
+    -- No per-event tooltips in portable mode (keeps the compact view unobtrusive).
+    button:SetScript("OnEnter", nil)
+    button:SetScript("OnLeave", nil)
 
     button:SetScript("OnClick", function(_, mouseButton)
       if mouseButton ~= "LeftButton" then return end
@@ -1361,10 +1380,27 @@ end
 function MainFrame:_EnsurePortableToggleButtons()
   if self._portableEnterButton or not self.frame then return end
 
+  local function AttachTooltip(button, headerText, bodyText)
+    button:SetScript("OnEnter", function()
+      if not GameTooltip then return end
+      GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+      -- Match Blizzard's native tooltip header color.
+      GameTooltip:SetText(headerText or "", 1, 0.82, 0)
+      if bodyText and bodyText ~= "" then
+        GameTooltip:AddLine(bodyText, 0.85, 0.85, 0.85, true)
+      end
+      GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function()
+      if GameTooltip then GameTooltip:Hide() end
+    end)
+  end
+
   local function CreateToggleButton(normalAtlas, pushedAtlas)
     local button = CreateFrame("Button", nil, self.frame)
     button:SetSize(16, 35)
-    button:SetPoint("TOPLEFT", self.frame, "TOPLEFT", -16, -18)
+    -- Anchor the button flush against the frame edge (no visual gap).
+    button:SetPoint("TOPRIGHT", self.frame, "TOPLEFT", 0, -18)
 
     ApplyAtlasButtonTextures(button, normalAtlas, pushedAtlas)
 
@@ -1375,8 +1411,10 @@ function MainFrame:_EnsurePortableToggleButtons()
     return button
   end
 
-  local enterBtn = CreateToggleButton("gm-btnforward-normal", "gm-btnforward-pressed")
+  -- The atlas arrows were initially reversed; enter should point back (collapse), exit points forward (expand).
+  local enterBtn = CreateToggleButton("GM-btnBack-normal", "GM-btnBack-pressed")
   enterBtn:Hide()
+  AttachTooltip(enterBtn, "Portable Mode", "Switch to a compact, scrollable list of queueable events.")
   enterBtn:SetScript("OnClick", function()
     if self._activeTab ~= TAB_KEY.MAIN then
       self:SetActiveTab(TAB_KEY.MAIN)
@@ -1384,8 +1422,9 @@ function MainFrame:_EnsurePortableToggleButtons()
     self:SetPortableMode(true)
   end)
 
-  local exitBtn = CreateToggleButton("gm-btnback-normal", "gm-btnback-pressed")
+  local exitBtn = CreateToggleButton("GM-btnForward-normal", "GM-btnForward-pressed")
   exitBtn:Hide()
+  AttachTooltip(exitBtn, "Full Mode", "Return to the full EventQ window.")
   exitBtn:SetScript("OnClick", function() self:SetPortableMode(false) end)
 
   self._portableEnterButton = enterBtn
@@ -1407,8 +1446,6 @@ function MainFrame:_UpdatePortableList()
   if not (self.portableDP and self._portableItemPool) then return end
 
   self.portableDP:Flush()
-
-  local nowEpoch = time()
   local pool = self._portableItemPool
   local used = 0
 
@@ -2651,9 +2688,10 @@ function MainFrame:OnNextCustom()
     return
   end
 
+  local nowEpoch = (GetServerTime and GetServerTime()) or time()
+
   -- Sanity check: end must not already be in the past.
   -- Note: date-only end values default to 23:59, so "today" remains valid until then.
-  local nowEpoch = time()
   if endEpoch < nowEpoch then
     self:ShowTransientMessage("End date/time has already passed.", 1, 0.25, 0.25, 10)
     return
@@ -2877,6 +2915,7 @@ end
 function MainFrame:UpdateLists()
   local ongoing = self.app.ongoing or {}
   local upcoming = self.app.upcoming or {}
+  local nowEpoch = (GetServerTime and GetServerTime()) or time()
 
   self.leftDP:Flush()
   for _, eventData in ipairs(ongoing) do
@@ -2889,8 +2928,6 @@ function MainFrame:UpdateLists()
     self.rightDP:Insert(eventData)
   end
   self.rightScrollBox:SetDataProvider(self.rightDP)
-
-  local nowEpoch = time()
   local horizonEpoch = nowEpoch + UPCOMING_WINDOW_SECONDS
   self:_UpdateEventsTabData(nowEpoch, horizonEpoch)
   
