@@ -577,6 +577,9 @@ function MainFrame:_UpdateSearchResults()
 
   local app = self.app
   local dateUtil = app and app.dateUtil
+
+  -- Search results are computed relative to the current server clock; use a resilient fallback for older environments.
+  local nowEpoch = (GetServerTime and GetServerTime()) or time()
   local horizonEpoch = ComputeOneYearHorizonEpoch(dateUtil, nowEpoch)
 
   local maxDaysAhead = math.ceil((horizonEpoch - nowEpoch) / 86400)
@@ -1245,6 +1248,22 @@ local function ResolveQueueableInfo(eventData)
   return nil
 end
 
+local function AnyRolesSelectedPortable(mode)
+  -- Portable mode needs the same "require at least one role" behavior as the main rows,
+  -- but we keep the check local here to avoid coupling to Row.lua internals.
+  if mode == "PVP" and GetPVPRoles then
+    local tank, healer, dps = GetPVPRoles()
+    return (tank or healer or dps) and true or false
+  end
+
+  if GetLFGRoles then
+    local _, tank, healer, dps = GetLFGRoles()
+    return (tank or healer or dps) and true or false
+  end
+
+  return false
+end
+
 local function TryQueuePortableEvent(queueInfo)
   if not queueInfo then return false end
 
@@ -1258,6 +1277,41 @@ local function TryQueuePortableEvent(queueInfo)
   end
 
   return false
+end
+
+local function TryQueuePortableEventWithRoles(queueInfo)
+  if not queueInfo then return end
+
+  if queueInfo.dungeonID then
+    if AnyRolesSelectedPortable("PVE") then
+      TryQueuePortableEvent(queueInfo)
+      return
+    end
+
+    if ns.RolePopup and ns.RolePopup.Show then
+      ns.RolePopup:Show("PVE", function()
+        TryQueuePortableEvent(queueInfo)
+      end)
+    else
+      UIErrorsFrame:AddMessage("You must select at least one role.", 1, 0.1, 0.1)
+    end
+    return
+  end
+
+  if queueInfo.isBrawl then
+    if AnyRolesSelectedPortable("PVP") then
+      TryQueuePortableEvent(queueInfo)
+      return
+    end
+
+    if ns.RolePopup and ns.RolePopup.Show then
+      ns.RolePopup:Show("PVP", function()
+        TryQueuePortableEvent(queueInfo)
+      end)
+    else
+      UIErrorsFrame:AddMessage("You must select at least one role.", 1, 0.1, 0.1)
+    end
+  end
 end
 
 function MainFrame:_EnsurePortablePanel()
@@ -1359,10 +1413,10 @@ function MainFrame:_EnsurePortablePanel()
     button:SetScript("OnEnter", nil)
     button:SetScript("OnLeave", nil)
 
-    button:SetScript("OnClick", function(_, mouseButton)
-      if mouseButton ~= "LeftButton" then return end
-      TryQueuePortableEvent(queueInfo)
-    end)
+	    button:SetScript("OnClick", function(_, mouseButton)
+	      if mouseButton ~= "LeftButton" then return end
+	      TryQueuePortableEventWithRoles(queueInfo)
+	    end)
   end)
 
   ScrollUtil.InitScrollBoxListWithScrollBar(scrollBox, scrollBar, view)

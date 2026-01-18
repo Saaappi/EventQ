@@ -250,13 +250,21 @@ function RolePopup:Show(mode, callback)
   local totalW = count * 44 + (count - 1) * spacing
   local startX = -totalW / 2 + 22
 
-  for i, b in ipairs(shown) do
-    b:ClearAllPoints()
-    b:SetPoint("CENTER", f._eventqRoleContainer, "CENTER", startX + (i - 1) * (44 + spacing), 0)
+  -- Reposition only the role buttons that are actually available for the player.
+  -- This keeps the layout visually centered even when one or more roles are unavailable.
+  for index, roleButton in ipairs(shown) do
+    roleButton:ClearAllPoints()
+    roleButton:SetPoint(
+      "CENTER",
+      popupFrame._eventqRoleContainer,
+      "CENTER",
+      startX + (index - 1) * (44 + spacing),
+      0
+    )
   end
 
-  f._eventqUpdateQueueButton()
-  f:Show()
+  popupFrame._eventqUpdateQueueButton()
+  popupFrame:Show()
 end
 
 ns.RolePopup = RolePopup:New()

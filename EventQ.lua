@@ -83,6 +83,10 @@ local function EnsureDB()
     EventQDB.window.mode = "full"
   end
 
+  -- Optional behavior: auto-open the UI on login/reload when the last-used mode is Portable.
+  -- Disabled by default so players keep full control over whether EventQ pops up automatically.
+  EventQDB.window.openPortableOnLogin = EventQDB.window.openPortableOnLogin == true
+
 
   -- Minimap button (position + visibility)
   EventQDB.minimap = EventQDB.minimap or {}
@@ -185,6 +189,44 @@ addonFrame:SetScript("OnEvent", function(_, event, arg1)
     end
 
     WarmCalendarOnce()
+
+    -- Auto-open (opt-in): if the player enabled the setting and last used Portable Mode,
+    -- show the window automatically on login/reload.
+    --
+    -- Some clients/addon load orders can briefly create the UI before everything is fully ready
+    -- (e.g., other addons moving frames on PLAYER_LOGIN). To avoid a timing race, we attempt
+    -- the Show on the next frame and then retry a couple times if the window is still hidden.
+    local function TryAutoOpenPortableMode()
+      local db = EnsureDB()
+      local window = db and db.window
+      if not (window and window.openPortableOnLogin and window.mode == "portable") then
+        return
+      end
+
+      local ui = app and app.ui
+      local frame = ui and ui.frame
+      if not (frame and frame.IsShown) then
+        return
+      end
+
+      if frame:IsShown() then
+        return
+      end
+
+      if ui.RestorePosition then
+        ui:RestorePosition()
+      end
+      frame:Show()
+    end
+
+    if C_Timer and C_Timer.After then
+      C_Timer.After(0, TryAutoOpenPortableMode)
+      C_Timer.After(0.25, TryAutoOpenPortableMode)
+      C_Timer.After(1, TryAutoOpenPortableMode)
+    else
+      TryAutoOpenPortableMode()
+    end
+
 
     C_Timer.NewTicker(60, function()
       if not app then return end

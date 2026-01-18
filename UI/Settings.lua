@@ -279,6 +279,28 @@ function SettingsModule:Init(db)
   if layout and layout.AddInitializer and type(CreateSettingsButtonInitializer) == "function" then
     layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Window"))
 
+    local function GetOpenPortableOnLogin()
+      db.window = db.window or {}
+      return db.window.openPortableOnLogin == true
+    end
+
+    local function SetOpenPortableOnLogin(value)
+      db.window = db.window or {}
+      db.window.openPortableOnLogin = value == true
+    end
+
+    local autoOpenSetting = Settings.RegisterProxySetting(
+      category,
+      "EVENTQ_AUTO_OPEN_PORTABLE",
+      Settings.VarType.Boolean,
+      "Auto-Open Portable Mode",
+      Settings.Default.False,
+      GetOpenPortableOnLogin,
+      SetOpenPortableOnLogin
+    )
+
+    Settings.CreateCheckbox(category, autoOpenSetting, "When enabled, EventQ automatically opens on login/reload if you last used Portable Mode.")
+
     local function ResetWindowPosition()
       if InCombatLockdown and InCombatLockdown() then
         if UIErrorsFrame and UIErrorsFrame.AddMessage then
