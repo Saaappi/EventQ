@@ -1,9 +1,9 @@
 ## Interface: 110207
 ## Title: EventQ
-## Notes: Calendar event queue (ongoing + upcoming)
+## Notes: Queue for dungeon and PvP events directly from the interface, search for events, add custom events, and an optional portable mode for a smaller visual footprint and quick queues.
 ## SavedVariables: EventQDB
 ## Author: LightskyGG.
-## Version: 0.2.70
+## Version: 2.0.0
 EventQ.xml
 Core/Class.lua
 Core/ImportExport.lua
