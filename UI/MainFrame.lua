@@ -297,23 +297,24 @@ function MainFrame:_EnsureEventsPanel()
   subheader:SetTextColor(0.75, 0.75, 0.75, 1)
 
   -- Import/export controls for backing up and sharing custom events.
-  local importBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-  importBtn:SetSize(80, 24)
-  importBtn:SetText("Import")
-  importBtn:SetPoint("TOPRIGHT", -14, -10)
-  importBtn:SetScript("OnClick", function() self:ShowImportCustomEvents() end)
+  -- Button order (left -> right): Import, Export All, Calendar Event.
+  local calendarBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  calendarBtn:SetSize(150, 24)
+  calendarBtn:SetText("Calendar Event")
+  calendarBtn:SetPoint("TOPRIGHT", -14, -10)
+  calendarBtn:SetScript("OnClick", function() self:ShowCalendarEventPopup() end)
 
   local exportAllBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   exportAllBtn:SetSize(110, 24)
   exportAllBtn:SetText("Export All")
-  exportAllBtn:SetPoint("RIGHT", importBtn, "LEFT", -8, 0)
+  exportAllBtn:SetPoint("RIGHT", calendarBtn, "LEFT", -8, 0)
   exportAllBtn:SetScript("OnClick", function() self:ShowExportAllCustomEvents() end)
 
-  local calendarBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-  calendarBtn:SetSize(150, 24)
-  calendarBtn:SetText("Calendar Event")
-  calendarBtn:SetPoint("RIGHT", exportAllBtn, "LEFT", -8, 0)
-  calendarBtn:SetScript("OnClick", function() self:ShowCalendarEventPopup() end)
+  local importBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  importBtn:SetSize(80, 24)
+  importBtn:SetText("Import")
+  importBtn:SetPoint("RIGHT", exportAllBtn, "LEFT", -8, 0)
+  importBtn:SetScript("OnClick", function() self:ShowImportCustomEvents() end)
 
   local listLayout = {
     paddingTop = 44,

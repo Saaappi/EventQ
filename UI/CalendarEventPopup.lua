@@ -184,84 +184,105 @@ local function EnsureFrame(self)
   desc:SetJustifyH("CENTER")
   desc:SetWidth(610)
   desc:SetText("Create a player calendar event and manage invitations.")
+  desc:SetTextColor(0.75, 0.75, 0.75, 1)
   popup._eventqDesc = desc
 
   local left = CreateFrame("Frame", nil, popup)
-  left:SetPoint("TOPLEFT", 14, -62)
-  left:SetSize(320, 430)
+  left:SetPoint("TOPLEFT", 18, -62)
+  left:SetSize(300, 430)
   popup._eventqLeft = left
 
   local right = CreateFrame("Frame", nil, popup)
-  right:SetPoint("TOPRIGHT", -14, -62)
+  right:SetPoint("TOPRIGHT", -18, -62)
   right:SetSize(300, 430)
   popup._eventqRight = right
 
-  local function AddLabel(parent, text, anchor, offsetY)
+  local function AddLabel(parent, text, anchor)
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    label:SetPoint("TOPLEFT", anchor, "TOPLEFT", 0, offsetY)
+    label:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
+    label:SetWidth(280)
+    label:SetJustifyH("LEFT")
     label:SetText(text)
     label:SetTextColor(0.85, 0.85, 0.85, 1)
     return label
   end
 
-  local nameLabel = AddLabel(left, "Name", left, 0)
+  local nameLabel = left:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  nameLabel:SetPoint("TOPLEFT", left, "TOPLEFT", 0, 0)
+  nameLabel:SetWidth(280)
+  nameLabel:SetJustifyH("LEFT")
+  nameLabel:SetText("Name")
+  nameLabel:SetTextColor(0.85, 0.85, 0.85, 1)
+
   local nameBox = CreateFrame("EditBox", nil, left, "InputBoxTemplate")
-  nameBox:SetSize(300, 24)
+  -- Reduce width by 30% to give the category + datetime rows more breathing room.
+  nameBox:SetSize(210, 24)
   nameBox:SetAutoFocus(false)
   nameBox:SetPoint("TOPLEFT", nameLabel, "BOTTOMLEFT", -2, -6)
   popup._eventqName = nameBox
 
-  local typeLabel = AddLabel(left, "Category", nameBox, -36)
-  local dropdown = CreateFrame("Frame", "EventQCalendarEventCategoryDropdown", left, "UIDropDownMenuTemplate")
-  dropdown:SetPoint("TOPLEFT", typeLabel, "BOTTOMLEFT", -16, -2)
-  popup._eventqDropdown = dropdown
+  local typeLabel = AddLabel(left, "Category", nameBox)
 
-  local startLabel = AddLabel(left, "Start", dropdown, -46)
+  -- Use the modern DropdownButton (WowStyle1DropdownTemplate) instead of UIDropDownMenu.
+  -- This matches how Dragonflight-era Blizzard UIs build selection menus (SetupMenu + menu descriptors).
+  local dropdown = CreateFrame("DropdownButton", "EventQCalendarEventCategoryDropdown", left, "WowStyle1DropdownTemplate")
+  dropdown:SetPoint("TOPLEFT", typeLabel, "BOTTOMLEFT", 0, -4)
+  dropdown:SetWidth(225)
+  dropdown:SetDefaultText("Other")
+  popup._eventqCategoryDrop = dropdown
+
+  local startLabel = AddLabel(left, "Start", dropdown)
   local startBox = CreateFrame("EditBox", nil, left, "InputBoxTemplate")
-  startBox:SetSize(300, 24)
+  -- Reduce width by 25% so the text never collides with the calendar picker button.
+  startBox:SetSize(225, 24)
   startBox:SetAutoFocus(false)
   startBox:SetPoint("TOPLEFT", startLabel, "BOTTOMLEFT", -2, -6)
   popup._eventqStart = startBox
 
-  local endLabel = AddLabel(left, "End (optional, not used by calendar)", startBox, -36)
+  local endLabel = AddLabel(left, "End (optional, not used by calendar)", startBox)
   local endBox = CreateFrame("EditBox", nil, left, "InputBoxTemplate")
-  endBox:SetSize(300, 24)
+  endBox:SetSize(225, 24)
   endBox:SetAutoFocus(false)
   endBox:SetPoint("TOPLEFT", endLabel, "BOTTOMLEFT", -2, -6)
   popup._eventqEnd = endBox
 
-  local descLabel = AddLabel(left, "Description", endBox, -36)
+  local descLabel = AddLabel(left, "Description", endBox)
   local descScroll = CreateFrame("ScrollFrame", nil, left, "UIPanelInputScrollFrameTemplate")
-  descScroll:SetSize(300, 150)
+  descScroll:SetSize(280, 150)
   descScroll:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", -2, -6)
   local descEdit = descScroll.EditBox
   descEdit:SetFontObject("ChatFontNormal")
   descEdit:SetAutoFocus(false)
-  descEdit:SetWidth(280)
+  descEdit:SetWidth(250)
   popup._eventqDescScroll = descScroll
 
-  local inviteLabel = AddLabel(right, "Invite list", right, 0)
+  local inviteLabel = right:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  inviteLabel:SetPoint("TOPLEFT", right, "TOPLEFT", 0, 0)
+  inviteLabel:SetWidth(280)
+  inviteLabel:SetJustifyH("LEFT")
+  inviteLabel:SetText("Invitees")
+  inviteLabel:SetTextColor(0.85, 0.85, 0.85, 1)
 
   local inviteTip = right:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   inviteTip:SetPoint("TOPLEFT", inviteLabel, "BOTTOMLEFT", 0, -4)
-  inviteTip:SetWidth(290)
+  inviteTip:SetWidth(280)
   inviteTip:SetJustifyH("LEFT")
-  inviteTip:SetText("Tip: One player name per line. Include the realm if needed (Name-Realm).")
+  inviteTip:SetText("|cff00ff00Tip:|r One player name per line. Include the realm if needed (Name-Realm).")
   inviteTip:SetTextColor(0.65, 0.65, 0.65, 1)
 
   local inviteScroll = CreateFrame("ScrollFrame", nil, right, "UIPanelInputScrollFrameTemplate")
-  inviteScroll:SetSize(300, 150)
+  inviteScroll:SetSize(280, 150)
   inviteScroll:SetPoint("TOPLEFT", inviteTip, "BOTTOMLEFT", -2, -6)
   local inviteEdit = inviteScroll.EditBox
   inviteEdit:SetFontObject("ChatFontNormal")
   inviteEdit:SetAutoFocus(false)
-  inviteEdit:SetWidth(280)
+  inviteEdit:SetWidth(250)
   popup._eventqInviteScroll = inviteScroll
 
-  local statusLabel = AddLabel(right, "Invitation status", inviteScroll, -170)
+  local statusLabel = AddLabel(right, "Invitee Status", inviteScroll)
 
   local statusScroll = CreateFrame("ScrollFrame", nil, right, "UIPanelScrollFrameTemplate")
-  statusScroll:SetSize(300, 200)
+  statusScroll:SetSize(280, 210)
   statusScroll:SetPoint("TOPLEFT", statusLabel, "BOTTOMLEFT", -8, -8)
 
   local statusChild = CreateFrame("Frame", nil, statusScroll)
@@ -273,36 +294,59 @@ local function EnsureFrame(self)
   popup._eventqStatusScroll = statusScroll
   popup._eventqStatusChild = statusChild
 
-  local statusFooter = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  statusFooter:SetPoint("TOP", statusScroll, "BOTTOM", 0, -10)
+  local statusFooter = right:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  statusFooter:SetPoint("TOPLEFT", statusScroll, "BOTTOMLEFT", 8, -10)
+  statusFooter:SetWidth(280)
+  statusFooter:SetJustifyH("LEFT")
   statusFooter:SetText("")
   statusFooter:SetTextColor(0.75, 0.75, 0.75, 1)
   popup._eventqStatus = statusFooter
 
-  local closeBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  closeBtn:SetSize(110, 24)
-  closeBtn:SetText(CLOSE)
-  closeBtn:SetPoint("BOTTOMRIGHT", -14, 14)
-  closeBtn:SetScript("OnClick", function() popup:Hide() end)
-  popup._eventqCloseBtn = closeBtn
-
-  local inviteBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  inviteBtn:SetSize(160, 24)
-  inviteBtn:SetText("Invite Accepted")
-  inviteBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
-  popup._eventqInviteBtn = inviteBtn
+  -- Bottom action buttons: keep the entire button cluster centered so the margins to
+  -- the left/right frame edges stay symmetrical at any UI scale.
+  local createBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+  createBtn:SetSize(170, 24)
+  createBtn:SetText("Add to Calendar")
+  popup._eventqCreateBtn = createBtn
 
   local refreshBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
   refreshBtn:SetSize(120, 24)
   refreshBtn:SetText("Refresh")
-  refreshBtn:SetPoint("RIGHT", inviteBtn, "LEFT", -10, 0)
   popup._eventqRefreshBtn = refreshBtn
 
-  local createBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  createBtn:SetSize(170, 24)
-  createBtn:SetText("Add to Calendar")
-  createBtn:SetPoint("RIGHT", refreshBtn, "LEFT", -10, 0)
-  popup._eventqCreateBtn = createBtn
+  local inviteBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+  inviteBtn:SetSize(160, 24)
+  inviteBtn:SetText("Invite Accepted")
+  popup._eventqInviteBtn = inviteBtn
+
+  local closeBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+  closeBtn:SetSize(110, 24)
+  closeBtn:SetText(CLOSE)
+  closeBtn:SetScript("OnClick", function() popup:Hide() end)
+  popup._eventqCloseBtn = closeBtn
+
+  local gap = 10
+  local buttonBar = CreateFrame("Frame", nil, popup)
+  buttonBar:SetHeight(24)
+  buttonBar:SetWidth(createBtn:GetWidth() + refreshBtn:GetWidth() + inviteBtn:GetWidth() + closeBtn:GetWidth() + (gap * 3))
+  buttonBar:SetPoint("BOTTOM", popup, "BOTTOM", 0, 14)
+
+  createBtn:SetParent(buttonBar)
+  refreshBtn:SetParent(buttonBar)
+  inviteBtn:SetParent(buttonBar)
+  closeBtn:SetParent(buttonBar)
+
+  createBtn:ClearAllPoints()
+  createBtn:SetPoint("LEFT", buttonBar, "LEFT", 0, 0)
+
+  refreshBtn:ClearAllPoints()
+  refreshBtn:SetPoint("LEFT", createBtn, "RIGHT", gap, 0)
+
+  inviteBtn:ClearAllPoints()
+  inviteBtn:SetPoint("LEFT", refreshBtn, "RIGHT", gap, 0)
+
+  closeBtn:ClearAllPoints()
+  closeBtn:SetPoint("LEFT", inviteBtn, "RIGHT", gap, 0)
 
   tinsert(UISpecialFrames, "EventQCalendarEventPopup")
 
@@ -311,28 +355,46 @@ local function EnsureFrame(self)
 end
 
 local function InitializeDropdown(frame)
-  if not (frame and frame._eventqDropdown and UIDropDownMenu_Initialize) then
+  local dropdown = frame and frame._eventqCategoryDrop
+  if not (frame and dropdown and dropdown.SetupMenu) then
     return
   end
 
-  UIDropDownMenu_Initialize(frame._eventqDropdown, function(dropdownFrame, level)
-    if level ~= 1 then return end
+  if dropdown._eventqInitialized then
+    return
+  end
+  dropdown._eventqInitialized = true
 
-    for _, entry in ipairs(CATEGORIES) do
-      local info = UIDropDownMenu_CreateInfo()
-      info.text = entry.label
-      info.notCheckable = false
-      info.checked = frame._eventqSelectedType == entry.eventType
-      info.func = function()
-        frame._eventqSelectedType = entry.eventType
-        UIDropDownMenu_SetText(dropdownFrame, entry.label)
-      end
-      UIDropDownMenu_AddButton(info, level)
+  local function IsSelected(eventType)
+    return frame._eventqSelectedType == eventType
+  end
+
+  local function SetSelected(eventType)
+    frame._eventqSelectedType = eventType
+    dropdown:SetText(FindCategoryLabel(eventType))
+
+    -- Keep radio checks in sync even if the menu hasn't been opened yet.
+    if dropdown.GenerateMenu and dropdown.GetMenuDescription and not dropdown:GetMenuDescription() then
+      dropdown:GenerateMenu()
     end
+    if dropdown.Update then
+      dropdown:Update()
+    elseif dropdown.UpdateText then
+      dropdown:UpdateText()
+    end
+  end
+
+  dropdown:SetupMenu(function(_, rootDescription)
+    rootDescription:SetTag("MENU_EVENTQ_CALENDAR_CATEGORY")
+    for _, entry in ipairs(CATEGORIES) do
+      rootDescription:CreateRadio(entry.label, IsSelected, SetSelected, entry.eventType)
+    end
+    rootDescription:SetMaximumWidth(140)
   end)
 
   frame._eventqSelectedType = frame._eventqSelectedType or CATEGORIES[#CATEGORIES].eventType
-  UIDropDownMenu_SetText(frame._eventqDropdown, FindCategoryLabel(frame._eventqSelectedType))
+  dropdown:SetDefaultText(FindCategoryLabel(frame._eventqSelectedType))
+  dropdown:SetText(FindCategoryLabel(frame._eventqSelectedType))
 end
 
 local function AttachDateTimePicker(frame, editBox, isEnd)
@@ -514,7 +576,7 @@ function CalendarEventPopup:Show(app, preset)
     end
 
     frame._eventqSelectedType = preset.eventType or frame._eventqSelectedType
-    UIDropDownMenu_SetText(frame._eventqDropdown, FindCategoryLabel(frame._eventqSelectedType))
+    frame._eventqCategoryDrop:SetText(FindCategoryLabel(frame._eventqSelectedType))
 
     if preset.inviteText and frame._eventqInviteScroll and frame._eventqInviteScroll.EditBox then
       frame._eventqInviteScroll.EditBox:SetText(preset.inviteText)
