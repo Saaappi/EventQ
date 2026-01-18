@@ -114,8 +114,7 @@ local TAB_KEY = {
   SEARCH = "SEARCH",
 }
 
-local TAB_ACTIVE_COLOR = { r = 0.937, g = 0.812, b = 0.075 } -- #efcf13
-local TAB_INACTIVE_COLOR = { r = 0.6, g = 0.6, b = 0.6 }
+local SEARCH_TAB_COLOR = { r = 0.937, g = 0.812, b = 0.075 } -- #efcf13
 
 local function SetTabChecked(tabFrame, checked)
   if not tabFrame then return end
@@ -123,18 +122,19 @@ local function SetTabChecked(tabFrame, checked)
     tabFrame:SetChecked(checked)
   end
 
-  if tabFrame.Icon then
-    if tabFrame._eventqActiveColor and tabFrame._eventqInactiveColor and tabFrame.Icon.SetVertexColor then
-      local color = checked and tabFrame._eventqActiveColor or tabFrame._eventqInactiveColor
+  if tabFrame.Icon and tabFrame._eventqActiveColor and tabFrame.Icon.SetVertexColor then
+    local color = checked and tabFrame._eventqActiveColor or tabFrame._eventqInactiveColor
+    if color then
       tabFrame.Icon:SetVertexColor(color.r, color.g, color.b)
     end
+  end
 
-    -- Keep side tabs visually consistent: inactive icons are greyed out, active icon is gold.
-    if tabFrame._eventqForceDesaturate and tabFrame.Icon.SetDesaturated then
-      tabFrame.Icon:SetDesaturated(not checked)
-      if tabFrame.Icon.SetAlpha then
-        tabFrame.Icon:SetAlpha(checked and 1 or 0.65)
-      end
+  -- Some icons (e.g., the search tab) don't have separate active/inactive atlases.
+  -- When requested, desaturate + dim the icon while inactive so the selected state is still clear.
+  if tabFrame.Icon and tabFrame._eventqDesaturateInactive and tabFrame.Icon.SetDesaturated then
+    tabFrame.Icon:SetDesaturated(not checked)
+    if tabFrame.Icon.SetAlpha then
+      tabFrame.Icon:SetAlpha(checked and 1 or 0.65)
     end
   end
 end
@@ -180,25 +180,18 @@ function MainFrame:_EnsureSideTabs()
   end
 
   local mainTab = CreateSideTab(TAB_KEY.MAIN, "questlog-tab-icon-quest", "questlog-tab-icon-quest-inactive")
-  mainTab._eventqActiveColor = TAB_ACTIVE_COLOR
-  mainTab._eventqInactiveColor = TAB_INACTIVE_COLOR
-  mainTab._eventqForceDesaturate = true
   mainTab:ClearAllPoints()
   mainTab:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", SIDE_TAB_ANCHOR_X, SIDE_TAB_ANCHOR_Y)
 
   local eventsTab = CreateSideTab(TAB_KEY.EVENTS, "questlog-tab-icon-event", "questlog-tab-icon-event-inactive")
-  eventsTab._eventqActiveColor = TAB_ACTIVE_COLOR
-  eventsTab._eventqInactiveColor = TAB_INACTIVE_COLOR
-  eventsTab._eventqForceDesaturate = true
   eventsTab:ClearAllPoints()
   eventsTab:SetPoint("TOP", mainTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
 
   local searchTab = CreateSideTab(TAB_KEY.SEARCH, "uitools-icon-search", "uitools-icon-search")
   searchTab:ClearAllPoints()
   searchTab:SetPoint("TOP", eventsTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
-  searchTab._eventqActiveColor = TAB_ACTIVE_COLOR
-  searchTab._eventqInactiveColor = TAB_INACTIVE_COLOR
-  searchTab._eventqForceDesaturate = true
+  searchTab._eventqActiveColor = SEARCH_TAB_COLOR
+  searchTab._eventqInactiveColor = { r = 0.6, g = 0.6, b = 0.6 }
 
   local count = eventsTab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   -- Place the badge directly under the tab icon so it reads as a simple count indicator.
@@ -218,8 +211,6 @@ end
 function MainFrame:SetActiveTab(tabKey)
   tabKey = tabKey or TAB_KEY.MAIN
   if self._activeTab == tabKey then return end
-
-  local previousTab = self._activeTab
   self._activeTab = tabKey
 
   self:_EnsureSideTabs()
@@ -234,19 +225,10 @@ function MainFrame:SetActiveTab(tabKey)
   local showEvents = (tabKey == TAB_KEY.EVENTS)
   local showSearch = (tabKey == TAB_KEY.SEARCH)
 
-  if previousTab == TAB_KEY.SEARCH and not showSearch then
-    self:_ClearSearchState()
-  end
-
   if showEvents then
     self:_EnsureEventsPanel()
   elseif showSearch then
     self:_EnsureSearchPanel()
-  end
-
-  -- Leaving the search tab should reset the search UI so switching back always starts clean.
-  if previousTab == TAB_KEY.SEARCH and tabKey ~= TAB_KEY.SEARCH then
-    self:_ClearSearchState()
   end
 
   if self.left then self.left:SetShown(showMain) end
@@ -452,17 +434,7 @@ function MainFrame:_EnsureSearchPanel()
 			SearchBoxTemplate_OnTextChanged(searchBox)
 		end
 
-		if self._eventqClearingSearch then return end
-
-		local queryText = searchBox:GetText() or ""
-		self._searchQuery = queryText
-
-		-- Clearing via the (X) button or deleting the text should clear results immediately.
-		if queryText == "" then
-			self:_ClearSearchResultsOnly()
-			return
-		end
-
+		self._searchQuery = searchBox:GetText() or ""
 		-- Avoid rebuilding the year-sized event cache on every keystroke.
 		if userInput then
 			ScheduleRefresh()
@@ -504,29 +476,6 @@ function MainFrame:_EnsureSearchPanel()
   self._searchScratch = self._searchScratch or {}
 end
 
-function MainFrame:_ClearSearchResultsOnly()
-  if self.searchDP then
-    self.searchDP:Flush()
-  end
-  if self.searchScrollBox and self.searchDP then
-    self.searchScrollBox:SetDataProvider(self.searchDP)
-  end
-  if self.searchEmptyText then
-    self.searchEmptyText:Hide()
-  end
-end
-
-function MainFrame:_ClearSearchState()
-  self._searchQuery = ""
-  self:_ClearSearchResultsOnly()
-
-  if self.searchBox and self.searchBox.SetText then
-    self._eventqClearingSearch = true
-    self.searchBox:SetText("")
-    self._eventqClearingSearch = false
-  end
-end
-
 local function SortByStartThenTitle(leftEvent, rightEvent)
   local leftStart = (leftEvent and leftEvent.startEpoch) or 0
   local rightStart = (rightEvent and rightEvent.startEpoch) or 0
@@ -559,37 +508,80 @@ function MainFrame:_UpdateSearchResults()
   local results = self._searchScratch
   WipeArray(results)
 
-  local function MatchesQuery(eventData)
-    if not eventData then return false end
+  local function CalendarSeriesKey(eventData)
+    if not eventData then return nil end
+    if eventData.holidayID ~= nil then
+      return "holiday:" .. tostring(eventData.holidayID)
+    end
+    if eventData.eventID ~= nil then
+      return "event:" .. tostring(eventData.eventID)
+    end
+    return "title:" .. NormalizeHaystack(eventData.title)
+  end
 
-    -- Calendar search can reuse pre-normalized fields from CalendarService's search cache.
-    local titleLower = eventData.__searchTitle or NormalizeHaystack(eventData.title)
-    local descLower = eventData.__searchDesc or NormalizeHaystack(eventData.description)
+  local function IsOccurrenceRelevant(eventData)
+    local startEpoch = eventData and eventData.startEpoch
+    local endEpoch = eventData and eventData.endEpoch
+    if not (startEpoch and endEpoch) then return false end
+    if endEpoch < nowEpoch then return false end
+    if startEpoch > horizonEpoch then return false end
+    return true
+  end
 
-    return titleLower:find(queryLower, 1, true) or descLower:find(queryLower, 1, true)
+  local function OccurrencePriority(eventData)
+    if not eventData then return nil end
+    if eventData.startEpoch <= nowEpoch and eventData.endEpoch >= nowEpoch then
+      return 0 -- currently active
+    end
+    if eventData.startEpoch >= nowEpoch then
+      return 1 -- upcoming
+    end
+    return nil
+  end
+
+  local function ChooseBetterOccurrence(existing, candidate)
+    if not existing then return candidate end
+
+    local existingPriority = OccurrencePriority(existing)
+    local candidatePriority = OccurrencePriority(candidate)
+    if candidatePriority == nil then return existing end
+    if existingPriority == nil then return candidate end
+
+    if candidatePriority ~= existingPriority then
+      return (candidatePriority < existingPriority) and candidate or existing
+    end
+
+    return (candidate.startEpoch < existing.startEpoch) and candidate or existing
   end
 
   -- Calendar events (holidays + player/guild/community events)
-  -- The calendar service provides a compact index containing only the active/next occurrence per event.
-  if app and app.calendar then
-    local calendarEvents = nil
-    if app.calendar.CollectSearchIndex then
-      calendarEvents = app.calendar:CollectSearchIndex(maxDaysAhead)
-    elseif app.calendar.CollectWindow then
-      calendarEvents = app.calendar:CollectWindow(maxDaysAhead)
+  -- Many calendar events span multiple days; the search tab should only surface the *next* occurrence.
+  if app and app.calendar and app.calendar.CollectWindow then
+    local bestBySeriesKey = {}
+    local calendarEvents = app.calendar:CollectWindow(maxDaysAhead)
+
+    for _, eventData in ipairs(calendarEvents) do
+      if eventData and IsOccurrenceRelevant(eventData) then
+        local titleLower = NormalizeHaystack(eventData.title)
+        local descLower = NormalizeHaystack(eventData.description)
+        if titleLower:find(queryLower, 1, true) or descLower:find(queryLower, 1, true) then
+          local seriesKey = CalendarSeriesKey(eventData)
+          if seriesKey then
+            bestBySeriesKey[seriesKey] = ChooseBetterOccurrence(bestBySeriesKey[seriesKey], eventData)
+          end
+        end
+      end
     end
 
-    if calendarEvents then
-      for _, eventData in ipairs(calendarEvents) do
-        if MatchesQuery(eventData) then
-          if app.calendar.EnhanceEventIcon then
-            app.calendar:EnhanceEventIcon(eventData)
-          end
-          if app.ApplyIconOverrides then
-            app:ApplyIconOverrides(eventData)
-          end
-          results[#results + 1] = eventData
+    for _, eventData in pairs(bestBySeriesKey) do
+      if eventData then
+        if app.calendar.EnhanceEventIcon then
+          app.calendar:EnhanceEventIcon(eventData)
         end
+        if app.ApplyIconOverrides then
+          app:ApplyIconOverrides(eventData)
+        end
+        results[#results + 1] = eventData
       end
     end
   end

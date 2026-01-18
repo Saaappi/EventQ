@@ -456,14 +456,6 @@ function App:RequestCalendar()
 end
 
 function App:RefreshAll()
-  -- RefreshAll can be triggered by calendar update events while we are scanning calendar months.
-  -- Guard against re-entrancy to prevent recursion (C stack overflow) and coalesce bursts of updates.
-  if self._refreshInProgress then
-    self._refreshPending = true
-    return
-  end
-  self._refreshInProgress = true
-
   local now = time()
   self.customStore:PruneOld(now)
 
@@ -485,66 +477,47 @@ function App:RefreshAll()
     all[#all + 1] = e
   end
 
-  -- Wrap custom DB entries into the unified event schema.
-  -- Reuse wrapper tables between refreshes to avoid generating large amounts of garbage.
-  self._customWrappedById = self._customWrappedById or {}
-  self._customWrappedSeen = self._customWrappedSeen or {}
-  local wrappedById = self._customWrappedById
-  local wrappedSeen = self._customWrappedSeen
-  wipe(wrappedSeen)
-
-  for _, dbEvent in ipairs(custom) do
-    if dbEvent and dbEvent.id and IsSeriesEnabled(dbEvent.series) then
+  for _, e in ipairs(custom) do
+    if e and IsSeriesEnabled(e.series) then
       -- Keep series config well-formed and advance the root forward so the UI only
       -- ever shows the next/active occurrence.
-      local normalized = NormalizeSeriesConfig(self.dateUtil, dbEvent.series, dbEvent.startEpoch)
+      local normalized = NormalizeSeriesConfig(self.dateUtil, e.series, e.startEpoch)
       if normalized then
-        dbEvent.series = normalized
+        e.series = normalized
       end
-      AdvanceSeriesInPlace(self.dateUtil, dbEvent, now)
+      AdvanceSeriesInPlace(self.dateUtil, e, now)
     end
 
-    local desc = dbEvent and dbEvent.description
+    local desc = e.description
     if type(desc) ~= "string" then
       desc = nil
     else
+      -- Treat whitespace-only as empty.
       local trimmed = strtrim(desc)
-      desc = (trimmed == "") and nil or trimmed
-    end
-
-    local isSeries = dbEvent and IsSeriesEnabled(dbEvent.series)
-    local id = dbEvent and dbEvent.id
-    if id then
-      local wrapped = wrappedById[id]
-      if not wrapped then
-        wrapped = {}
-        wrappedById[id] = wrapped
+      if trimmed == "" then
+        desc = nil
+      else
+        desc = trimmed
       end
-
-      wrapped.id = id
-      wrapped.eventID = nil
-      wrapped.title = dbEvent.title
-      wrapped.description = desc or "Custom event"
-      wrapped.startEpoch = dbEvent.startEpoch
-      wrapped.endEpoch = dbEvent.endEpoch
-      wrapped.icon = dbEvent.icon
-      wrapped.source = "Custom"
-      wrapped.isCustom = true
-      wrapped.isSeriesRoot = isSeries
-      wrapped.series = isSeries and dbEvent.series or nil
-      wrapped.seriesRootId = isSeries and id or nil
-
-      ApplyIconOverrides(self, wrapped)
-      all[#all + 1] = wrapped
-      wrappedSeen[id] = true
     end
-  end
 
-  -- Drop wrappers for deleted events.
-  for id in pairs(wrappedById) do
-    if not wrappedSeen[id] then
-      wrappedById[id] = nil
-    end
+    local isSeries = e and IsSeriesEnabled(e.series)
+    local customEvent = {
+      id = e.id,
+      eventID = nil,
+      title = e.title,
+      description = desc or "Custom event",
+      startEpoch = e.startEpoch,
+      endEpoch = e.endEpoch,
+      icon = e.icon,
+      source = "Custom",
+      isCustom = true,
+      isSeriesRoot = isSeries,
+      series = isSeries and e.series or nil,
+      seriesRootId = isSeries and e.id or nil,
+    }
+    ApplyIconOverrides(self, customEvent)
+    all[#all + 1] = customEvent
   end
 
   local ongoing = self.ongoing
@@ -606,15 +579,6 @@ function App:RefreshAll()
   self:NotifyNew(now)
   if self.ui.frame:IsShown() then
     self.ui:UpdateLists()
-  end
-
-  self._refreshInProgress = false
-  if self._refreshPending then
-    self._refreshPending = false
-    C_Timer.After(0, function()
-      -- Defer to next frame to avoid deep call stacks.
-      if self then self:RefreshAll() end
-    end)
   end
 end
 

@@ -10,6 +10,8 @@ end
 local app
 local pendingCalendarUpdate = false
 local didWarmCalendar = false
+local calendarUpdateScheduled = false
+local lastBackgroundRefreshEpoch = 0
 
 local addonFrame = CreateFrame("Frame")
 addonFrame:RegisterEvent("ADDON_LOADED")
@@ -128,6 +130,20 @@ local function WarmCalendarOnce()
   WarmCalendar()
 end
 
+local function ScheduleCalendarRefresh()
+  if calendarUpdateScheduled then return end
+  calendarUpdateScheduled = true
+  -- Calendar can fire many update events while it is loading. Coalesce them into a single refresh.
+  C_Timer.After(0.25, function()
+    calendarUpdateScheduled = false
+    if app then
+      app:RefreshAll()
+    else
+      pendingCalendarUpdate = true
+    end
+  end)
+end
+
 addonFrame:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" then
     if arg1 ~= ADDON then return end
@@ -165,21 +181,24 @@ addonFrame:SetScript("OnEvent", function(_, event, arg1)
     WarmCalendarOnce()
 
     C_Timer.NewTicker(60, function()
-      if app then app:RefreshAll() end
+      if not app then return end
+
+      -- When the UI is hidden, refreshing every minute is wasteful.
+      -- Keep background refreshes for reminders/notifications, but at a lower cadence.
+      local uiShown = app.ui and app.ui.frame and app.ui.frame.IsShown and app.ui.frame:IsShown()
+      if uiShown then
+        app:RefreshAll()
+        return
+      end
+
+      local nowEpoch = time()
+      if (nowEpoch - (lastBackgroundRefreshEpoch or 0)) >= 300 then
+        lastBackgroundRefreshEpoch = nowEpoch
+        app:RefreshAll()
+      end
     end)
 
   elseif event == "CALENDAR_UPDATE_EVENT_LIST" then
-		if app then
-			-- CollectWindow() may temporarily call CalendarAPI.SetMonth() to load holiday data
-			-- for distant months. That API call fires CALENDAR_UPDATE_EVENT_LIST, so we must
-			-- ignore updates that originate from our own scan to avoid re-entrancy.
-			local calendar = app.calendar
-			if calendar and calendar.IsSuppressingEventListUpdates and calendar:IsSuppressingEventListUpdates() then
-				return
-			end
-			app:RefreshAll()
-    else
-      pendingCalendarUpdate = true
-    end
+    ScheduleCalendarRefresh()
   end
 end)

@@ -64,14 +64,58 @@ function CalendarService:Constructor(logger, dateUtil)
   self._tmpByKey = {}
   self._tmpOrder = {}
   self._tmpFiltered = {}
+
+  -- Search tab can query up to a year of calendar data. Scanning the calendar API is expensive,
+  -- so we cache a compact "next-occurrence" index and reuse it while the UI is open.
+  self._searchCache = { expiresEpoch = 0, maxDaysAhead = 0, events = {} }
+  self._searchBestByKey = {}
+
+  -- Blizzard_Calendar is loaded on-demand. If it's not loaded yet, many calendar queries
+  -- return empty results until the player opens the calendar UI at least once.
+  self._calendarLoaded = false
+end
+
+function CalendarService:_EnsureCalendarLoaded()
+  if self._calendarLoaded then return true end
+
+  if type(IsAddOnLoaded) == "function" and IsAddOnLoaded("Blizzard_Calendar") then
+    self._calendarLoaded = true
+    return true
+  end
+
+  -- Prefer modern C_AddOns, but fall back to LoadAddOn for older API variants.
+  if type(C_AddOns) == "table" and type(C_AddOns.LoadAddOn) == "function" then
+    pcall(C_AddOns.LoadAddOn, "Blizzard_Calendar")
+  elseif type(LoadAddOn) == "function" then
+    pcall(LoadAddOn, "Blizzard_Calendar")
+  end
+
+  self._calendarLoaded = (type(IsAddOnLoaded) == "function") and IsAddOnLoaded("Blizzard_Calendar") or false
+  return self._calendarLoaded
 end
 
 function CalendarService:RequestRefresh()
   self._descCache = {} -- descriptions can change as calendar data loads
   self._iconCache = {}
   self._creatorCache = {}
+  self:InvalidateSearchCache()
+
+  -- Ensure the calendar subsystem is loaded so future CollectWindow calls have data.
+  self:_EnsureCalendarLoaded()
   C_Calendar.OpenCalendar()
 end
+
+function CalendarService:InvalidateSearchCache()
+  if not self._searchCache then return end
+  self._searchCache.expiresEpoch = 0
+  self._searchCache.maxDaysAhead = 0
+  if self._searchCache.events then
+    for i = #self._searchCache.events, 1, -1 do
+      self._searchCache.events[i] = nil
+    end
+  end
+end
+
 
 local function mkKey(title, startEpoch, endEpoch)
   return (title or "?") .. "|" .. (startEpoch or 0) .. "|" .. (endEpoch or 0)
@@ -98,9 +142,8 @@ end
 
 local function holidayTextureByName(monthOffset, monthDay, title)
   if not title or not monthOffset or not monthDay then return nil end
-  if monthOffset ~= 0 and monthOffset ~= 1 then return nil end
-  for i = 1, 50 do
-    local holidayInfo = C_Calendar.GetHolidayInfo(monthOffset, monthDay, i)
+  for holidayIndex = 1, 50 do
+    local holidayInfo = C_Calendar.GetHolidayInfo(monthOffset, monthDay, holidayIndex)
     if not holidayInfo then break end
     if holidayInfo.name == title and holidayInfo.texture then
       return holidayInfo.texture
@@ -111,10 +154,8 @@ end
 
 local function holidayDescByName(monthOffset, monthDay, title)
   if not title or not monthOffset or not monthDay then return nil end
-  -- GetHolidayInfo only accepts offset 0 or 1.
-  if monthOffset ~= 0 and monthOffset ~= 1 then return nil end
-  for i = 1, 50 do
-    local holidayInfo = C_Calendar.GetHolidayInfo(monthOffset, monthDay, i)
+  for holidayIndex = 1, 50 do
+    local holidayInfo = C_Calendar.GetHolidayInfo(monthOffset, monthDay, holidayIndex)
     if not holidayInfo then break end
     if holidayInfo.name == title and not isBlank(holidayInfo.description) then
       return holidayInfo.description
@@ -126,10 +167,10 @@ end
 local function findEventIndexByScan(eventID, monthOffset, monthDay)
   if not eventID or monthOffset == nil or monthDay == nil then return nil end
   local numDayEvents = C_Calendar.GetNumDayEvents(monthOffset, monthDay)
-  for i = 1, numDayEvents do
-    local dayEvent = C_Calendar.GetDayEvent(monthOffset, monthDay, i)
+  for eventIndex = 1, numDayEvents do
+    local dayEvent = C_Calendar.GetDayEvent(monthOffset, monthDay, eventIndex)
     if dayEvent and dayEvent.eventID == eventID then
-      return { offsetMonths = monthOffset, monthDay = monthDay, eventIndex = i }
+      return { offsetMonths = monthOffset, monthDay = monthDay, eventIndex = eventIndex }
     end
   end
   return nil
@@ -379,11 +420,251 @@ function CalendarService:EnhanceEventIcon(event)
   end
 end
 
+
+local function NormalizeForSearch(text)
+  if type(text) ~= "string" then return "" end
+  -- Strip common Blizzard formatting so plain substring search behaves.
+  local cleaned = text
+  cleaned = cleaned:gsub("|c%x%x%x%x%x%x%x%x", "")
+  cleaned = cleaned:gsub("|r", "")
+  cleaned = cleaned:gsub("|T.-|t", "")
+  cleaned = cleaned:gsub("%s+", " ")
+  cleaned = strtrim(cleaned)
+  return cleaned:lower()
+end
+
+-- Key normalization is stricter than the display normalization above. Holidays sometimes use
+-- punctuation/spacing variants across APIs (day events vs holiday rows). Converting all
+-- non-alphanumerics to spaces keeps logical keys stable and prevents duplicates.
+local function NormalizeKeyText(text)
+  local cleaned = NormalizeForSearch(text)
+  cleaned = cleaned:gsub("[^%w]+", " ")
+  cleaned = cleaned:gsub("%s+", " ")
+  return strtrim(cleaned)
+end
+
+local function OccurrencePriority(nowEpoch, eventData)
+  if not eventData then return 3 end
+  local startEpoch = eventData.startEpoch or 0
+  local endEpoch = eventData.endEpoch or 0
+  if startEpoch <= nowEpoch and endEpoch >= nowEpoch then
+    return 0 -- currently active
+  end
+  if startEpoch >= nowEpoch then
+    return 1 -- upcoming
+  end
+  return 2 -- past (should be filtered out)
+end
+
+local function ChooseBetterOccurrence(nowEpoch, existing, candidate)
+  if not existing then return candidate end
+  if not candidate then return existing end
+
+  local existingPriority = OccurrencePriority(nowEpoch, existing)
+  local candidatePriority = OccurrencePriority(nowEpoch, candidate)
+  if candidatePriority ~= existingPriority then
+    return (candidatePriority < existingPriority) and candidate or existing
+  end
+
+  return ((candidate.startEpoch or 0) < (existing.startEpoch or 0)) and candidate or existing
+end
+
+-- A compact "search index" for calendar events: one entry per logical event/holiday, containing the
+-- active occurrence (if any) or else the next upcoming occurrence within the window.
+function CalendarService:CollectSearchIndex(maxDaysAhead)
+  local nowEpoch = time()
+  maxDaysAhead = tonumber(maxDaysAhead) or 0
+  if maxDaysAhead < 1 then maxDaysAhead = 1 end
+
+  self._searchCache = self._searchCache or { expiresEpoch = 0, maxDaysAhead = 0, events = {} }
+  self._searchBestByKey = self._searchBestByKey or {}
+
+  local cache = self._searchCache
+  if cache.expiresEpoch and nowEpoch < cache.expiresEpoch and cache.maxDaysAhead and cache.maxDaysAhead >= maxDaysAhead then
+    return cache.events or {}
+  end
+
+  local CalendarAPI = C_Calendar
+
+  -- Calendar data is loaded lazily; ensure the subsystem is loaded and open periodically so we
+  -- have up-to-date results.
+  if not self._lastOpenCalendarEpoch or (nowEpoch - self._lastOpenCalendarEpoch) > 300 then
+    self:_EnsureCalendarLoaded()
+    CalendarAPI.OpenCalendar()
+    self._lastOpenCalendarEpoch = nowEpoch
+  end
+
+  local GetNumDayEvents = CalendarAPI.GetNumDayEvents
+  local GetDayEvent = CalendarAPI.GetDayEvent
+  local GetHolidayInfo = CalendarAPI.GetHolidayInfo
+  local GetMonthInfo = CalendarAPI.GetMonthInfo
+  local dateUtil = self.dateUtil
+
+  local startDayEpoch = time(date("*t", nowEpoch))
+  local endEpoch = nowEpoch + maxDaysAhead * 86400
+
+  local bestByKey = self._searchBestByKey
+  wipe(bestByKey)
+
+  local out = cache.events or {}
+  cache.events = out
+  wipeArray(out)
+
+  -- Snapshot the current viewed month so we can restore it after preloading months.
+  local originalMonthInfo = GetMonthInfo and GetMonthInfo() or nil
+  local originalMonth = originalMonthInfo and originalMonthInfo.month or nil
+  local originalYear = originalMonthInfo and originalMonthInfo.year or nil
+
+  local baseline = (C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime)
+    and C_DateAndTime.GetCurrentCalendarTime()
+    or date("*t", nowEpoch)
+
+  local baseMonth = tonumber(baseline.month) or date("*t", nowEpoch).month
+  local baseYear = tonumber(baseline.year) or date("*t", nowEpoch).year
+
+  local function monthYearForOffset(offset)
+    local monthIndex = (baseYear * 12) + baseMonth + offset
+    local year = math.floor((monthIndex - 1) / 12)
+    local month = monthIndex - (year * 12)
+    return month, year
+  end
+
+  local function upsertLogical(key, candidate)
+    if not key or not candidate then return end
+    if candidate.endEpoch < nowEpoch or candidate.startEpoch > endEpoch then return end
+    bestByKey[key] = ChooseBetterOccurrence(nowEpoch, bestByKey[key], candidate)
+  end
+
+  -- Preload months one-at-a-time. This is significantly cheaper than switching months for every day.
+  local maxMonthOffset = math.floor(maxDaysAhead / 28) + 1
+  if maxMonthOffset > 14 then maxMonthOffset = 14 end
+
+  for monthOffset = 0, maxMonthOffset do
+    if CalendarAPI.SetAbsMonth then
+      local month, year = monthYearForOffset(monthOffset)
+      CalendarAPI.SetAbsMonth(month, year)
+    end
+
+    local monthInfo = GetMonthInfo and GetMonthInfo() or nil
+    local month = monthInfo and monthInfo.month or nil
+    local year = monthInfo and monthInfo.year or nil
+    local numDays = (monthInfo and monthInfo.numDays) or 31
+
+    if month and year then
+      for monthDay = 1, numDays do
+        local dayEpoch = time({ year = year, month = month, day = monthDay, hour = 0, min = 0, sec = 0, isdst = false })
+        if dayEpoch < startDayEpoch then
+          -- Skip days earlier than our window start (happens in the first month).
+        elseif dayEpoch > (startDayEpoch + maxDaysAhead * 86400) then
+          break
+        else
+          local numDayEvents = GetNumDayEvents(0, monthDay)
+          for eventIndex = 1, numDayEvents do
+            local dayEvent = GetDayEvent(0, monthDay, eventIndex)
+            if dayEvent and dayEvent.startTime then
+              local startEpoch = dateUtil:CalendarTimeToEpoch(dayEvent.startTime)
+              if startEpoch then
+                local eventEndEpoch = ComputeEndEpoch(startEpoch, dayEvent.endTime, dayEvent.calendarType, dateUtil)
+                if eventEndEpoch then
+                  -- Some holidays surface both as "day events" and as holiday rows. Prefer a
+                  -- single logical entry keyed by title so search doesn't show duplicates.
+                  local calendarType = tostring(dayEvent.calendarType or "")
+                  local isHolidayEvent = calendarType:upper() == "HOLIDAY"
+
+                  local logicalKey
+                  if isHolidayEvent then
+                    logicalKey = "holiday:" .. NormalizeKeyText(dayEvent.title)
+                  elseif dayEvent.eventID ~= nil then
+                    logicalKey = "event:" .. tostring(dayEvent.eventID)
+                  else
+                    logicalKey = "cal:" .. calendarType .. ":" .. NormalizeForSearch(dayEvent.title)
+                  end
+
+                  local record = {
+                    id = dayEvent.eventID or mkKey(dayEvent.title, startEpoch, eventEndEpoch),
+                    eventID = dayEvent.eventID,
+                    title = dayEvent.title,
+                    description = nil,
+                    startEpoch = startEpoch,
+                    endEpoch = eventEndEpoch,
+                    endIsAssumed = (not dayEvent.endTime) or nil,
+                    icon = dayEvent.iconTexture,
+                    iconIsCalendar = true,
+                    source = "Calendar (" .. (dayEvent.calendarType or "UNKNOWN") .. ")",
+                    calendarType = dayEvent.calendarType,
+                    invitedBy = (not isBlank(dayEvent.invitedBy)) and strtrim(dayEvent.invitedBy) or nil,
+                    monthOffset = 0,
+                    monthDay = monthDay,
+                  }
+                  record.__searchTitle = NormalizeForSearch(record.title)
+                  record.__searchDesc = ""
+                  upsertLogical(logicalKey, record)
+                end
+              end
+            end
+          end
+
+          -- Holidays: key by name (holidayID is not stable across days).
+          for holidayIndex = 1, 50 do
+            local holidayInfo = GetHolidayInfo(0, monthDay, holidayIndex)
+            if not holidayInfo then break end
+
+            local title = holidayInfo.name
+            -- Also include the start/end in the key so multi-year scans don't return duplicate
+            -- rows for the same named holiday if the API exposes multiple overlapping entries.
+            local logicalKey = "holiday:" .. NormalizeKeyText(title)
+
+            local startEpoch = holidayInfo.startTime and dateUtil:CalendarTimeToEpoch(holidayInfo.startTime) or dayEpoch
+            local holidayEndEpoch = holidayInfo.endTime and dateUtil:CalendarTimeToEpoch(holidayInfo.endTime) or (dayEpoch + 86399)
+
+            local texture = holidayInfo.texture or holidayTextureByName(0, monthDay, title)
+
+            local record = {
+              id = "holiday:" .. mkKey(title, startEpoch, holidayEndEpoch),
+              eventID = nil,
+              holidayID = holidayInfo.holidayID or holidayInfo.holidayId or holidayInfo.id or holidayInfo.ID,
+              title = title,
+              description = (not isBlank(holidayInfo.description)) and holidayInfo.description or nil,
+              startEpoch = startEpoch,
+              endEpoch = holidayEndEpoch,
+              icon = texture,
+              iconIsCalendar = false,
+              source = "Holiday",
+              calendarType = "HOLIDAY",
+              monthOffset = 0,
+              monthDay = monthDay,
+            }
+            record.__searchTitle = NormalizeForSearch(record.title)
+            record.__searchDesc = NormalizeForSearch(record.description)
+            upsertLogical(logicalKey, record)
+          end
+        end
+      end
+    end
+  end
+
+  if CalendarAPI.SetAbsMonth and originalMonth and originalYear then
+    CalendarAPI.SetAbsMonth(originalMonth, originalYear)
+  end
+
+  for _, event in pairs(bestByKey) do
+    out[#out + 1] = event
+  end
+
+  table.sort(out, SortByStartThenTitle)
+
+  cache.maxDaysAhead = maxDaysAhead
+  cache.expiresEpoch = nowEpoch + 300 -- 5 minutes
+
+  return out
+end
+
 function CalendarService:CollectWindow(maxDaysAhead)
   local nowEpoch = time()
-  -- Calendar data is loaded lazily and the APIs are stateful.
-  -- Ensure the calendar is opened before querying day events; throttle to avoid spam.
-  if not self._lastOpenCalendarEpoch or (nowEpoch - self._lastOpenCalendarEpoch) > 30 then
+
+  -- Calendar data is loaded lazily; keep the calendar opened, but throttle the call.
+  if not self._lastOpenCalendarEpoch or (nowEpoch - self._lastOpenCalendarEpoch) > 300 then
+    self:_EnsureCalendarLoaded()
     C_Calendar.OpenCalendar()
     self._lastOpenCalendarEpoch = nowEpoch
   end
@@ -393,9 +674,12 @@ function CalendarService:CollectWindow(maxDaysAhead)
   local GetDayEvent = CalendarAPI.GetDayEvent
   local GetHolidayInfo = CalendarAPI.GetHolidayInfo
   local dateUtil = self.dateUtil
-  local now = nowEpoch
-  local startDayEpoch = time(date("*t", now))
-  local endEpoch = now + maxDaysAhead * 86400
+
+  maxDaysAhead = tonumber(maxDaysAhead) or 0
+  if maxDaysAhead < 0 then maxDaysAhead = 0 end
+
+  local startDayEpoch = time(date("*t", nowEpoch))
+  local endEpoch = nowEpoch + maxDaysAhead * 86400
 
   local byKey = self._tmpByKey
   wipe(byKey)
@@ -412,7 +696,6 @@ function CalendarService:CollectWindow(maxDaysAhead)
       return
     end
 
-    -- Prefer one record, but always merge stable holidayID + description when available.
     local chosen = prefer(existing, event)
     local other = (chosen == existing) and event or existing
 
@@ -432,24 +715,9 @@ function CalendarService:CollectWindow(maxDaysAhead)
     byKey[key] = chosen
   end
 
-		-- NOTE: Calling CalendarAPI.SetMonth() triggers CALENDAR_UPDATE_EVENT_LIST.
-		-- EventQ listens to that event and refreshes its data, which would re-enter
-		-- CollectWindow() and cause a recursion/stack overflow.
-		-- We guard internal month switching so the event handler can ignore updates
-		-- that originate from this routine.
-		local loadedMonthOffset = nil
-		self._eventListUpdateSuppressed = false
-		for dayOffset = 0, maxDaysAhead do
+  for dayOffset = 0, maxDaysAhead do
     local dayEpoch = startDayEpoch + dayOffset * 86400
     local monthOffset, monthDay = dateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
-
-			-- Holiday/event data for a given month is loaded on demand. Ensure the target month is active
-			-- before querying day events/holidays so year-wide searches can see distant holidays.
-			if CalendarAPI.SetMonth and monthOffset ~= loadedMonthOffset then
-				self._eventListUpdateSuppressed = true
-				CalendarAPI.SetMonth(monthOffset)
-				loadedMonthOffset = monthOffset
-			end
 
     local numDayEvents = GetNumDayEvents(monthOffset, monthDay)
     for eventIndex = 1, numDayEvents do
@@ -457,17 +725,16 @@ function CalendarService:CollectWindow(maxDaysAhead)
       if dayEvent and dayEvent.startTime then
         local startEpoch = dateUtil:CalendarTimeToEpoch(dayEvent.startTime)
         if startEpoch then
-          local endEpoch = ComputeEndEpoch(startEpoch, dayEvent.endTime, dayEvent.calendarType, dateUtil)
-          if endEpoch then
-            local isEndAssumed = (not dayEvent.endTime)
+          local eventEndEpoch = ComputeEndEpoch(startEpoch, dayEvent.endTime, dayEvent.calendarType, dateUtil)
+          if eventEndEpoch then
             upsert({
-              id = dayEvent.eventID or mkKey(dayEvent.title, startEpoch, endEpoch),
+              id = dayEvent.eventID or mkKey(dayEvent.title, startEpoch, eventEndEpoch),
               eventID = dayEvent.eventID,
               title = dayEvent.title,
-              description = nil, -- fetched lazily on tooltip
+              description = nil,
               startEpoch = startEpoch,
-              endEpoch = endEpoch,
-              endIsAssumed = isEndAssumed or nil,
+              endEpoch = eventEndEpoch,
+              endIsAssumed = (not dayEvent.endTime) or nil,
               icon = dayEvent.iconTexture,
               iconIsCalendar = true,
               source = "Calendar (" .. (dayEvent.calendarType or "UNKNOWN") .. ")",
@@ -481,58 +748,44 @@ function CalendarService:CollectWindow(maxDaysAhead)
       end
     end
 
-		-- Holidays (already include description field). Holiday info is backed by the active month,
-		-- so we query every day to catch multi-day holidays across months.
-			for holidayIndex = 1, 50 do
-				local holidayInfo = GetHolidayInfo(monthOffset, monthDay, holidayIndex)
-			if not holidayInfo then break end
-			local holidayID = holidayInfo.holidayID or holidayInfo.holidayId or holidayInfo.id or holidayInfo.ID
+    for holidayIndex = 1, 50 do
+      local holidayInfo = GetHolidayInfo(monthOffset, monthDay, holidayIndex)
+      if not holidayInfo then break end
 
-			local startEpoch = holidayInfo.startTime and dateUtil:CalendarTimeToEpoch(holidayInfo.startTime) or dayEpoch
-			local endEpoch = holidayInfo.endTime and dateUtil:CalendarTimeToEpoch(holidayInfo.endTime) or (dayEpoch + 86399)
-			local holidayTexture = holidayTextureByName(monthOffset, monthDay, holidayInfo.name) or holidayInfo.texture
+      local startEpoch = holidayInfo.startTime and dateUtil:CalendarTimeToEpoch(holidayInfo.startTime) or dayEpoch
+      local holidayEndEpoch = holidayInfo.endTime and dateUtil:CalendarTimeToEpoch(holidayInfo.endTime) or (dayEpoch + 86399)
+      local holidayID = holidayInfo.holidayID or holidayInfo.holidayId or holidayInfo.id or holidayInfo.ID
+      local holidayTexture = holidayInfo.texture or holidayTextureByName(monthOffset, monthDay, holidayInfo.name)
 
-			upsert({
-				id = "holiday:" .. mkKey(holidayInfo.name, startEpoch, endEpoch),
-				eventID = nil,
-				holidayID = holidayID,
-				title = holidayInfo.name,
-				description = holidayInfo.description,
-				startEpoch = startEpoch,
-				endEpoch = endEpoch,
-				icon = holidayTexture,
-				iconIsCalendar = false,
-				source = "Holiday",
-				calendarType = "HOLIDAY",
-				monthOffset = monthOffset,
-				monthDay = monthDay,
-			})
-		end
+      upsert({
+        id = "holiday:" .. mkKey(holidayInfo.name, startEpoch, holidayEndEpoch),
+        eventID = nil,
+        holidayID = holidayID,
+        title = holidayInfo.name,
+        description = holidayInfo.description,
+        startEpoch = startEpoch,
+        endEpoch = holidayEndEpoch,
+        icon = holidayTexture,
+        iconIsCalendar = false,
+        source = "Holiday",
+        calendarType = "HOLIDAY",
+        monthOffset = monthOffset,
+        monthDay = monthDay,
+      })
+    end
   end
-
-		if CalendarAPI.SetMonth and loadedMonthOffset and loadedMonthOffset ~= 0 then
-			self._eventListUpdateSuppressed = true
-			CalendarAPI.SetMonth(0)
-		end
-		self._eventListUpdateSuppressed = false
 
   local filtered = self._tmpFiltered
   wipeArray(filtered)
   for _, key in ipairs(order) do
     local event = byKey[key]
-    if event and event.endEpoch >= now and event.startEpoch <= endEpoch then
+    if event and event.endEpoch >= nowEpoch and event.startEpoch <= endEpoch then
       filtered[#filtered + 1] = event
     end
   end
 
   table.sort(filtered, SortByStartThenTitle)
-
   return filtered
-end
-
-
-function CalendarService:IsSuppressingEventListUpdates()
-	return self._eventListUpdateSuppressed == true
 end
 
 ns.CalendarService = CalendarService
