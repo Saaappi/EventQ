@@ -1399,8 +1399,8 @@ function MainFrame:_EnsurePortableToggleButtons()
   local function CreateToggleButton(normalAtlas, pushedAtlas)
     local button = CreateFrame("Button", nil, self.frame)
     button:SetSize(16, 35)
-    -- Anchor the button flush against the frame edge (no visual gap).
-    button:SetPoint("TOPRIGHT", self.frame, "TOPLEFT", 0, -18)
+    -- Some atlases have a couple pixels of transparent padding; overlap slightly so the button reads flush.
+    button:SetPoint("TOPRIGHT", self.frame, "TOPLEFT", 2, -18)
 
     ApplyAtlasButtonTextures(button, normalAtlas, pushedAtlas)
 
@@ -1523,7 +1523,14 @@ function MainFrame:SetPortableMode(enabled)
       end
     end
 
-    self:SetActiveTab(self._activeTab or TAB_KEY.MAIN)
+    -- Portable mode hides the main panels via :Hide(), so if we're already on the same tab key
+    -- SetActiveTab() would early-return and never re-show the panels. Force a visibility refresh.
+    local tabKey = self._activeTab or TAB_KEY.MAIN
+    self._activeTab = nil
+    self:SetActiveTab(tabKey)
+
+    -- Leaving portable mode should immediately repopulate the normal lists without requiring a tab switch.
+    self:UpdateLists()
   end
 
   self:_UpdatePortableToggleVisibility()
