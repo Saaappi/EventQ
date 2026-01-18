@@ -4,6 +4,15 @@ local MainFrame = ns.Class:Create("MainFrame")
 
 local ROW_HEIGHT = 40
 local LIST_PADDING_TOP = 34
+local DEFAULT_FRAME_WIDTH = 780
+local DEFAULT_FRAME_HEIGHT = 485
+
+-- Portable mode uses a compact window that only shows queueable event icons.
+local PORTABLE_FRAME_WIDTH = 240
+local PORTABLE_FRAME_HEIGHT = 320
+local PORTABLE_ICON_EXTENT = 44
+local PORTABLE_ICON_SIZE = 32
+
 
 local UPCOMING_WINDOW_SECONDS = 8 * 86400
 
@@ -255,6 +264,10 @@ function MainFrame:SetActiveTab(tabKey)
 
   if self.eventsPanel then self.eventsPanel:SetShown(showEvents) end
   if self.searchPanel then self.searchPanel:SetShown(showSearch) end
+
+  if self._UpdatePortableToggleVisibility then
+    self:_UpdatePortableToggleVisibility()
+  end
 end
 
 
@@ -1177,6 +1190,308 @@ CreateModernList = function(parent, app, layout)
 end
 
 
+
+
+-- -----------------------------------------------------------------------------
+-- Portable mode
+-- -----------------------------------------------------------------------------
+
+local function ApplyAtlasButtonTextures(button, normalAtlas, pushedAtlas, highlightAtlas)
+  if not button then return end
+
+  if button.SetNormalAtlas and normalAtlas then
+    button:SetNormalAtlas(normalAtlas)
+  elseif button.SetNormalTexture and normalAtlas and button.normalTexture then
+    button.normalTexture:SetAtlas(normalAtlas)
+  end
+
+  if button.SetPushedAtlas and pushedAtlas then
+    button:SetPushedAtlas(pushedAtlas)
+  elseif button.SetPushedTexture and pushedAtlas and button.pushedTexture then
+    button.pushedTexture:SetAtlas(pushedAtlas)
+  end
+
+  if highlightAtlas and button.SetHighlightAtlas then
+    button:SetHighlightAtlas(highlightAtlas)
+  end
+end
+
+local function IsEventOngoing(eventData, nowEpoch)
+  if not (eventData and eventData.startEpoch and eventData.endEpoch) then return false end
+  nowEpoch = nowEpoch or time()
+  return eventData.startEpoch <= nowEpoch and eventData.endEpoch >= nowEpoch
+end
+
+local function ResolveQueueableInfo(eventData)
+  if not IsEventOngoing(eventData) then return nil end
+
+  local dungeonID
+  if ns.DungeonQueue and ns.DungeonQueue.GetDungeonID then
+    dungeonID = ns.DungeonQueue:GetDungeonID(eventData)
+  end
+
+  local isBrawl = false
+  if ns.PVPQueue and ns.PVPQueue.IsBrawlEvent then
+    isBrawl = ns.PVPQueue:IsBrawlEvent(eventData)
+  end
+
+  if dungeonID then
+    return { dungeonID = dungeonID, isBrawl = false }
+  end
+
+  if isBrawl then
+    return { dungeonID = nil, isBrawl = true }
+  end
+
+  return nil
+end
+
+local function TryQueuePortableEvent(queueInfo)
+  if not queueInfo then return false end
+
+  if queueInfo.dungeonID and LFG_JoinDungeon then
+    LFG_JoinDungeon(LE_LFG_CATEGORY_LFD, queueInfo.dungeonID, LFDDungeonList, LFDHiddenByCollapseList)
+    return true
+  end
+
+  if queueInfo.isBrawl and ns.PVPQueue and ns.PVPQueue.JoinBrawl then
+    return ns.PVPQueue:JoinBrawl() and true or false
+  end
+
+  return false
+end
+
+function MainFrame:_EnsurePortablePanel()
+  if self.portablePanel then return end
+  if not self.frame then return end
+
+  local panel = CreateFrame("Frame", nil, self.frame)
+  panel:SetPoint("TOPLEFT", 10, -32)
+  panel:SetPoint("BOTTOMRIGHT", -10, 10)
+  panel:Hide()
+
+  local scrollBox = CreateFrame("Frame", nil, panel, "WowScrollBoxList")
+  scrollBox:SetPoint("TOPLEFT", 0, 0)
+  scrollBox:SetPoint("BOTTOMRIGHT", -18, 0)
+
+  local scrollBar = CreateFrame("Slider", nil, panel, "MinimalScrollBar")
+  scrollBar:SetPoint("TOPRIGHT", -4, 0)
+  scrollBar:SetPoint("BOTTOMRIGHT", -4, 0)
+
+  RunTemplateOnLoad(scrollBox)
+  RunTemplateOnLoad(scrollBar)
+
+  local view = CreateScrollBoxListLinearView()
+  view:SetElementExtent(PORTABLE_ICON_EXTENT)
+  view:SetElementInitializer("EventQPortableIconButtonTemplate", function(button, elementData)
+    local elementWidth = scrollBox:GetWidth() or 0
+    if elementWidth < 30 then elementWidth = 180 end
+
+    button:SetWidth(elementWidth)
+    button:SetHeight(PORTABLE_ICON_EXTENT)
+
+    if not button._eventqIconHolder then
+      local holder = CreateFrame("Frame", nil, button)
+      holder:SetSize(PORTABLE_ICON_SIZE, PORTABLE_ICON_SIZE)
+      holder:SetPoint("LEFT", 6, 0)
+
+      local icon = holder:CreateTexture(nil, "ARTWORK")
+      icon:SetAllPoints(holder)
+      icon:SetTexCoord(ICON_TEXCOORD_LEFT, ICON_TEXCOORD_RIGHT, ICON_TEXCOORD_TOP, ICON_TEXCOORD_BOTTOM)
+
+      local border = holder:CreateTexture(nil, "OVERLAY")
+      border:SetTexture("Interface/Common/WhiteIconFrame")
+      border:SetAllPoints(holder)
+      border:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+      border:SetAlpha(0.95)
+
+      button._eventqIconHolder = holder
+      button._eventqIcon = icon
+      button._eventqIconBorder = border
+    end
+
+    local eventData = elementData and elementData.event
+    local queueInfo = elementData and elementData.queueInfo
+
+    button._eventqPortableEvent = eventData
+    button._eventqPortableQueueInfo = queueInfo
+
+    local iconTexture = button._eventqIcon
+    if iconTexture then
+      local icon = (eventData and eventData.icon) or DEFAULT_CUSTOM_ICON
+      iconTexture:SetTexture(icon)
+
+      local tc = eventData and eventData._eventqTexCoord
+      if type(tc) == "table" and #tc == 4 and iconTexture.SetTexCoord then
+        iconTexture:SetTexCoord(tc[1], tc[2], tc[3], tc[4])
+      elseif iconTexture.SetTexCoord then
+        iconTexture:SetTexCoord(ICON_TEXCOORD_LEFT, ICON_TEXCOORD_RIGHT, ICON_TEXCOORD_TOP, ICON_TEXCOORD_BOTTOM)
+      end
+    end
+
+    button:SetScript("OnEnter", function()
+      if not (GameTooltip and eventData) then return end
+      GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+      GameTooltip:SetText(eventData.title or "", 1, 1, 1)
+      GameTooltip:Show()
+    end)
+
+    button:SetScript("OnLeave", function()
+      if GameTooltip then GameTooltip:Hide() end
+    end)
+
+    button:SetScript("OnClick", function(_, mouseButton)
+      if mouseButton ~= "LeftButton" then return end
+      TryQueuePortableEvent(queueInfo)
+    end)
+  end)
+
+  ScrollUtil.InitScrollBoxListWithScrollBar(scrollBox, scrollBar, view)
+
+  local dataProvider = CreateDataProvider()
+  scrollBox:SetDataProvider(dataProvider)
+
+  self.portablePanel = panel
+  self.portableScrollBox = scrollBox
+  self.portableScrollBar = scrollBar
+  self.portableDP = dataProvider
+  self._portableItemPool = {}
+end
+
+function MainFrame:_EnsurePortableToggleButtons()
+  if self._portableEnterButton or not self.frame then return end
+
+  local function CreateToggleButton(normalAtlas, pushedAtlas)
+    local button = CreateFrame("Button", nil, self.frame)
+    button:SetSize(16, 35)
+    button:SetPoint("TOPLEFT", self.frame, "TOPLEFT", -16, -18)
+
+    ApplyAtlasButtonTextures(button, normalAtlas, pushedAtlas)
+
+    button:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    local hi = button:GetHighlightTexture()
+    if hi then hi:SetAllPoints(button) end
+
+    return button
+  end
+
+  local enterBtn = CreateToggleButton("gm-btnforward-normal", "gm-btnforward-pressed")
+  enterBtn:Hide()
+  enterBtn:SetScript("OnClick", function()
+    if self._activeTab ~= TAB_KEY.MAIN then
+      self:SetActiveTab(TAB_KEY.MAIN)
+    end
+    self:SetPortableMode(true)
+  end)
+
+  local exitBtn = CreateToggleButton("gm-btnback-normal", "gm-btnback-pressed")
+  exitBtn:Hide()
+  exitBtn:SetScript("OnClick", function() self:SetPortableMode(false) end)
+
+  self._portableEnterButton = enterBtn
+  self._portableExitButton = exitBtn
+end
+
+function MainFrame:_UpdatePortableToggleVisibility()
+  if not self.frame then return end
+  self:_EnsurePortableToggleButtons()
+
+  local showEnter = (not self._portableMode) and (self._activeTab == TAB_KEY.MAIN)
+  local showExit = not not self._portableMode
+
+  if self._portableEnterButton then self._portableEnterButton:SetShown(showEnter) end
+  if self._portableExitButton then self._portableExitButton:SetShown(showExit) end
+end
+
+function MainFrame:_UpdatePortableList()
+  if not (self.portableDP and self._portableItemPool) then return end
+
+  self.portableDP:Flush()
+
+  local nowEpoch = time()
+  local pool = self._portableItemPool
+  local used = 0
+
+  for _, eventData in ipairs(self.app.ongoing or {}) do
+    local queueInfo = ResolveQueueableInfo(eventData)
+    if queueInfo then
+      used = used + 1
+      local item = pool[used]
+      if not item then
+        item = {}
+        pool[used] = item
+      end
+      item.event = eventData
+      item.queueInfo = queueInfo
+      self.portableDP:Insert(item)
+    end
+  end
+
+  for i = used + 1, #pool do
+    pool[i] = nil
+  end
+
+  if self.portableScrollBox then
+    self.portableScrollBox:SetDataProvider(self.portableDP)
+  end
+end
+
+function MainFrame:SetPortableMode(enabled)
+  enabled = not not enabled
+  if self._portableMode == enabled then return end
+
+  self._portableMode = enabled
+  self:_EnsurePortablePanel()
+
+  if enabled then
+    self._normalFrameWidth = self.frame:GetWidth() or DEFAULT_FRAME_WIDTH
+    self._normalFrameHeight = self.frame:GetHeight() or DEFAULT_FRAME_HEIGHT
+
+    self.frame:SetSize(PORTABLE_FRAME_WIDTH, PORTABLE_FRAME_HEIGHT)
+
+    -- Portable mode is intentionally minimal; hide main tabs/panels and focus on queueable icons.
+    if self.titleText then self.titleText:Hide() end
+    if self.versionText then self.versionText:Hide() end
+    if self.configButton then self.configButton:Hide() end
+
+    if self._sideTabs then
+      for _, tab in pairs(self._sideTabs) do
+        tab:SetShown(false)
+      end
+    end
+
+    if self.left then self.left:Hide() end
+    if self.right then self.right:Hide() end
+    if self.editor then self.editor:Hide() end
+    if self.eventsPanel then self.eventsPanel:Hide() end
+    if self.searchPanel then self.searchPanel:Hide() end
+
+    if self.portablePanel then self.portablePanel:Show() end
+    self:_UpdatePortableList()
+  else
+    local width = self._normalFrameWidth or DEFAULT_FRAME_WIDTH
+    local height = self._normalFrameHeight or DEFAULT_FRAME_HEIGHT
+    self.frame:SetSize(width, height)
+
+    if self.titleText then self.titleText:Show() end
+    if self.versionText then self.versionText:Show() end
+    if self.configButton then self.configButton:Show() end
+
+    if self.portablePanel then self.portablePanel:Hide() end
+
+    self:_EnsureSideTabs()
+    if self._sideTabs then
+      for _, tab in pairs(self._sideTabs) do
+        tab:SetShown(true)
+      end
+    end
+
+    self:SetActiveTab(self._activeTab or TAB_KEY.MAIN)
+  end
+
+  self:_UpdatePortableToggleVisibility()
+end
+
 -- Description popup for custom events (step 2 of the custom event editor).
 local function EnsureDescriptionPopup(self)
   if self._descPopup and self._descPopup.GetObjectType then
@@ -1816,7 +2131,7 @@ function MainFrame:Constructor(app)
   end
   self.frame = mainFrame
   mainFrame:Hide()
-  mainFrame:SetSize(780, 485)
+  mainFrame:SetSize(DEFAULT_FRAME_WIDTH, DEFAULT_FRAME_HEIGHT)
   -- Restore persisted position (or default to center).
   self:RestorePosition()
   mainFrame:SetMovable(true)
@@ -1840,6 +2155,7 @@ function MainFrame:Constructor(app)
   local title = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -10)
   title:SetText("EventQ")
+  self.titleText = title
 
   local ver = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   ver:SetPoint("TOP", title, "BOTTOM", 0, -2)
@@ -1857,6 +2173,8 @@ function MainFrame:Constructor(app)
 
   local close = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -6, -6)
+
+  self:_EnsurePortableToggleButtons()
 
   -- Config (cogwheel) button: bottom-left of the main frame.
   local cfgBtn = CreateFrame("Button", nil, mainFrame)
@@ -1896,6 +2214,8 @@ function MainFrame:Constructor(app)
     GameTooltip:Show()
   end)
   cfgBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+  self.configButton = cfgBtn
 
 
   -- Editor
@@ -2104,6 +2424,13 @@ function MainFrame:Constructor(app)
     else
       self:UpdateLists()
     end
+    if self._UpdatePortableToggleVisibility then
+      self:_UpdatePortableToggleVisibility()
+    end
+    if self._portableMode then
+      self:_UpdatePortableList()
+    end
+
   end)
 
   mainFrame:SetScript("OnHide", function()
@@ -2567,6 +2894,11 @@ function MainFrame:UpdateLists()
   local horizonEpoch = nowEpoch + UPCOMING_WINDOW_SECONDS
   self:_UpdateEventsTabData(nowEpoch, horizonEpoch)
   
+
+  if self._portableMode then
+    self:_UpdatePortableList()
+  end
+
 
   -- Refresh search results only when the Search tab is active and the user has entered a query.
   if self._activeTab == TAB_KEY.SEARCH then
