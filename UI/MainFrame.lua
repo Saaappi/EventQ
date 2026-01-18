@@ -280,6 +280,19 @@ function MainFrame:_EnsureEventsPanel()
   subheader:SetText("Upcoming custom events beyond 8 days")
   subheader:SetTextColor(0.75, 0.75, 0.75, 1)
 
+  -- Import/export controls for backing up and sharing custom events.
+  local importBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  importBtn:SetSize(80, 24)
+  importBtn:SetText("Import")
+  importBtn:SetPoint("TOPRIGHT", -14, -10)
+  importBtn:SetScript("OnClick", function() self:ShowImportCustomEvents() end)
+
+  local exportAllBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  exportAllBtn:SetSize(110, 24)
+  exportAllBtn:SetText("Export All")
+  exportAllBtn:SetPoint("RIGHT", importBtn, "LEFT", -8, 0)
+  exportAllBtn:SetScript("OnClick", function() self:ShowExportAllCustomEvents() end)
+
   local listLayout = {
     paddingTop = 44,
     rightInset = 20,
@@ -1019,6 +1032,58 @@ function MainFrame:CancelEditCustom()
   self:ClearEdit()
   self:ShowTransientMessage("Edit cancelled.", 1, 1, 1, 3)
   self:_UpdateEditActionButtons()
+end
+
+-- -----------------------------------------------------------------------------
+-- Import / Export (Custom Events)
+-- -----------------------------------------------------------------------------
+
+function MainFrame:_EnsureImportExportPopup()
+  if self._importExportPopup then return self._importExportPopup end
+  if ns.ImportExportPopup then
+    self._importExportPopup = ns.ImportExportPopup()
+  end
+  return self._importExportPopup
+end
+
+---@param rootId string
+---@param title string|nil
+function MainFrame:ShowExportCustomEvent(rootId, title)
+  if not (self.app and self.app.ExportCustomEvent) then return end
+  local exportText, err = self.app:ExportCustomEvent(rootId)
+  if not exportText then
+    UIErrorsFrame:AddMessage(err or "Export failed.", 1, 0.1, 0.1)
+    return
+  end
+
+  local popup = self:_EnsureImportExportPopup()
+  if not (popup and popup.ShowExport) then return end
+  local header = title and ("Export: " .. title) or "Export Custom Event"
+  popup:ShowExport(header, exportText)
+end
+
+function MainFrame:ShowExportAllCustomEvents()
+  if not (self.app and self.app.ExportAllCustomEvents) then return end
+  local exportText, err = self.app:ExportAllCustomEvents()
+  if not exportText then
+    UIErrorsFrame:AddMessage(err or "Export failed.", 1, 0.1, 0.1)
+    return
+  end
+
+  local popup = self:_EnsureImportExportPopup()
+  if popup and popup.ShowExport then
+    popup:ShowExport("Export All Custom Events", exportText)
+  end
+end
+
+function MainFrame:ShowImportCustomEvents()
+  if not (self.app and self.app.ImportCustomEvents) then return end
+  local popup = self:_EnsureImportExportPopup()
+  if not (popup and popup.ShowImport) then return end
+
+  popup:ShowImport(function(text)
+    return self.app:ImportCustomEvents(text)
+  end)
 end
 
 local function PickCogwheelAtlas()

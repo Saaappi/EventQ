@@ -413,6 +413,7 @@ function App:Constructor(db)
   end
 
   self.customStore = ns.CustomStore(db)
+  self.importExport = ns.ImportExport()
   self.calendar = ns.CalendarService(self.log, self.dateUtil)
   self.reminders = ns.ReminderService and ns.ReminderService(self.log, self.dateUtil, db) or nil
   self.ui = ns.UIMainFrame(self)
@@ -445,6 +446,79 @@ function App:Constructor(db)
   -- Keep legacy alias in sync.
   self.db.notify.enabled = not not self.db.notify.chat
   self.db.notified = self.db.notified or {} -- id -> epoch
+end
+
+-- -----------------------------------------------------------------------------
+-- Import / Export (Custom Events)
+-- -----------------------------------------------------------------------------
+
+---@param id string
+---@return string|nil exportText
+---@return string|nil err
+function App:ExportCustomEvent(id)
+  if not (id and self.customStore and self.customStore.GetById and self.importExport) then
+    return nil, "Export unavailable"
+  end
+
+  local dbEvent = self.customStore:GetById(id)
+  if not dbEvent then
+    return nil, "Event not found"
+  end
+
+  local encoded = self.importExport:EncodeEvent(dbEvent)
+  if not encoded then
+    return nil, "Could not encode event"
+  end
+
+  return encoded, nil
+end
+
+---@return string|nil exportText
+---@return string|nil err
+function App:ExportAllCustomEvents()
+  if not (self.customStore and self.customStore.GetAll and self.importExport) then
+    return nil, "Export unavailable"
+  end
+
+  local dbEvents = self.customStore:GetAll() or {}
+  if #dbEvents == 0 then
+    return nil, "No custom events to export"
+  end
+
+  local encoded = self.importExport:EncodeEvents(dbEvents)
+  if not encoded then
+    return nil, "Could not encode events"
+  end
+
+  return encoded, nil
+end
+
+---@param exportText string
+---@return integer|nil importedCount
+---@return string|nil err
+function App:ImportCustomEvents(exportText)
+  if not (self.importExport and self.importExport.DecodeEvents) then
+    return nil, "Import unavailable"
+  end
+
+  local dbEvents, err = self.importExport:DecodeEvents(exportText)
+  if not dbEvents then
+    return nil, err or "Invalid import data"
+  end
+
+  local imported = 0
+  for _, dbEvent in ipairs(dbEvents) do
+    if dbEvent and self.customStore and self.customStore.Add then
+      self.customStore:Add(dbEvent)
+      imported = imported + 1
+    end
+  end
+
+  if imported > 0 then
+    self:RefreshAll()
+  end
+
+  return imported, nil
 end
 
 function App:ToggleUI()

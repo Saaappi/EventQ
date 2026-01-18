@@ -497,6 +497,17 @@ function Row:Constructor(frame, app)
           UIDropDownMenu_AddButton(viewInfo, level)
         end
 
+        local exportInfo = UIDropDownMenu_CreateInfo()
+        exportInfo.notCheckable = true
+        exportInfo.text = isSeries and "Export Series" or "Export"
+        exportInfo.func = function()
+          local rootId = (menuData and (menuData.seriesRootId or menuData.id)) or nil
+          if rootId and MENU._eventqApp and MENU._eventqApp.ui and MENU._eventqApp.ui.ShowExportCustomEvent then
+            MENU._eventqApp.ui:ShowExportCustomEvent(rootId, menuData and menuData.title)
+          end
+        end
+        UIDropDownMenu_AddButton(exportInfo, level)
+
         if menuData and menuData.isSeriesOccurrence then
           return
         end
