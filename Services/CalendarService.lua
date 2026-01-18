@@ -69,6 +69,9 @@ function CalendarService:Constructor(logger, dateUtil)
   -- so we cache a compact "next-occurrence" index and reuse it while the UI is open.
   self._searchCache = { expiresEpoch = 0, maxDaysAhead = 0, events = {} }
   self._searchBestByKey = {}
+  -- Some repeating events can surface with distinct eventIDs per occurrence.
+  -- For those, we keep a small "top N" list rather than one logical entry.
+  self._searchBestListByKey = {}
 
   -- Blizzard_Calendar is loaded on-demand. If it's not loaded yet, many calendar queries
   -- return empty results until the player opens the calendar UI at least once.
@@ -443,6 +446,33 @@ local function NormalizeKeyText(text)
   return strtrim(cleaned)
 end
 
+-- Some calendar events repeat multiple times per year but can appear with different eventIDs per
+-- occurrence. For the search tab, we cap these so the results list stays useful.
+--
+-- Title keys in this set return up to two occurrences (current, then next upcoming).
+local TWO_OCCURRENCE_TITLE_KEY = {
+  ["timewalking dungeon event"] = true,
+}
+
+local function IsTwoOccurrenceTitleKey(normalizedTitleKey)
+  return normalizedTitleKey and TWO_OCCURRENCE_TITLE_KEY[normalizedTitleKey] == true
+end
+
+-- Holiday-like events can be surfaced via two different APIs: day events and holiday rows.
+-- calendarType isn't reliably a string, so detect holidays by checking whether the same title
+-- appears in the holiday list for that day.
+local function IsHolidayTitle(GetHolidayInfo, monthDay, title)
+  if not title then return false end
+  for holidayIndex = 1, 50 do
+    local holidayInfo = GetHolidayInfo(0, monthDay, holidayIndex)
+    if not holidayInfo then break end
+    if holidayInfo.name == title then
+      return true
+    end
+  end
+  return false
+end
+
 local function OccurrencePriority(nowEpoch, eventData)
   if not eventData then return 3 end
   local startEpoch = eventData.startEpoch or 0
@@ -478,6 +508,7 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
 
   self._searchCache = self._searchCache or { expiresEpoch = 0, maxDaysAhead = 0, events = {} }
   self._searchBestByKey = self._searchBestByKey or {}
+  self._searchBestListByKey = self._searchBestListByKey or {}
 
   local cache = self._searchCache
   if cache.expiresEpoch and nowEpoch < cache.expiresEpoch and cache.maxDaysAhead and cache.maxDaysAhead >= maxDaysAhead then
@@ -504,7 +535,9 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
   local endEpoch = nowEpoch + maxDaysAhead * 86400
 
   local bestByKey = self._searchBestByKey
+  local bestListByKey = self._searchBestListByKey
   wipe(bestByKey)
+  wipe(bestListByKey)
 
   local out = cache.events or {}
   cache.events = out
@@ -533,6 +566,42 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
     if not key or not candidate then return end
     if candidate.endEpoch < nowEpoch or candidate.startEpoch > endEpoch then return end
     bestByKey[key] = ChooseBetterOccurrence(nowEpoch, bestByKey[key], candidate)
+  end
+
+  local function OccurrenceSort(leftEvent, rightEvent)
+    local leftPriority = OccurrencePriority(nowEpoch, leftEvent)
+    local rightPriority = OccurrencePriority(nowEpoch, rightEvent)
+    if leftPriority ~= rightPriority then
+      return leftPriority < rightPriority
+    end
+    return (leftEvent.startEpoch or 0) < (rightEvent.startEpoch or 0)
+  end
+
+  local function upsertTopTwo(key, candidate)
+    if not key or not candidate then return end
+    if candidate.endEpoch < nowEpoch or candidate.startEpoch > endEpoch then return end
+
+    local list = bestListByKey[key]
+    if not list then
+      list = {}
+      bestListByKey[key] = list
+    end
+
+    -- Avoid exact duplicates. If we encounter the same occurrence from multiple calendar APIs,
+    -- merge metadata instead of showing a duplicate row.
+    for idx = 1, #list do
+      local existing = list[idx]
+      if existing.startEpoch == candidate.startEpoch and existing.endEpoch == candidate.endEpoch then
+        list[idx] = prefer(existing, candidate)
+        return
+      end
+    end
+
+    list[#list + 1] = candidate
+    table.sort(list, OccurrenceSort)
+    while #list > 2 do
+      list[#list] = nil
+    end
   end
 
   -- Preload months one-at-a-time. This is significantly cheaper than switching months for every day.
@@ -566,14 +635,28 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
               if startEpoch then
                 local eventEndEpoch = ComputeEndEpoch(startEpoch, dayEvent.endTime, dayEvent.calendarType, dateUtil)
                 if eventEndEpoch then
-                  -- Some holidays surface both as "day events" and as holiday rows. Prefer a
-                  -- single logical entry keyed by title so search doesn't show duplicates.
+                  -- Some calendar entries can surface through multiple APIs (day events vs.
+                  -- holiday rows). We dedupe by a stable logical key so search doesn't show
+                  -- duplicates. Certain events (Timewalking) intentionally allow 2 rows.
                   local calendarType = tostring(dayEvent.calendarType or "")
-                  local isHolidayEvent = calendarType:upper() == "HOLIDAY"
+                  local normalizedTitleKey = NormalizeKeyText(dayEvent.title)
+
+                  -- Special-case first: Timewalking is exposed inconsistently (sometimes also
+                  -- as a holiday row). If we key it as a holiday on some days and as a normal
+                  -- event on others, we get duplicate rows for the same active occurrence.
+                  local isTwoOccurrenceEvent = IsTwoOccurrenceTitleKey(normalizedTitleKey)
+
+                  -- calendarType isn't reliably a string across API variants; use the holiday
+                  -- list as the source of truth instead of string-matching calendarType.
+                  local isHolidayEvent = (not isTwoOccurrenceEvent)
+                    and IsHolidayTitle(GetHolidayInfo, monthDay, dayEvent.title)
 
                   local logicalKey
-                  if isHolidayEvent then
-                    logicalKey = "holiday:" .. NormalizeKeyText(dayEvent.title)
+                  if isTwoOccurrenceEvent then
+                    -- Return at most two occurrences (current, then next upcoming).
+                    logicalKey = "two:" .. normalizedTitleKey
+                  elseif isHolidayEvent then
+                    logicalKey = "holiday:" .. normalizedTitleKey
                   elseif dayEvent.eventID ~= nil then
                     logicalKey = "event:" .. tostring(dayEvent.eventID)
                   else
@@ -598,7 +681,11 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
                   }
                   record.__searchTitle = NormalizeForSearch(record.title)
                   record.__searchDesc = ""
-                  upsertLogical(logicalKey, record)
+                  if isTwoOccurrenceEvent then
+                    upsertTopTwo(logicalKey, record)
+                  else
+                    upsertLogical(logicalKey, record)
+                  end
                 end
               end
             end
@@ -610,9 +697,19 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
             if not holidayInfo then break end
 
             local title = holidayInfo.name
-            -- Also include the start/end in the key so multi-year scans don't return duplicate
-            -- rows for the same named holiday if the API exposes multiple overlapping entries.
-            local logicalKey = "holiday:" .. NormalizeKeyText(title)
+            local normalizedTitleKey = NormalizeKeyText(title)
+
+            -- Timewalking can surface as both a day event and a holiday row depending on client
+            -- state/API variant. Always route it through the "two:" key so it merges cleanly and
+            -- never produces a duplicate active row.
+            local logicalKey
+            local isTwoOccurrenceEvent = IsTwoOccurrenceTitleKey(normalizedTitleKey)
+            if isTwoOccurrenceEvent then
+              logicalKey = "two:" .. normalizedTitleKey
+            else
+              -- Holidays: key by name (holidayID is not stable across days).
+              logicalKey = "holiday:" .. normalizedTitleKey
+            end
 
             local startEpoch = holidayInfo.startTime and dateUtil:CalendarTimeToEpoch(holidayInfo.startTime) or dayEpoch
             local holidayEndEpoch = holidayInfo.endTime and dateUtil:CalendarTimeToEpoch(holidayInfo.endTime) or (dayEpoch + 86399)
@@ -636,7 +733,11 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
             }
             record.__searchTitle = NormalizeForSearch(record.title)
             record.__searchDesc = NormalizeForSearch(record.description)
-            upsertLogical(logicalKey, record)
+            if isTwoOccurrenceEvent then
+              upsertTopTwo(logicalKey, record)
+            else
+              upsertLogical(logicalKey, record)
+            end
           end
         end
       end
@@ -649,6 +750,12 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
 
   for _, event in pairs(bestByKey) do
     out[#out + 1] = event
+  end
+
+  for _, list in pairs(bestListByKey) do
+    for idx = 1, #list do
+      out[#out + 1] = list[idx]
+    end
   end
 
   table.sort(out, SortByStartThenTitle)
