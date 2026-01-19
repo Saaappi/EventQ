@@ -423,12 +423,6 @@ local function EnsureFrame(self)
   inviteBtn:SetText("Invite Accepted")
   popup._eventqInviteBtn = inviteBtn
 
-  local removeBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  removeBtn:SetSize(120, 24)
-  removeBtn:SetText(REMOVE)
-  removeBtn:Disable()
-  popup._eventqRemoveBtn = removeBtn
-
   local closeBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
   closeBtn:SetSize(110, 24)
   closeBtn:SetText(CLOSE)
@@ -438,13 +432,12 @@ local function EnsureFrame(self)
   local gap = 10
   local buttonBar = CreateFrame("Frame", nil, popup)
   buttonBar:SetHeight(24)
-  buttonBar:SetWidth(actionBtn:GetWidth() + refreshBtn:GetWidth() + inviteBtn:GetWidth() + removeBtn:GetWidth() + closeBtn:GetWidth() + (gap * 4))
+  buttonBar:SetWidth(actionBtn:GetWidth() + refreshBtn:GetWidth() + inviteBtn:GetWidth() + closeBtn:GetWidth() + (gap * 3))
   buttonBar:SetPoint("BOTTOM", popup, "BOTTOM", 0, 14)
 
   actionBtn:SetParent(buttonBar)
   refreshBtn:SetParent(buttonBar)
   inviteBtn:SetParent(buttonBar)
-  removeBtn:SetParent(buttonBar)
   closeBtn:SetParent(buttonBar)
 
   actionBtn:ClearAllPoints()
@@ -456,11 +449,8 @@ local function EnsureFrame(self)
   inviteBtn:ClearAllPoints()
   inviteBtn:SetPoint("LEFT", refreshBtn, "RIGHT", gap, 0)
 
-  removeBtn:ClearAllPoints()
-  removeBtn:SetPoint("LEFT", inviteBtn, "RIGHT", gap, 0)
-
   closeBtn:ClearAllPoints()
-  closeBtn:SetPoint("LEFT", removeBtn, "RIGHT", gap, 0)
+  closeBtn:SetPoint("LEFT", inviteBtn, "RIGHT", gap, 0)
   -- Allow closing with Escape (even if the user changed the global UISpecialFrames list).
   local popupName = popup:GetName()
   if popupName and UISpecialFrames then
@@ -787,13 +777,10 @@ local function TryLocateEvent(frame)
   if eventID then
     frame._eventqEventID = eventID
 
-    -- Once we have a stable eventID we can safely update/remove the event from within EventQ.
+    -- Once we have a stable eventID we can safely update the event from within EventQ.
     if frame._eventqActionBtn then
       frame._eventqActionBtn:Enable()
       frame._eventqActionBtn:SetText("Update Event")
-    end
-    if frame._eventqRemoveBtn then
-      frame._eventqRemoveBtn:Enable()
     end
 
     RefreshFromCalendar(frame)
@@ -836,11 +823,20 @@ function CalendarEventPopup:Show(app, preset)
 
   InitializeDropdown(frame)
 
-  AttachDateTimePicker(frame, frame._eventqStart, false)
-  AttachDateTimePicker(frame, frame._eventqEnd, true)
+  if frame._eventqStart then
+    AttachDateTimePicker(frame, frame._eventqStart, false)
+  end
+  -- Calendar events only have a start time in the underlying API. Some older versions of
+  -- EventQ included an "end" field during prototyping; guard against it being absent.
+  if frame._eventqEnd then
+    AttachDateTimePicker(frame, frame._eventqEnd, true)
+  end
 
-  frame._eventqEventID = nil
-  frame._eventqSignature = nil
+  local isEditingExisting = preset and type(preset) == "table" and preset.eventID and preset.signature
+
+  frame._eventqEventID = isEditingExisting and preset.eventID or nil
+  frame._eventqSignature = isEditingExisting and preset.signature or nil
+  frame._eventqDesiredInvitees = nil
 
   local dateUtil = app and app.dateUtil
   local order = (app and app.db and app.db.settings and app.db.settings.dateOrder) or (dateUtil and dateUtil:GetDefaultDateOrder()) or "MDY"
@@ -863,13 +859,17 @@ function CalendarEventPopup:Show(app, preset)
       frame._eventqStart:SetTextColor(1, 1, 1, 1)
     end
 
-    if preset.endEpoch and dateUtil and dateUtil.FormatUserDateTime then
+    if preset.endEpoch and frame._eventqEnd and dateUtil and dateUtil.FormatUserDateTime then
       frame._eventqEnd:SetText(dateUtil:FormatUserDateTime(preset.endEpoch, order))
       frame._eventqEnd:SetTextColor(1, 1, 1, 1)
     end
 
     frame._eventqSelectedType = preset.eventType or frame._eventqSelectedType
     frame._eventqCategoryDrop:SetText(FindCategoryLabel(frame._eventqSelectedType))
+
+    -- Selecting the instance (textureIndex) is mandatory for Raid/Dungeon. When editing an
+    -- existing event, preselect it so the dropdown reflects what the player chose.
+    frame._eventqSelectedTexture = preset.textureIndex or frame._eventqSelectedTexture
 
     -- Presets can set the event type before the menu is opened, so refresh the instance controls now.
     SetupInstanceDropdown(frame)
@@ -891,11 +891,8 @@ function CalendarEventPopup:Show(app, preset)
   end
 
   if frame._eventqActionBtn then
-    frame._eventqActionBtn:SetText("Add to Calendar")
+    frame._eventqActionBtn:SetText(isEditingExisting and "Update Event" or "Add to Calendar")
     frame._eventqActionBtn:Enable()
-  end
-  if frame._eventqRemoveBtn then
-    frame._eventqRemoveBtn:Disable()
   end
 
   local function BuildSpecFromInputs()
@@ -990,36 +987,6 @@ function CalendarEventPopup:Show(app, preset)
     UpdateInviteRows(frame, {})
     SetStatus(frame, "Event created. Waiting for calendar sync...", 1, 0.82, 0)
     RetryLocateEvent(frame, 12)
-  end)
-
-  frame._eventqRemoveBtn:SetScript("OnClick", function()
-    if not (app and app.calendar) then
-      SetStatus(frame, "Calendar services are not ready.", 1, 0.1, 0.1)
-      return
-    end
-
-    if not (frame._eventqEventID and frame._eventqSignature) then
-      SetStatus(frame, "No linked event to remove.")
-      return
-    end
-
-    local ok, err = app.calendar:RemovePlayerEvent(frame._eventqEventID, frame._eventqSignature)
-    if not ok then
-      SetStatus(frame, err or "Could not remove the calendar event.", 1, 0.1, 0.1)
-      return
-    end
-
-    frame._eventqEventID = nil
-    frame._eventqSignature = nil
-    frame._eventqDesiredInvitees = nil
-
-    UpdateInviteRows(frame, {})
-    if frame._eventqActionBtn then
-      frame._eventqActionBtn:SetText("Add to Calendar")
-      frame._eventqActionBtn:Enable()
-    end
-    frame._eventqRemoveBtn:Disable()
-    SetStatus(frame, "Event removed.", 0.2, 1, 0.2)
   end)
 
   frame._eventqRefreshBtn:SetScript("OnClick", function()

@@ -44,6 +44,21 @@ end
 local ONE_DAY_SECONDS = 24 * 60 * 60
 
 local CONFIRM_REMOVE_DIALOG_KEY = "EVENTQ_CONFIRM_REMOVE_CUSTOM_EVENT"
+local CONFIRM_REMOVE_CALENDAR_DIALOG_KEY = "EVENTQ_CONFIRM_REMOVE_CALENDAR_EVENT"
+
+-- Prefer messaging inside EventQ's main frame (between the Next button and the credit line).
+-- Fall back to UIErrorsFrame when the UI isn't available (e.g. during load screens).
+local function PostEventQMessage(app, messageText, red, green, blue)
+  local ui = app and app.ui
+  if ui and ui.ShowTransientMessage then
+    ui:ShowTransientMessage(messageText, red, green, blue, 4)
+    return
+  end
+
+  if UIErrorsFrame and UIErrorsFrame.AddMessage then
+    UIErrorsFrame:AddMessage(messageText, red or 1, green or 1, blue or 1)
+  end
+end
 
 local function PickClockAtlas()
   if not (C_Texture and C_Texture.GetAtlasInfo) then return nil end
@@ -99,6 +114,79 @@ local function ConfirmRemoveCustomEvent(app, eventData)
 
   local eventTitle = eventData.title or "Custom Event"
   StaticPopup_Show(CONFIRM_REMOVE_DIALOG_KEY, eventTitle, nil, { app = app, id = eventData.id })
+end
+
+local function EnsureConfirmRemoveCalendarDialog()
+  if not StaticPopupDialogs then return false end
+  if StaticPopupDialogs[CONFIRM_REMOVE_CALENDAR_DIALOG_KEY] then return true end
+
+  StaticPopupDialogs[CONFIRM_REMOVE_CALENDAR_DIALOG_KEY] = {
+    text = 'Remove the calendar event "%s"?\nThis cannot be undone.',
+    button1 = (REMOVE or "Remove"),
+    button2 = (CANCEL or "Cancel"),
+    OnAccept = function(_, data)
+      if not (data and data.app and data.eventData and data.app.calendar) then
+        return
+      end
+
+      local app = data.app
+      local eventData = data.eventData
+      local cal = app.calendar
+
+      local preset, buildErr = cal.GetPlayerEventEditPreset and cal:GetPlayerEventEditPreset(eventData)
+      if not preset then
+        PostEventQMessage(app, buildErr or "Could not locate the calendar event.", 1, 0.1, 0.1)
+        return
+      end
+
+      local ok, err = cal:RemovePlayerEvent(preset.eventID, preset.signature)
+      if not ok then
+        PostEventQMessage(app, err or "Could not remove the calendar event.", 1, 0.1, 0.1)
+        return
+      end
+
+      -- Calendar mutations can take a moment to propagate. Trigger an immediate refresh, then a
+      -- short follow-up refresh to catch the calendar update event.
+      if app.RequestCalendar then
+        app:RequestCalendar()
+      end
+      if app.RefreshAll then
+        app:RefreshAll()
+        if C_Timer and C_Timer.After then
+          C_Timer.After(0.5, function()
+            if app and app.RefreshAll then
+              app:RefreshAll()
+            end
+          end)
+        end
+      end
+
+      PostEventQMessage(app, "Calendar event removed.", 0.2, 1, 0.2)
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+  }
+
+  return true
+end
+
+local function ConfirmRemoveCalendarEvent(app, eventData)
+  if not (app and eventData and eventData.eventID) then return end
+
+  if InCombatLockdown and InCombatLockdown() then
+    PostEventQMessage(app, "You cannot remove calendar events while in combat.", 1, 0.1, 0.1)
+    return
+  end
+
+  if not (EnsureConfirmRemoveCalendarDialog() and StaticPopup_Show) then
+    PostEventQMessage(app, "Popup dialogs are unavailable.", 1, 0.1, 0.1)
+    return
+  end
+
+  local eventTitle = eventData.title or "Calendar Event"
+  StaticPopup_Show(CONFIRM_REMOVE_CALENDAR_DIALOG_KEY, eventTitle, nil, { app = app, eventData = eventData })
 end
 
 
@@ -470,26 +558,76 @@ function Row:Constructor(frame, app)
 
       if btn ~= "RightButton" then return end
       local data = frame._eventqData
-      if not data or not data.isCustom then return end
+      if not data then return end
       local app = self.app
 
       if not (UIDropDownMenu_Initialize and UIDropDownMenu_CreateInfo and ToggleDropDownMenu) then
         return
       end
 
+      local isCustom = not not data.isCustom
+      local isPlayerCalendarEvent = (data.calendarType == "PLAYER") and (data.eventID ~= nil)
+      if not (isCustom or isPlayerCalendarEvent) then
+        return
+      end
+
       MENU._eventqData = data
       MENU._eventqApp = app
+      MENU._eventqKind = isCustom and "custom" or "calendar"
 
       UIDropDownMenu_Initialize(MENU, function(_, level)
         if level ~= 1 then return end
 
+        local menuData = MENU._eventqData
+
         local titleInfo = UIDropDownMenu_CreateInfo()
         titleInfo.isTitle = true
         titleInfo.notCheckable = true
-        titleInfo.text = (MENU._eventqData and MENU._eventqData.title) or "Custom Event"
+        titleInfo.text = (menuData and menuData.title) or "Event"
         UIDropDownMenu_AddButton(titleInfo, level)
 
-        local menuData = MENU._eventqData
+        if MENU._eventqKind == "calendar" then
+          local editInfo = UIDropDownMenu_CreateInfo()
+          editInfo.notCheckable = true
+          editInfo.text = "Edit"
+          editInfo.func = function()
+            local ev = MENU._eventqData
+            local appRef = MENU._eventqApp
+            local ui = appRef and appRef.ui
+            local cal = appRef and appRef.calendar
+
+            if not (ui and ui.ShowCalendarEventPopup) then
+              UIErrorsFrame:AddMessage("EventQ UI is unavailable.", 1, 0.1, 0.1)
+              return
+            end
+            if not (cal and cal.GetPlayerEventEditPreset) then
+              UIErrorsFrame:AddMessage("Calendar edit support is unavailable.", 1, 0.1, 0.1)
+              return
+            end
+
+            local preset, err = cal:GetPlayerEventEditPreset(ev)
+            if not preset then
+              UIErrorsFrame:AddMessage(err or "Could not locate the calendar event.", 1, 0.1, 0.1)
+              return
+            end
+
+            ui:ShowCalendarEventPopup(preset)
+          end
+          UIDropDownMenu_AddButton(editInfo, level)
+
+          local removeInfo = UIDropDownMenu_CreateInfo()
+          removeInfo.notCheckable = true
+          removeInfo.text = "Remove"
+          removeInfo.func = function()
+            if MENU._eventqApp and MENU._eventqData then
+              ConfirmRemoveCalendarEvent(MENU._eventqApp, MENU._eventqData)
+            end
+          end
+          UIDropDownMenu_AddButton(removeInfo, level)
+          return
+        end
+
+        -- Custom events
         local isSeries = menuData and (menuData.isSeriesRoot or menuData.isSeriesOccurrence)
         if isSeries then
           local viewInfo = UIDropDownMenu_CreateInfo()

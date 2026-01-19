@@ -1072,6 +1072,86 @@ local function SignatureIsValid(signature)
     and type(signature.minute) == "number"
 end
 
+-- Build a fully-linked preset for editing/removing an existing PLAYER calendar event.
+--
+-- Why this exists:
+-- EventQ's unified event schema (used for the Ongoing/Upcoming lists) stores only the
+-- details it needs for display. The Blizzard calendar APIs, however, require a
+-- "signature" (month/year/day/hour/minute/title/eventType) to reliably open the
+-- event for mutation. When the user right-clicks an event row, we bridge that gap here.
+--
+-- This call is intentionally conservative: it uses calendar APIs when possible and
+-- falls back to the already-known EventQ data if the calendar entry can't be resolved.
+---@param eventData table
+---@return table|nil preset
+---@return string|nil err
+function CalendarService:GetPlayerEventEditPreset(eventData)
+  if type(eventData) ~= "table" or not eventData.eventID then
+    return nil, "Invalid calendar event."
+  end
+
+  if not self:_EnsureCalendarLoaded() then
+    return nil, "Calendar UI is unavailable."
+  end
+
+  local ok = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
+  if not ok then
+    return nil, "Could not open the calendar."
+  end
+
+  local monthOffset = eventData.monthOffset
+  local monthDay = eventData.monthDay
+  if monthOffset == nil or monthDay == nil then
+    -- Worst case: derive calendar navigation from the timestamp.
+    local derivedOffset, derivedDay = self.dateUtil:EpochToCalendarOffsetAndDay(eventData.startEpoch or time())
+    monthOffset, monthDay = derivedOffset, derivedDay
+  end
+
+  local indexInfo = ResolveEventIndexInfo(eventData.eventID, monthOffset, monthDay)
+  if not indexInfo then
+    return nil, "Could not locate the calendar event."
+  end
+
+  local dayEvent = C_Calendar.GetDayEvent(indexInfo.offsetMonths, indexInfo.monthDay, indexInfo.eventIndex)
+  if not dayEvent then
+    return nil, "Could not read the calendar event."
+  end
+
+  local title = dayEvent.title or eventData.title or "Event"
+  local eventType = dayEvent.eventType
+
+  -- Convert the calendar time struct into an epoch so we can populate the edit fields.
+  local startEpoch = (dayEvent.startTime and self.dateUtil:CalendarTimeToEpoch(dayEvent.startTime)) or eventData.startEpoch
+  local endEpoch = startEpoch and ComputeEndEpoch(startEpoch, dayEvent.endTime, dayEvent.calendarType, self.dateUtil) or eventData.endEpoch
+
+  if not startEpoch then
+    return nil, "Event start time could not be determined."
+  end
+
+  local signature = SignatureFromEpoch(title, startEpoch, eventType)
+  if not SignatureIsValid(signature) then
+    return nil, "Event signature could not be built."
+  end
+
+  -- Description is stored in a separate API entry; reuse our existing lazy fetcher.
+  local description = eventData.description
+  if (not description or description == "") and self.TryFetchDescription then
+    description = self:TryFetchDescription(eventData.eventID, indexInfo.offsetMonths, indexInfo.monthDay, title, dayEvent.calendarType)
+  end
+
+  return {
+    eventID = eventData.eventID,
+    signature = signature,
+    title = title,
+    description = description,
+    startEpoch = startEpoch,
+    endEpoch = endEpoch,
+    eventType = eventType,
+    textureIndex = dayEvent.textureIndex,
+    calendarType = dayEvent.calendarType,
+  }, nil
+end
+
 ---@param signature CalendarEventSignature
 ---@return string|nil eventID
 ---@return table|nil indexInfo CalendarEventIndexInfo
@@ -1295,14 +1375,33 @@ end
 ---@return boolean ok
 ---@return string|nil err
 function CalendarService:RemovePlayerEvent(eventID, signature)
-  local _, err = self:_OpenPlayerEvent(eventID, signature)
+  local idx, err = self:_OpenPlayerEvent(eventID, signature)
   if err then
     return false, err
+  end
+
+  -- `C_Calendar.RemoveEvent()` behaves like "remove from list" for invites, but does not reliably
+  -- delete player-created events. Blizzard's day context menu uses ContextMenuEventRemove to do
+  -- a true delete. Mimic that flow when available.
+  if C_Calendar.ContextMenuEventCanRemove and C_Calendar.ContextMenuEventRemove and idx then
+    local okCanRemove = self:_SafeCalendarCall(C_Calendar.ContextMenuEventCanRemove, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+    if okCanRemove then
+      local okDelete = self:_SafeCalendarCall(C_Calendar.ContextMenuEventRemove)
+      if okDelete then
+        return true, nil
+      end
+    end
   end
 
   local okRemove = self:_SafeCalendarCall(C_Calendar.RemoveEvent)
   if not okRemove then
     return false, "Calendar refused to remove the event."
+  end
+
+  -- Best-effort verification: if the event index still resolves, it likely was not removed.
+  local stillThere = ResolveEventIndexInfo(eventID, 0, signature.day)
+  if stillThere then
+    return false, "Calendar did not remove the event (you may not have permission to delete it)."
   end
 
   return true, nil
