@@ -167,6 +167,25 @@ function CalendarService:_EnsureCalendarLoaded()
   return false
 end
 
+---Ensure Blizzard's calendar UI is loaded and the calendar subsystem is opened.
+---
+---This is a lightweight helper for UI features (like instance dropdowns) that need access to
+---C_Calendar metadata before the player has opened the calendar themselves.
+---@return boolean ok
+---@return string|nil err
+function CalendarService:EnsureCalendarAvailable()
+  if not self:_EnsureCalendarLoaded() then
+    return false, "Calendar UI is unavailable."
+  end
+
+  local ok = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
+  if not ok then
+    return false, "Calendar is not accessible right now (possibly in combat)."
+  end
+
+  return true, nil
+end
+
 -- Calendar API calls (especially SetAbsMonth/OpenEvent) can synchronously fire CALENDAR_UPDATE_* events.
 -- If we respond to those events by refreshing while we are still in the middle of a calendar API call,
 -- we can re-enter the same code path and overflow the Lua/C stack.
@@ -1128,6 +1147,14 @@ function CalendarService:CreatePlayerEvent(spec)
 
   local description = tostring(spec.description or "")
   local invitees = (type(spec.invitees) == "table") and spec.invitees or nil
+  local textureIndex = tonumber(spec.textureIndex)
+
+  if (eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid) or eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon))
+    and not textureIndex then
+    -- Blizzard's UI requires a dungeon/raid selection for these categories, because the type icon comes from
+    -- the texture picker list.
+    return nil, "Select a raid/dungeon before creating the calendar event."
+  end
 
   local okOpen = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
   if not okOpen then
@@ -1144,6 +1171,9 @@ function CalendarService:CreatePlayerEvent(spec)
   self:_SafeCalendarCall(C_Calendar.EventSetTitle, title)
   self:_SafeCalendarCall(C_Calendar.EventSetDescription, description)
   self:_SafeCalendarCall(C_Calendar.EventSetType, eventType)
+  if textureIndex and C_Calendar.EventSetTextureID then
+    self:_SafeCalendarCall(C_Calendar.EventSetTextureID, textureIndex)
+  end
   self:_SafeCalendarCall(C_Calendar.EventSetDate, startParts.month, startParts.day, startParts.year)
   self:_SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
 
@@ -1162,6 +1192,175 @@ function CalendarService:CreatePlayerEvent(spec)
   end
 
   return SignatureFromEpoch(title, startEpoch, eventType), nil
+end
+
+local function IsRaidOrDungeonEventType(eventType)
+  return Enum and Enum.CalendarEventType
+    and (eventType == Enum.CalendarEventType.Raid or eventType == Enum.CalendarEventType.Dungeon)
+end
+
+-- The calendar API is stateful:
+--   1) pick a visible month (SetAbsMonth)
+--   2) resolve the event index (GetEventIndexInfo)
+--   3) OpenEvent to make the event the "current" target for EventSet*/Get* calls.
+--
+-- Encapsulating this in one helper keeps update/remove/invite code paths consistent.
+---@param eventID string
+---@param signature CalendarEventSignature
+---@return table|nil indexInfo
+---@return string|nil err
+function CalendarService:_OpenPlayerEvent(eventID, signature)
+  if not eventID or not SignatureIsValid(signature) then
+    return nil, "Event not selected."
+  end
+
+  local ok, err = self:EnsureCalendarAvailable()
+  if not ok then
+    return nil, err
+  end
+
+  self:_SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
+
+  local idx = ResolveEventIndexInfo(eventID, 0, signature.day)
+  if not idx then
+    return nil, "Could not locate the calendar event (data may still be loading)."
+  end
+
+  local okEvent = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if not okEvent then
+    return nil, "Could not open the calendar event."
+  end
+
+  return idx, nil
+end
+
+---@param eventID string
+---@param signature CalendarEventSignature
+---@param spec table
+---@return CalendarEventSignature|nil newSignature
+---@return string|nil err
+function CalendarService:UpdatePlayerEvent(eventID, signature, spec)
+  if type(spec) ~= "table" then
+    return nil, "Invalid event data."
+  end
+
+  local _, err = self:_OpenPlayerEvent(eventID, signature)
+  if err then
+    return nil, err
+  end
+
+  local title = strtrim(spec.title or "")
+  if title == "" then
+    return nil, "Calendar events require a name."
+  end
+
+  local startEpoch = tonumber(spec.startEpoch)
+  if not startEpoch then
+    return nil, "Calendar events require a start time."
+  end
+
+  local startParts = date("*t", startEpoch)
+  if not (startParts and startParts.year and startParts.month and startParts.day) then
+    return nil, "Invalid start time."
+  end
+
+  local description = tostring(spec.description or "")
+  local eventType = spec.eventType or signature.eventType
+  local textureIndex = tonumber(spec.textureIndex)
+
+  if IsRaidOrDungeonEventType(eventType) and not textureIndex then
+    return nil, "Select a raid/dungeon before updating the calendar event."
+  end
+
+  self:_SafeCalendarCall(C_Calendar.EventSetTitle, title)
+  self:_SafeCalendarCall(C_Calendar.EventSetDescription, description)
+  self:_SafeCalendarCall(C_Calendar.EventSetDate, startParts.month, startParts.day, startParts.year)
+  self:_SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
+  self:_SafeCalendarCall(C_Calendar.EventSetType, eventType)
+  if textureIndex and C_Calendar.EventSetTextureID then
+    -- For dungeon/raid categories the selected instance is represented as a texture index.
+    self:_SafeCalendarCall(C_Calendar.EventSetTextureID, textureIndex)
+  end
+
+  local okUpdate = self:_SafeCalendarCall(C_Calendar.UpdateEvent)
+  if not okUpdate then
+    return nil, "Calendar refused to update the event."
+  end
+
+  return SignatureFromEpoch(title, startEpoch, eventType), nil
+end
+
+---@param eventID string
+---@param signature CalendarEventSignature
+---@return boolean ok
+---@return string|nil err
+function CalendarService:RemovePlayerEvent(eventID, signature)
+  local _, err = self:_OpenPlayerEvent(eventID, signature)
+  if err then
+    return false, err
+  end
+
+  local okRemove = self:_SafeCalendarCall(C_Calendar.RemoveEvent)
+  if not okRemove then
+    return false, "Calendar refused to remove the event."
+  end
+
+  return true, nil
+end
+
+---@param eventID string
+---@param signature CalendarEventSignature
+---@param desiredInvitees string[]
+---@return boolean|nil changed
+---@return boolean|nil namesReady
+---@return string|nil err
+function CalendarService:EnsureInvites(eventID, signature, desiredInvitees)
+  if not eventID or not SignatureIsValid(signature) then
+    return nil, nil, "Event not selected."
+  end
+
+  if type(desiredInvitees) ~= "table" or #desiredInvitees == 0 then
+    return false, true, nil
+  end
+
+  local _, err = self:_OpenPlayerEvent(eventID, signature)
+  if err then
+    return nil, nil, err
+  end
+
+  local namesReady = (C_Calendar.AreNamesReady and C_Calendar.AreNamesReady()) or false
+  if not namesReady then
+    -- EventGetInvite will return incomplete records until names are resolved.
+    return false, false, nil
+  end
+
+  local okCount, numInvites = self:_SafeCalendarCall(C_Calendar.GetNumInvites)
+  if not okCount or not numInvites then
+    return false, true, nil
+  end
+
+  local present = {}
+  for inviteIndex = 1, numInvites do
+    local okInvite, inviteInfo = self:_SafeCalendarCall(C_Calendar.EventGetInvite, inviteIndex)
+    if okInvite and inviteInfo and inviteInfo.name then
+      present[strtrim(inviteInfo.name):lower()] = true
+    end
+  end
+
+  local changed = false
+  for _, inviteeName in ipairs(desiredInvitees) do
+    local trimmed = strtrim(inviteeName or "")
+    if trimmed ~= "" and not present[trimmed:lower()] then
+      self:_SafeCalendarCall(C_Calendar.EventInvite, trimmed)
+      changed = true
+    end
+  end
+
+  if changed and C_Calendar.UpdateEvent then
+    self:_SafeCalendarCall(C_Calendar.UpdateEvent)
+  end
+
+  return changed, true, nil
 end
 
 ---@param eventID string

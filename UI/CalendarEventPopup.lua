@@ -100,6 +100,11 @@ local function FindCategoryLabel(eventType)
   return "Other"
 end
 
+local function IsRaidOrDungeon(eventType)
+  return Enum and Enum.CalendarEventType
+    and (eventType == Enum.CalendarEventType.Raid or eventType == Enum.CalendarEventType.Dungeon)
+end
+
 local function SetStatus(frame, text, r, g, b)
   if not (frame and frame._eventqStatus) then return end
   frame._eventqStatus:SetText(text or "")
@@ -321,7 +326,19 @@ local function EnsureFrame(self)
   dropdown:SetDefaultText("Other")
   popup._eventqCategoryDrop = dropdown
 
-  local startLabel = AddLabel(left, "Start", dropdown)
+  local instanceLabel = AddLabel(left, "Instance", dropdown)
+  instanceLabel:Hide()
+  popup._eventqInstanceLabel = instanceLabel
+
+  local instanceDrop = CreateFrame("DropdownButton", "EventQCalendarEventInstanceDropdown", left, "WowStyle1DropdownTemplate")
+  instanceDrop:SetPoint("TOPLEFT", instanceLabel, "BOTTOMLEFT", -3, -4)
+  instanceDrop:SetWidth(210)
+  instanceDrop:SetDefaultText("Select...")
+  instanceDrop:Hide()
+  popup._eventqInstanceDrop = instanceDrop
+
+  local startLabel = AddLabel(left, "Start", instanceDrop)
+  popup._eventqStartLabel = startLabel
   local startBox = CreateFrame("EditBox", nil, left, "InputBoxTemplate")
   startBox:SetSize(210, 24)
   startBox:SetAutoFocus(false)
@@ -391,10 +408,10 @@ local function EnsureFrame(self)
 
   -- Bottom action buttons: keep the entire button cluster centered so the margins to
   -- the left/right frame edges stay symmetrical at any UI scale.
-  local createBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  createBtn:SetSize(170, 24)
-  createBtn:SetText("Add to Calendar")
-  popup._eventqCreateBtn = createBtn
+  local actionBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+  actionBtn:SetSize(170, 24)
+  actionBtn:SetText("Add to Calendar")
+  popup._eventqActionBtn = actionBtn
 
   local refreshBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
   refreshBtn:SetSize(120, 24)
@@ -406,6 +423,12 @@ local function EnsureFrame(self)
   inviteBtn:SetText("Invite Accepted")
   popup._eventqInviteBtn = inviteBtn
 
+  local removeBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+  removeBtn:SetSize(120, 24)
+  removeBtn:SetText(REMOVE)
+  removeBtn:Disable()
+  popup._eventqRemoveBtn = removeBtn
+
   local closeBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
   closeBtn:SetSize(110, 24)
   closeBtn:SetText(CLOSE)
@@ -415,25 +438,29 @@ local function EnsureFrame(self)
   local gap = 10
   local buttonBar = CreateFrame("Frame", nil, popup)
   buttonBar:SetHeight(24)
-  buttonBar:SetWidth(createBtn:GetWidth() + refreshBtn:GetWidth() + inviteBtn:GetWidth() + closeBtn:GetWidth() + (gap * 3))
+  buttonBar:SetWidth(actionBtn:GetWidth() + refreshBtn:GetWidth() + inviteBtn:GetWidth() + removeBtn:GetWidth() + closeBtn:GetWidth() + (gap * 4))
   buttonBar:SetPoint("BOTTOM", popup, "BOTTOM", 0, 14)
 
-  createBtn:SetParent(buttonBar)
+  actionBtn:SetParent(buttonBar)
   refreshBtn:SetParent(buttonBar)
   inviteBtn:SetParent(buttonBar)
+  removeBtn:SetParent(buttonBar)
   closeBtn:SetParent(buttonBar)
 
-  createBtn:ClearAllPoints()
-  createBtn:SetPoint("LEFT", buttonBar, "LEFT", 0, 0)
+  actionBtn:ClearAllPoints()
+  actionBtn:SetPoint("LEFT", buttonBar, "LEFT", 0, 0)
 
   refreshBtn:ClearAllPoints()
-  refreshBtn:SetPoint("LEFT", createBtn, "RIGHT", gap, 0)
+  refreshBtn:SetPoint("LEFT", actionBtn, "RIGHT", gap, 0)
 
   inviteBtn:ClearAllPoints()
   inviteBtn:SetPoint("LEFT", refreshBtn, "RIGHT", gap, 0)
 
+  removeBtn:ClearAllPoints()
+  removeBtn:SetPoint("LEFT", inviteBtn, "RIGHT", gap, 0)
+
   closeBtn:ClearAllPoints()
-  closeBtn:SetPoint("LEFT", inviteBtn, "RIGHT", gap, 0)
+  closeBtn:SetPoint("LEFT", removeBtn, "RIGHT", gap, 0)
   -- Allow closing with Escape (even if the user changed the global UISpecialFrames list).
   local popupName = popup:GetName()
   if popupName and UISpecialFrames then
@@ -451,6 +478,109 @@ local function EnsureFrame(self)
 
   self.frame = popup
   return popup
+end
+
+local function UpdateInstanceControls(frame)
+  local categoryDrop = frame and frame._eventqCategoryDrop
+  local instanceDrop = frame and frame._eventqInstanceDrop
+  local instanceLabel = frame and frame._eventqInstanceLabel
+  local startBox = frame and frame._eventqStart
+
+  if not (frame and categoryDrop and instanceDrop and instanceLabel and startBox) then
+    return
+  end
+
+  local show = IsRaidOrDungeon(frame._eventqSelectedType)
+  if show then
+    instanceLabel:Show()
+    instanceDrop:Show()
+  else
+    instanceLabel:Hide()
+    instanceDrop:Hide()
+    frame._eventqSelectedTexture = nil
+    instanceDrop:SetText("Select...")
+  end
+
+  -- Re-anchor the Start widgets to remove the gap when the instance dropdown is hidden.
+  local anchor = show and instanceDrop or categoryDrop
+  local startLabel = frame._eventqStartLabel
+  if startLabel then
+    startLabel:ClearAllPoints()
+    startLabel:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
+  end
+  startBox:ClearAllPoints()
+  startBox:SetPoint("TOPLEFT", startLabel or anchor, "BOTTOMLEFT", 4, -6)
+end
+
+local function SetupInstanceDropdown(frame)
+  local dropdown = frame and frame._eventqInstanceDrop
+  if not (frame and dropdown and dropdown.SetupMenu) then
+    return
+  end
+
+  if dropdown._eventqInitialized then
+    return
+  end
+  dropdown._eventqInitialized = true
+
+  local function IsSelected(textureIndex)
+    return frame._eventqSelectedTexture == textureIndex
+  end
+
+  local function SetSelected(textureIndex, displayText)
+    frame._eventqSelectedTexture = textureIndex
+    dropdown:SetText(displayText or "Select...")
+    if dropdown.GenerateMenu and dropdown.GetMenuDescription and not dropdown:GetMenuDescription() then
+      dropdown:GenerateMenu()
+    end
+    if dropdown.Update then
+      dropdown:Update()
+    end
+  end
+
+  dropdown:SetupMenu(function(_, rootDescription)
+    rootDescription:SetTag("MENU_EVENTQ_CALENDAR_INSTANCE")
+
+    local app = frame._eventqApp
+    local calendar = app and app.calendar
+    if not calendar then
+      rootDescription:CreateTitle("Calendar unavailable")
+      return
+    end
+
+    local ok = calendar.EnsureCalendarAvailable and select(1, calendar:EnsureCalendarAvailable())
+    if not ok then
+      rootDescription:CreateTitle("Calendar unavailable")
+      return
+    end
+
+    local eventType = frame._eventqSelectedType
+    local textures = (C_Calendar and C_Calendar.EventGetTextures) and C_Calendar.EventGetTextures(eventType) or {}
+    if not textures or #textures == 0 then
+      rootDescription:CreateTitle("No instances found")
+      return
+    end
+
+    for textureIndex, textureInfo in ipairs(textures) do
+      local title = textureInfo and textureInfo.title
+      if title and title ~= "" then
+        local difficultyName = ""
+        if textureInfo.difficultyId and GetDifficultyInfo then
+          difficultyName = select(1, GetDifficultyInfo(textureInfo.difficultyId)) or ""
+        end
+        local label = title
+        if difficultyName ~= "" then
+          label = string.format("%s (%s)", title, difficultyName)
+        end
+
+        rootDescription:CreateRadio(label, function() return IsSelected(textureIndex) end, function() SetSelected(textureIndex, label) end, textureIndex)
+      end
+    end
+
+    local menuMinWidth = math.floor((dropdown.GetWidth and dropdown:GetWidth()) or 180)
+    rootDescription:SetMinimumWidth(menuMinWidth)
+    rootDescription:SetMaximumWidth(menuMinWidth + 140)
+  end)
 end
 
 local function InitializeDropdown(frame)
@@ -471,6 +601,15 @@ local function InitializeDropdown(frame)
   local function SetSelected(eventType)
     frame._eventqSelectedType = eventType
     dropdown:SetText(FindCategoryLabel(eventType))
+
+    -- Changing the category can flip the instance dropdown visibility and invalidate prior selections.
+    frame._eventqSelectedTexture = nil
+    local instanceDrop = frame._eventqInstanceDrop
+    if instanceDrop then
+      instanceDrop:SetText("Select...")
+    end
+    SetupInstanceDropdown(frame)
+    UpdateInstanceControls(frame)
 
     -- Keep radio checks in sync even if the menu hasn't been opened yet.
     if dropdown.GenerateMenu and dropdown.GetMenuDescription and not dropdown:GetMenuDescription() then
@@ -496,6 +635,9 @@ local function InitializeDropdown(frame)
   frame._eventqSelectedType = frame._eventqSelectedType or CATEGORIES[#CATEGORIES].eventType
   dropdown:SetDefaultText(FindCategoryLabel(frame._eventqSelectedType))
   dropdown:SetText(FindCategoryLabel(frame._eventqSelectedType))
+
+  SetupInstanceDropdown(frame)
+  UpdateInstanceControls(frame)
 end
 
 local function AttachDateTimePicker(frame, editBox, isEnd)
@@ -585,15 +727,55 @@ local function RefreshFromCalendar(frame)
     return
   end
 
-  local invites, err = frame._eventqApp.calendar:GetInviteSnapshot(eventID, signature)
+  local calendar = frame._eventqApp.calendar
+  local desiredInvitees = frame._eventqDesiredInvitees
+  if type(desiredInvitees) ~= "table" then
+    local rawInviteText = frame._eventqInviteEdit and frame._eventqInviteEdit:GetText() or ""
+    desiredInvitees = ParseInviteList(rawInviteText)
+    frame._eventqDesiredInvitees = desiredInvitees
+  end
+
+  local changed, namesReady, ensureErr
+  if calendar.EnsureInvites then
+    changed, namesReady, ensureErr = calendar:EnsureInvites(eventID, signature, desiredInvitees)
+  else
+    namesReady = true
+  end
+
+  local invites, err = calendar:GetInviteSnapshot(eventID, signature)
   if not invites then
     SetStatus(frame, err or "Could not read invites.", 1, 0.1, 0.1)
     UpdateInviteRows(frame, {})
     return
   end
 
+  -- If names are not ready yet, the calendar API can return incomplete invite records.
+  -- We still show the intended invitee list so the user can confirm who should be invited.
+  local present = {}
+  for _, inviteInfo in ipairs(invites) do
+    local name = inviteInfo and inviteInfo.name
+    if name then
+      present[strtrim(name):lower()] = true
+    end
+  end
+  for _, name in ipairs(desiredInvitees or {}) do
+    local trimmed = strtrim(name or "")
+    if trimmed ~= "" and not present[trimmed:lower()] then
+      invites[#invites + 1] = { name = trimmed, inviteStatus = nil }
+    end
+  end
+
   UpdateInviteRows(frame, invites)
-  SetStatus(frame, string.format("Tracking %d invite(s).", #invites))
+
+  if ensureErr then
+    SetStatus(frame, ensureErr, 1, 0.82, 0)
+  elseif namesReady == false then
+    SetStatus(frame, "Loading invite names...", 1, 0.82, 0)
+  elseif changed then
+    SetStatus(frame, "Invites updated.", 0.2, 1, 0.2)
+  else
+    SetStatus(frame, string.format("Tracking %d invite(s).", #invites))
+  end
 end
 
 local function TryLocateEvent(frame)
@@ -604,6 +786,16 @@ local function TryLocateEvent(frame)
   local eventID, _ = frame._eventqApp.calendar:FindPlayerEventBySignature(frame._eventqSignature)
   if eventID then
     frame._eventqEventID = eventID
+
+    -- Once we have a stable eventID we can safely update/remove the event from within EventQ.
+    if frame._eventqActionBtn then
+      frame._eventqActionBtn:Enable()
+      frame._eventqActionBtn:SetText("Update Event")
+    end
+    if frame._eventqRemoveBtn then
+      frame._eventqRemoveBtn:Enable()
+    end
+
     RefreshFromCalendar(frame)
     return true
   end
@@ -679,6 +871,10 @@ function CalendarEventPopup:Show(app, preset)
     frame._eventqSelectedType = preset.eventType or frame._eventqSelectedType
     frame._eventqCategoryDrop:SetText(FindCategoryLabel(frame._eventqSelectedType))
 
+    -- Presets can set the event type before the menu is opened, so refresh the instance controls now.
+    SetupInstanceDropdown(frame)
+    UpdateInstanceControls(frame)
+
     if preset.inviteText and frame._eventqInviteEdit then
       frame._eventqInviteEdit:SetText(preset.inviteText)
     elseif frame._eventqInviteEdit then
@@ -694,16 +890,22 @@ function CalendarEventPopup:Show(app, preset)
     end
   end
 
-  frame._eventqCreateBtn:SetScript("OnClick", function()
+  if frame._eventqActionBtn then
+    frame._eventqActionBtn:SetText("Add to Calendar")
+    frame._eventqActionBtn:Enable()
+  end
+  if frame._eventqRemoveBtn then
+    frame._eventqRemoveBtn:Disable()
+  end
+
+  local function BuildSpecFromInputs()
     if not (app and app.calendar and app.dateUtil) then
-      SetStatus(frame, "Calendar services are not ready.", 1, 0.1, 0.1)
-      return
+      return nil, "Calendar services are not ready."
     end
 
     local title = strtrim(frame._eventqName:GetText() or "")
     if title == "" then
-      SetStatus(frame, "Name is required.", 1, 0.1, 0.1)
-      return
+      return nil, "Name is required."
     end
 
     local startRaw = frame._eventqStart:GetText() or ""
@@ -712,28 +914,64 @@ function CalendarEventPopup:Show(app, preset)
       startRaw = ""
     end
 
-    local startEpoch = nil
+    local startEpoch
     if app.dateUtil.ParseUserDateTime and startRaw ~= "" then
       startEpoch = select(1, app.dateUtil:ParseUserDateTime(startRaw, order, false))
     end
-
     if not startEpoch then
-      SetStatus(frame, "Start date/time is required.", 1, 0.1, 0.1)
-      return
+      return nil, "Start date/time is required."
+    end
+
+    local selectedType = frame._eventqSelectedType
+    if IsRaidOrDungeon(selectedType) and not frame._eventqSelectedTexture then
+      return nil, "Select a raid/dungeon instance."
     end
 
     local descText = (frame._eventqDescEdit and frame._eventqDescEdit:GetText()) or ""
     local inviteText = (frame._eventqInviteEdit and frame._eventqInviteEdit:GetText()) or ""
-
     local invitees = ParseInviteList(inviteText)
 
-    local spec = {
+    frame._eventqDesiredInvitees = invitees
+
+    return {
       title = title,
       startEpoch = startEpoch,
-      eventType = frame._eventqSelectedType,
+      eventType = selectedType,
+      textureIndex = frame._eventqSelectedTexture,
       description = descText,
       invitees = invitees,
-    }
+    }, nil
+  end
+
+  frame._eventqActionBtn:SetScript("OnClick", function()
+    if not (app and app.calendar and app.dateUtil) then
+      SetStatus(frame, "Calendar services are not ready.", 1, 0.1, 0.1)
+      return
+    end
+
+    local spec, buildErr = BuildSpecFromInputs()
+    if not spec then
+      SetStatus(frame, buildErr or "Invalid input.", 1, 0.1, 0.1)
+      return
+    end
+
+    if frame._eventqEventID and frame._eventqSignature then
+      local newSignature, err = app.calendar:UpdatePlayerEvent(frame._eventqEventID, frame._eventqSignature, spec)
+      if not newSignature then
+        SetStatus(frame, err or "Could not update the calendar event.", 1, 0.1, 0.1)
+        return
+      end
+
+      frame._eventqSignature = newSignature
+
+      if app.calendar.EnsureInvites then
+        app.calendar:EnsureInvites(frame._eventqEventID, frame._eventqSignature, frame._eventqDesiredInvitees or {})
+      end
+
+      RefreshFromCalendar(frame)
+      SetStatus(frame, "Event updated.", 0.2, 1, 0.2)
+      return
+    end
 
     local signature, err = app.calendar:CreatePlayerEvent(spec)
     if not signature then
@@ -744,9 +982,44 @@ function CalendarEventPopup:Show(app, preset)
     frame._eventqEventID = nil
     frame._eventqSignature = signature
 
+    if frame._eventqActionBtn then
+      frame._eventqActionBtn:Disable()
+      frame._eventqActionBtn:SetText("Linking...")
+    end
+
     UpdateInviteRows(frame, {})
     SetStatus(frame, "Event created. Waiting for calendar sync...", 1, 0.82, 0)
     RetryLocateEvent(frame, 12)
+  end)
+
+  frame._eventqRemoveBtn:SetScript("OnClick", function()
+    if not (app and app.calendar) then
+      SetStatus(frame, "Calendar services are not ready.", 1, 0.1, 0.1)
+      return
+    end
+
+    if not (frame._eventqEventID and frame._eventqSignature) then
+      SetStatus(frame, "No linked event to remove.")
+      return
+    end
+
+    local ok, err = app.calendar:RemovePlayerEvent(frame._eventqEventID, frame._eventqSignature)
+    if not ok then
+      SetStatus(frame, err or "Could not remove the calendar event.", 1, 0.1, 0.1)
+      return
+    end
+
+    frame._eventqEventID = nil
+    frame._eventqSignature = nil
+    frame._eventqDesiredInvitees = nil
+
+    UpdateInviteRows(frame, {})
+    if frame._eventqActionBtn then
+      frame._eventqActionBtn:SetText("Add to Calendar")
+      frame._eventqActionBtn:Enable()
+    end
+    frame._eventqRemoveBtn:Disable()
+    SetStatus(frame, "Event removed.", 0.2, 1, 0.2)
   end)
 
   frame._eventqRefreshBtn:SetScript("OnClick", function()
