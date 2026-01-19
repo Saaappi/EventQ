@@ -953,7 +953,7 @@ function CalendarEventPopup:Show(app, preset)
     end
 
     if frame._eventqEventID and frame._eventqSignature then
-      local newSignature, err = app.calendar:UpdatePlayerEvent(frame._eventqEventID, frame._eventqSignature, spec)
+      local newSignature, err, snapped = app.calendar:UpdatePlayerEvent(frame._eventqEventID, frame._eventqSignature, spec)
       if not newSignature then
         SetStatus(frame, err or "Could not update the calendar event.", 1, 0.1, 0.1)
         return
@@ -961,16 +961,16 @@ function CalendarEventPopup:Show(app, preset)
 
       frame._eventqSignature = newSignature
 
-      if app.calendar.EnsureInvites then
-        app.calendar:EnsureInvites(frame._eventqEventID, frame._eventqSignature, frame._eventqDesiredInvitees or {})
-      end
-
       RefreshFromCalendar(frame)
-      SetStatus(frame, "Event updated.", 0.2, 1, 0.2)
+      if snapped then
+        SetStatus(frame, "Event updated (minutes snapped to 5-minute steps).", 0.2, 1, 0.2)
+      else
+        SetStatus(frame, "Event updated.", 0.2, 1, 0.2)
+      end
       return
     end
 
-    local signature, err = app.calendar:CreatePlayerEvent(spec)
+    local signature, err, snapped = app.calendar:CreatePlayerEvent(spec)
     if not signature then
       SetStatus(frame, err or "Could not create the calendar event.", 1, 0.1, 0.1)
       return
@@ -985,7 +985,11 @@ function CalendarEventPopup:Show(app, preset)
     end
 
     UpdateInviteRows(frame, {})
-    SetStatus(frame, "Event created. Waiting for calendar sync...", 1, 0.82, 0)
+    if snapped then
+      SetStatus(frame, "Event created (minutes snapped to 5-minute steps). Waiting for calendar sync...", 1, 0.82, 0)
+    else
+      SetStatus(frame, "Event created. Waiting for calendar sync...", 1, 0.82, 0)
+    end
     RetryLocateEvent(frame, 12)
   end)
 

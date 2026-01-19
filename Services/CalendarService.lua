@@ -1064,6 +1064,28 @@ local function SignatureFromEpoch(title, startEpoch, eventType)
   }
 end
 
+-- Blizzard's Calendar UI snaps event times to 5-minute increments (see the minute dropdown in
+-- Blizzard_Calendar). When a user types an arbitrary minute value (e.g. :17) EventSetTime can be
+-- ignored by the backend, making it look like updates "don't apply". We normalize minutes here
+-- so that event creation/editing behaves like the stock UI.
+---@param epoch number
+---@return number normalizedEpoch
+---@return boolean changed
+local function NormalizeToFiveMinuteEpoch(epoch)
+  local parts = date("*t", epoch)
+  if not parts then
+    return epoch, false
+  end
+
+  local minute = tonumber(parts.min) or 0
+  local snappedMinute = minute - (minute % 5)
+  if snappedMinute == minute then
+    return epoch, false
+  end
+
+  return epoch - ((minute - snappedMinute) * 60), true
+end
+
 local function SignatureIsValid(signature)
   return type(signature) == "table"
     and type(signature.title) == "string" and signature.title ~= ""
@@ -1157,11 +1179,37 @@ function CalendarService:GetPlayerEventEditPreset(eventData)
     description = self:TryFetchDescription(eventData.eventID, indexInfo.offsetMonths, indexInfo.monthDay, title, dayEvent.calendarType)
   end
 
+  -- Seed the invite edit box with the current invite list so the popup can perform
+  -- add/remove syncing based on what the user edits (rather than defaulting to an
+  -- empty list, which would accidentally clear all invitees).
+  local inviteText
+  if C_Calendar.OpenEvent and C_Calendar.GetNumInvites and C_Calendar.EventGetInvite then
+    local okOpen, opened = self:_SafeCalendarCall(C_Calendar.OpenEvent, indexInfo.offsetMonths, indexInfo.monthDay, indexInfo.eventIndex)
+    if okOpen and opened ~= false then
+      local okCount, numInvites = self:_SafeCalendarCall(C_Calendar.GetNumInvites)
+      if okCount and numInvites and numInvites > 0 then
+        local names = {}
+        for inviteIndex = 1, numInvites do
+          local okInvite, inviteInfo = self:_SafeCalendarCall(C_Calendar.EventGetInvite, inviteIndex)
+          local name = okInvite and inviteInfo and inviteInfo.name
+          if name then
+            names[#names + 1] = strtrim(name)
+          end
+        end
+        table.sort(names)
+        inviteText = table.concat(names, "\n")
+      else
+        inviteText = ""
+      end
+    end
+  end
+
   return {
     eventID = eventData.eventID,
     signature = signature,
     title = title,
     description = description,
+    inviteText = inviteText,
     startEpoch = startEpoch,
     endEpoch = endEpoch,
     eventType = eventType,
@@ -1230,6 +1278,9 @@ function CalendarService:CreatePlayerEvent(spec)
     return nil, "Calendar events require a start time."
   end
 
+  local snapped
+  startEpoch, snapped = NormalizeToFiveMinuteEpoch(startEpoch)
+
   local startParts = date("*t", startEpoch)
   if not (startParts and startParts.year and startParts.month and startParts.day) then
     return nil, "Invalid start time."
@@ -1289,7 +1340,7 @@ function CalendarService:CreatePlayerEvent(spec)
     return nil, "Calendar refused to create the event."
   end
 
-  return SignatureFromEpoch(title, startEpoch, eventType), nil
+  return SignatureFromEpoch(title, startEpoch, eventType), nil, snapped
 end
 
 local function IsRaidOrDungeonEventType(eventType)
@@ -1324,8 +1375,11 @@ function CalendarService:_OpenPlayerEvent(eventID, signature)
     return nil, "Could not locate the calendar event (data may still be loading)."
   end
 
-  local okEvent = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
-  if not okEvent then
+  -- IMPORTANT: C_Calendar.OpenEvent can fail without throwing (e.g., the event list is still
+  -- loading or the event index became stale). _SafeCalendarCall only reports whether the
+  -- function executed without error, so we also check the return value when available.
+  local okEvent, opened = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if not okEvent or opened == false then
     return nil, "Could not open the calendar event."
   end
 
@@ -1357,6 +1411,11 @@ function CalendarService:UpdatePlayerEvent(eventID, signature, spec)
     return nil, "Calendar events require a start time."
   end
 
+  -- Blizzard_Calendar restricts event minutes to 5-minute increments. Normalizing here prevents
+  -- the backend from ignoring EventSetTime calls when users type arbitrary minutes.
+  local snapped
+  startEpoch, snapped = NormalizeToFiveMinuteEpoch(startEpoch)
+
   local startParts = date("*t", startEpoch)
   if not (startParts and startParts.year and startParts.month and startParts.day) then
     return nil, "Invalid start time."
@@ -1365,6 +1424,7 @@ function CalendarService:UpdatePlayerEvent(eventID, signature, spec)
   local description = tostring(spec.description or "")
   local eventType = spec.eventType or signature.eventType or ((Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or nil)
   local textureIndex = tonumber(spec.textureIndex)
+  local desiredInvitees = spec.invitees
 
   if IsRaidOrDungeonEventType(eventType) and not textureIndex then
     return nil, "Select a raid/dungeon before updating the calendar event."
@@ -1373,19 +1433,134 @@ function CalendarService:UpdatePlayerEvent(eventID, signature, spec)
   self:_SafeCalendarCall(C_Calendar.EventSetTitle, title)
   self:_SafeCalendarCall(C_Calendar.EventSetDescription, description)
   self:_SafeCalendarCall(C_Calendar.EventSetDate, startParts.month, startParts.day, startParts.year)
-  self:_SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
+
+  -- CalendarCreateEventFrame stores the time selection in 12h/24h fields and uses
+  -- CalendarCreateEvent_SetEventTime() to translate those into the 24h hour value passed
+  -- to C_Calendar.EventSetTime(). We prefer that path when available because it mirrors
+  -- Blizzard_Calendar's edit flow and avoids subtle edge cases when the player's time
+  -- settings change mid-session.
+  if type(CalendarCreateEvent_SetEventTime) == "function" and CalendarCreateEventFrame and CalendarFrame and type(GetCVarBool) == "function" then
+    CalendarFrame.militaryTime = GetCVarBool("timeMgrUseMilitaryTime")
+    if CalendarFrame.militaryTime then
+      CalendarCreateEventFrame.selectedHour = startParts.hour
+      CalendarCreateEventFrame.selectedAM = nil
+    else
+      -- GameTime_ComputeStandardTime returns hour in 1-12 range and a boolean AM flag.
+      if type(GameTime_ComputeStandardTime) == "function" then
+        CalendarCreateEventFrame.selectedHour, CalendarCreateEventFrame.selectedAM = GameTime_ComputeStandardTime(startParts.hour)
+      else
+        -- Fallback: best-effort 24h -> 12h conversion.
+        local hour24 = tonumber(startParts.hour) or 0
+        local am = hour24 < 12
+        local hour12 = hour24 % 12
+        if hour12 == 0 then hour12 = 12 end
+        CalendarCreateEventFrame.selectedHour = hour12
+        CalendarCreateEventFrame.selectedAM = am
+      end
+    end
+    CalendarCreateEventFrame.selectedMinute = startParts.min
+    self:_SafeCalendarCall(CalendarCreateEvent_SetEventTime)
+
+    -- If the stock calendar UI is currently visible, updating the selected time values is
+    -- not enough for the drop-downs to refresh. Regenerate their menus so the on-screen
+    -- widgets reflect the new selection.
+    if CalendarCreateEventFrame.HourDropdown and CalendarCreateEventFrame.HourDropdown.GenerateMenu then
+      CalendarCreateEventFrame.HourDropdown:GenerateMenu()
+    end
+    if CalendarCreateEventFrame.MinuteDropdown and CalendarCreateEventFrame.MinuteDropdown.GenerateMenu then
+      CalendarCreateEventFrame.MinuteDropdown:GenerateMenu()
+    end
+    if CalendarCreateEventFrame.AMPMDropdown and CalendarCreateEventFrame.AMPMDropdown.GenerateMenu then
+      CalendarCreateEventFrame.AMPMDropdown:GenerateMenu()
+    end
+  else
+    self:_SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
+  end
   self:_SafeCalendarCall(C_Calendar.EventSetType, eventType)
   if textureIndex and C_Calendar.EventSetTextureID then
     -- For dungeon/raid categories the selected instance is represented as a texture index.
     self:_SafeCalendarCall(C_Calendar.EventSetTextureID, textureIndex)
   end
 
-  local okUpdate = self:_SafeCalendarCall(C_Calendar.UpdateEvent)
-  if not okUpdate then
+  local inviteErr
+  if type(desiredInvitees) == "table" then
+    -- Sync invitees before committing the update so we only call UpdateEvent() once.
+    _, _, inviteErr = self:_SyncCurrentEventInvites(desiredInvitees)
+    if inviteErr then
+      return nil, inviteErr
+    end
+  end
+
+  local okUpdate, updated = self:_SafeCalendarCall(C_Calendar.UpdateEvent)
+  if not okUpdate or updated == false then
     return nil, "Calendar refused to update the event."
   end
 
-  return SignatureFromEpoch(title, startEpoch, eventType), nil
+  return SignatureFromEpoch(title, startEpoch, eventType), nil, snapped
+end
+
+---@param desiredInvitees string[]
+---@return boolean|nil changed
+---@return boolean|nil namesReady
+---@return string|nil err
+function CalendarService:_SyncCurrentEventInvites(desiredInvitees)
+  if type(desiredInvitees) ~= "table" then
+    return false, true, nil
+  end
+
+  local namesReady = (C_Calendar.AreNamesReady and C_Calendar.AreNamesReady()) or false
+
+  local desired = {}
+  local desiredList = {}
+  for _, inviteeName in ipairs(desiredInvitees) do
+    local trimmed = strtrim(inviteeName or "")
+    local key = trimmed:lower()
+    if trimmed ~= "" and not desired[key] then
+      desired[key] = true
+      desiredList[#desiredList + 1] = trimmed
+    end
+  end
+
+  local okCount, numInvites = self:_SafeCalendarCall(C_Calendar.GetNumInvites)
+  if not okCount or not numInvites then
+    return false, true, nil
+  end
+
+  local present = {}
+  local inviteNames = {}
+  for inviteIndex = 1, numInvites do
+    local okInvite, inviteInfo = self:_SafeCalendarCall(C_Calendar.EventGetInvite, inviteIndex)
+    local name = okInvite and inviteInfo and inviteInfo.name
+    if name then
+      local trimmed = strtrim(name)
+      present[trimmed:lower()] = true
+      inviteNames[inviteIndex] = trimmed
+    end
+  end
+
+  local changed = false
+
+  -- Removing invitees by index is only safe once names have been resolved.
+  if namesReady then
+    for inviteIndex = numInvites, 1, -1 do
+      local currentName = inviteNames[inviteIndex]
+      if currentName and not desired[currentName:lower()] then
+        if C_Calendar.EventRemoveInvite then
+          self:_SafeCalendarCall(C_Calendar.EventRemoveInvite, inviteIndex)
+          changed = true
+        end
+      end
+    end
+  end
+
+  for _, inviteeName in ipairs(desiredList) do
+    if not present[inviteeName:lower()] then
+      self:_SafeCalendarCall(C_Calendar.EventInvite, inviteeName)
+      changed = true
+    end
+  end
+
+  return changed, namesReady, nil
 end
 
 ---@param eventID string
@@ -1418,7 +1593,8 @@ function CalendarService:RemovePlayerEvent(eventID, signature)
   if C_Calendar.ContextMenuSelectEvent and C_Calendar.ContextMenuEventRemove then
     local canRemove = true
     if C_Calendar.ContextMenuEventCanRemove then
-      canRemove = self:_SafeCalendarCall(C_Calendar.ContextMenuEventCanRemove, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+      local okCanRemove, canRemoveRet = self:_SafeCalendarCall(C_Calendar.ContextMenuEventCanRemove, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+      canRemove = okCanRemove and canRemoveRet ~= false
     end
     if canRemove then
       self:_SafeCalendarCall(C_Calendar.ContextMenuSelectEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
@@ -1462,7 +1638,7 @@ function CalendarService:EnsureInvites(eventID, signature, desiredInvitees)
     return nil, nil, "Event not selected."
   end
 
-  if type(desiredInvitees) ~= "table" or #desiredInvitees == 0 then
+  if type(desiredInvitees) ~= "table" then
     return false, true, nil
   end
 
@@ -1471,39 +1647,16 @@ function CalendarService:EnsureInvites(eventID, signature, desiredInvitees)
     return nil, nil, err
   end
 
-  local namesReady = (C_Calendar.AreNamesReady and C_Calendar.AreNamesReady()) or false
-  if not namesReady then
-    -- EventGetInvite will return incomplete records until names are resolved.
-    return false, false, nil
-  end
-
-  local okCount, numInvites = self:_SafeCalendarCall(C_Calendar.GetNumInvites)
-  if not okCount or not numInvites then
-    return false, true, nil
-  end
-
-  local present = {}
-  for inviteIndex = 1, numInvites do
-    local okInvite, inviteInfo = self:_SafeCalendarCall(C_Calendar.EventGetInvite, inviteIndex)
-    if okInvite and inviteInfo and inviteInfo.name then
-      present[strtrim(inviteInfo.name):lower()] = true
-    end
-  end
-
-  local changed = false
-  for _, inviteeName in ipairs(desiredInvitees) do
-    local trimmed = strtrim(inviteeName or "")
-    if trimmed ~= "" and not present[trimmed:lower()] then
-      self:_SafeCalendarCall(C_Calendar.EventInvite, trimmed)
-      changed = true
-    end
+  local changed, namesReady, syncErr = self:_SyncCurrentEventInvites(desiredInvitees)
+  if syncErr then
+    return nil, nil, syncErr
   end
 
   if changed and C_Calendar.UpdateEvent then
     self:_SafeCalendarCall(C_Calendar.UpdateEvent)
   end
 
-  return changed, true, nil
+  return changed, namesReady, nil
 end
 
 ---@param eventID string
@@ -1531,8 +1684,8 @@ function CalendarService:GetInviteSnapshot(eventID, signature)
     return nil, "Could not locate the calendar event (data may still be loading)."
   end
 
-  local okEvent = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
-  if not okEvent then
+  local okEvent, opened = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if not okEvent or opened == false then
     return nil, "Could not open the calendar event."
   end
 
