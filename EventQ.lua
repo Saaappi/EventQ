@@ -249,6 +249,11 @@ addonFrame:SetScript("OnEvent", function(_, event, arg1)
     end)
 
   elseif event == "CALENDAR_UPDATE_EVENT_LIST" or event == "CALENDAR_UPDATE_INVITE_LIST" or event == "CALENDAR_UPDATE_EVENT" then
+    -- Ignore calendar update events fired synchronously by our own calendar API calls (e.g., SetAbsMonth)
+    -- to avoid re-entrant refresh loops and potential C stack overflows.
+    if app and app.calendar and app.calendar.IsMutatingCalendar and app.calendar:IsMutatingCalendar() then
+      return
+    end
     ScheduleCalendarRefresh()
   end
 end)

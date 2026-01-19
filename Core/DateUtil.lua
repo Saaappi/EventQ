@@ -134,8 +134,8 @@ function DateUtil:ParseUserDateTime(inputText, order, isEnd)
 
   -- Accepted formats (time optional):
   --   MM/DD/YYYY
-  --   MM/DD/YYYY hh:mm
-  --   MM/DD/YYYY hh:mm:ss
+  --   MM/DD/YYYY hour:minute
+  --   MM/DD/YYYY hour:minute
   -- (and the DD/MM variants depending on order)
 
   local part1, part2, year, hour, minute, second =
@@ -148,10 +148,7 @@ function DateUtil:ParseUserDateTime(inputText, order, isEnd)
 
   local dateOnly = false
   if not part1 then
-    -- Date-only inputs (no time) are parsed in a second pass.
-    -- This must match against the user-provided input string; using an undefined global
-    -- here breaks the date picker flow when the edit box contains a plain date.
-    part1, part2, year = inputText:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s*$")
+    part1, part2, year = s:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s*$")
     if part1 then dateOnly = true end
   end
 

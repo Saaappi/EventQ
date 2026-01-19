@@ -18,6 +18,50 @@ local function SafeCalendarCall(func, ...)
   return true, result1, result2
 end
 
+-- Retail increasingly routes addon management through C_AddOns, but older globals may still exist.
+-- These wrappers keep calendar loading working across API variants.
+local function IsAddonLoaded(addonName)
+  if not addonName then return false end
+
+  if type(C_AddOns) == "table" and type(C_AddOns.IsAddOnLoaded) == "function" then
+    local ok, loaded = pcall(C_AddOns.IsAddOnLoaded, addonName)
+    if ok and loaded ~= nil then
+      return loaded
+    end
+  end
+
+  if type(IsAddOnLoaded) == "function" then
+    return IsAddOnLoaded(addonName)
+  end
+
+  return false
+end
+
+local function EnableAddon(addonName)
+  if not addonName then return end
+
+  if type(C_AddOns) == "table" and type(C_AddOns.EnableAddOn) == "function" then
+    pcall(C_AddOns.EnableAddOn, addonName)
+  elseif type(EnableAddOn) == "function" then
+    pcall(EnableAddOn, addonName)
+  end
+end
+
+local function LoadAddon(addonName)
+  if not addonName then return false end
+
+  if type(C_AddOns) == "table" and type(C_AddOns.LoadAddOn) == "function" then
+    local ok = pcall(C_AddOns.LoadAddOn, addonName)
+    return ok
+  end
+  if type(LoadAddOn) == "function" then
+    local ok = pcall(LoadAddOn, addonName)
+    return ok
+  end
+
+  return false
+end
+
 local function wipeArray(array)
   for i = #array, 1, -1 do
     array[i] = nil
@@ -84,26 +128,61 @@ function CalendarService:Constructor(logger, dateUtil)
   -- Blizzard_Calendar is loaded on-demand. If it's not loaded yet, many calendar queries
   -- return empty results until the player opens the calendar UI at least once.
   self._calendarLoaded = false
+  self._calendarAddonName = nil
+  self._calendarMutationDepth = 0
 end
 
 function CalendarService:_EnsureCalendarLoaded()
   if self._calendarLoaded then return true end
 
-  if type(IsAddOnLoaded) == "function" and IsAddOnLoaded("Blizzard_Calendar") then
-    self._calendarLoaded = true
-    return true
+  -- In current Retail builds, addon load state may only be exposed via C_AddOns.
+  -- If we only check IsAddOnLoaded, we'll think the calendar is unavailable forever.
+  local candidates = { "Blizzard_Calendar", "Blizzard_CalendarUI" }
+  for _, addonName in ipairs(candidates) do
+    if IsAddonLoaded(addonName) then
+      self._calendarLoaded = true
+      self._calendarAddonName = addonName
+      return true
+    end
   end
 
-  -- Prefer modern C_AddOns, but fall back to LoadAddOn for older API variants.
-  if type(C_AddOns) == "table" and type(C_AddOns.LoadAddOn) == "function" then
-    pcall(C_AddOns.LoadAddOn, "Blizzard_Calendar")
-  elseif type(LoadAddOn) == "function" then
-    pcall(LoadAddOn, "Blizzard_Calendar")
+  -- Load-on-demand addons cannot be loaded during combat.
+  if InCombatLockdown and InCombatLockdown() then
+    return false
   end
 
-  self._calendarLoaded = (type(IsAddOnLoaded) == "function") and IsAddOnLoaded("Blizzard_Calendar") or false
-  return self._calendarLoaded
+  for _, addonName in ipairs(candidates) do
+    -- If the player disabled the Blizzard calendar addon, opening the calendar UI won't help.
+    -- Enabling + loading here lets our custom event UI "just work".
+    EnableAddon(addonName)
+    LoadAddon(addonName)
+    if IsAddonLoaded(addonName) then
+      self._calendarLoaded = true
+      self._calendarAddonName = addonName
+      return true
+    end
+  end
+
+  self._calendarLoaded = false
+  return false
 end
+
+-- Calendar API calls (especially SetAbsMonth/OpenEvent) can synchronously fire CALENDAR_UPDATE_* events.
+-- If we respond to those events by refreshing while we are still in the middle of a calendar API call,
+-- we can re-enter the same code path and overflow the Lua/C stack.
+function CalendarService:IsMutatingCalendar()
+  return (self._calendarMutationDepth or 0) > 0
+end
+
+
+function CalendarService:_SafeCalendarCall(func, ...)
+  -- Guard against re-entrant refresh loops caused by synchronous CALENDAR_UPDATE_* events.
+  self._calendarMutationDepth = (self._calendarMutationDepth or 0) + 1
+  local ok, r1, r2 = SafeCalendarCall(func, ...)
+  self._calendarMutationDepth = (self._calendarMutationDepth or 0) - 1
+  return ok, r1, r2
+end
+
 
 function CalendarService:RequestRefresh()
   self._descCache = {} -- descriptions can change as calendar data loads
@@ -113,7 +192,7 @@ function CalendarService:RequestRefresh()
 
   -- Ensure the calendar subsystem is loaded so future CollectWindow calls have data.
   self:_EnsureCalendarLoaded()
-  C_Calendar.OpenCalendar()
+  self:_SafeCalendarCall(C_Calendar.OpenCalendar)
 end
 
 function CalendarService:InvalidateSearchCache()
@@ -225,14 +304,14 @@ function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
   -- Calendar is a stateful API: OpenEvent() seeds GetEventInfo().
   -- Patch 12.0+ marks several calendar functions as "AllowedWhenUntainted"; if a call becomes protected
   -- or blocked in combat, treat it as a transient miss rather than crashing the addon.
-  local okOpen, opened = SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  local okOpen, opened = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
   if not okOpen or opened == false then
     return nil
   end
 
-  local okInfo, info = SafeCalendarCall(C_Calendar.GetEventInfo)
+  local okInfo, info = self:_SafeCalendarCall(C_Calendar.GetEventInfo)
   if okInfo and info and info.eventType and info.textureIndex then
-    local okTextures, textures = SafeCalendarCall(C_Calendar.EventGetTextures, info.eventType)
+    local okTextures, textures = self:_SafeCalendarCall(C_Calendar.EventGetTextures, info.eventType)
     local textureInfo = okTextures and textures and textures[info.textureIndex] or nil
     local icon = textureInfo and textureInfo.iconTexture
     if icon then
@@ -276,13 +355,13 @@ function CalendarService:TryFetchDescription(eventID, monthOffset, monthDay, tit
   end
 
   -- OpenEvent is required before GetEventInfo (stateful API).
-  local okOpen, success = SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  local okOpen, success = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
   if not okOpen or success == false then
     -- Don't cache; could be transient.
     return nil
   end
 
-  local okInfo, info = SafeCalendarCall(C_Calendar.GetEventInfo)
+  local okInfo, info = self:_SafeCalendarCall(C_Calendar.GetEventInfo)
   if not okInfo then
     return nil
   end
@@ -319,13 +398,13 @@ function CalendarService:TryFetchCreator(eventID, monthOffset, monthDay)
   end
 
   -- OpenEvent is required before GetEventInfo (stateful API).
-  local okOpen, success = SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  local okOpen, success = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
   if not okOpen or success == false then
     -- Don't cache; could be transient.
     return nil
   end
 
-  local okInfo, info = SafeCalendarCall(C_Calendar.GetEventInfo)
+  local okInfo, info = self:_SafeCalendarCall(C_Calendar.GetEventInfo)
   if not okInfo then
     return nil
   end
@@ -537,7 +616,7 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
   -- have up-to-date results.
   if not self._lastOpenCalendarEpoch or (nowEpoch - self._lastOpenCalendarEpoch) > 300 then
     self:_EnsureCalendarLoaded()
-    CalendarAPI.OpenCalendar()
+    self:_SafeCalendarCall(CalendarAPI.OpenCalendar)
     self._lastOpenCalendarEpoch = nowEpoch
   end
 
@@ -629,7 +708,7 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
       local month, year = monthYearForOffset(monthOffset)
       -- SetAbsMonth is a stateful month switch; in Patch 12.0+ it may be protected.
       -- If it fails, continue scanning the currently loaded month only.
-      local okSet = SafeCalendarCall(CalendarAPI.SetAbsMonth, month, year)
+      local okSet = self:_SafeCalendarCall(CalendarAPI.SetAbsMonth, month, year)
       if not okSet then
         -- If month switching is protected/blocked, fall back to only the currently loaded month.
         break
@@ -767,7 +846,7 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
   end
 
   if CalendarAPI.SetAbsMonth and originalMonth and originalYear then
-    SafeCalendarCall(CalendarAPI.SetAbsMonth, originalMonth, originalYear)
+    self:_SafeCalendarCall(CalendarAPI.SetAbsMonth, originalMonth, originalYear)
   end
 
   for _, event in pairs(bestByKey) do
@@ -794,7 +873,7 @@ function CalendarService:CollectWindow(maxDaysAhead)
   -- Calendar data is loaded lazily; keep the calendar opened, but throttle the call.
   if not self._lastOpenCalendarEpoch or (nowEpoch - self._lastOpenCalendarEpoch) > 300 then
     self:_EnsureCalendarLoaded()
-    C_Calendar.OpenCalendar()
+    self:_SafeCalendarCall(C_Calendar.OpenCalendar)
     self._lastOpenCalendarEpoch = nowEpoch
   end
 
@@ -986,14 +1065,14 @@ function CalendarService:FindPlayerEventBySignature(signature)
     return nil, nil
   end
 
-  local ok = SafeCalendarCall(C_Calendar.OpenCalendar)
+  local ok = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
   if not ok then
     return nil, nil
   end
 
   -- Calendar event queries are scoped by a "current" month. Navigating the month lets us
   -- scan with offsetMonths=0 (avoiding date math for month offsets).
-  SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
+  self:_SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
 
   local numDayEvents = C_Calendar.GetNumDayEvents(0, signature.day)
   for eventIndex = 1, numDayEvents do
@@ -1050,34 +1129,34 @@ function CalendarService:CreatePlayerEvent(spec)
   local description = tostring(spec.description or "")
   local invitees = (type(spec.invitees) == "table") and spec.invitees or nil
 
-  local okOpen = SafeCalendarCall(C_Calendar.OpenCalendar)
+  local okOpen = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
   if not okOpen then
     return nil, "Calendar is not accessible right now (possibly in combat)."
   end
 
-  SafeCalendarCall(C_Calendar.SetAbsMonth, startParts.month, startParts.year)
+  self:_SafeCalendarCall(C_Calendar.SetAbsMonth, startParts.month, startParts.year)
 
-  local okCreate = SafeCalendarCall(C_Calendar.CreatePlayerEvent)
+  local okCreate = self:_SafeCalendarCall(C_Calendar.CreatePlayerEvent)
   if not okCreate then
     return nil, "Unable to start a new calendar event."
   end
 
-  SafeCalendarCall(C_Calendar.EventSetTitle, title)
-  SafeCalendarCall(C_Calendar.EventSetDescription, description)
-  SafeCalendarCall(C_Calendar.EventSetType, eventType)
-  SafeCalendarCall(C_Calendar.EventSetDate, startParts.month, startParts.day, startParts.year)
-  SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
+  self:_SafeCalendarCall(C_Calendar.EventSetTitle, title)
+  self:_SafeCalendarCall(C_Calendar.EventSetDescription, description)
+  self:_SafeCalendarCall(C_Calendar.EventSetType, eventType)
+  self:_SafeCalendarCall(C_Calendar.EventSetDate, startParts.month, startParts.day, startParts.year)
+  self:_SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
 
   if invitees then
     for _, inviteeName in ipairs(invitees) do
       local trimmed = strtrim(inviteeName or "")
       if trimmed ~= "" then
-        SafeCalendarCall(C_Calendar.EventInvite, trimmed)
+        self:_SafeCalendarCall(C_Calendar.EventInvite, trimmed)
       end
     end
   end
 
-  local okAdd = SafeCalendarCall(C_Calendar.AddEvent)
+  local okAdd = self:_SafeCalendarCall(C_Calendar.AddEvent)
   if not okAdd then
     return nil, "Calendar refused to create the event."
   end
@@ -1098,31 +1177,31 @@ function CalendarService:GetInviteSnapshot(eventID, signature)
     return nil, "Calendar UI is unavailable."
   end
 
-  local okOpen = SafeCalendarCall(C_Calendar.OpenCalendar)
+  local okOpen = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
   if not okOpen then
     return nil, "Calendar is not accessible right now (possibly in combat)."
   end
 
-  SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
+  self:_SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
 
   local idx = ResolveEventIndexInfo(eventID, 0, signature.day)
   if not idx then
     return nil, "Could not locate the calendar event (data may still be loading)."
   end
 
-  local okEvent = SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  local okEvent = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
   if not okEvent then
     return nil, "Could not open the calendar event."
   end
 
-  local okCount, numInvites = SafeCalendarCall(C_Calendar.GetNumInvites)
+  local okCount, numInvites = self:_SafeCalendarCall(C_Calendar.GetNumInvites)
   if not okCount or not numInvites then
     return {}, nil
   end
 
   local invites = {}
   for inviteIndex = 1, numInvites do
-    local okInvite, inviteInfo = SafeCalendarCall(C_Calendar.EventGetInvite, inviteIndex)
+    local okInvite, inviteInfo = self:_SafeCalendarCall(C_Calendar.EventGetInvite, inviteIndex)
     if okInvite and inviteInfo then
       invites[#invites + 1] = inviteInfo
     end

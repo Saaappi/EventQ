@@ -339,7 +339,7 @@ local function EnsureFrame(self)
   local descFrame, descScroll, descEdit = CreateScrollingMultilineEditBox(left, 240, 150, function()
     popup:Hide()
   end)
-  descFrame:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", -4, -6)
+  descFrame:SetPoint("TOPLEFT", descLabel, "BOTTOMLEFT", 0, -6)
   popup._eventqDescFrame = descFrame
   popup._eventqDescScroll = descScroll
   popup._eventqDescEdit = descEdit
@@ -794,6 +794,11 @@ function CalendarEventPopup:Show(app, preset)
 
     frame:SetScript("OnEvent", function()
       if not (frame and frame.IsShown and frame:IsShown()) then
+        return
+      end
+
+      local cal = frame._eventqApp and frame._eventqApp.calendar
+      if cal and cal.IsMutatingCalendar and cal:IsMutatingCalendar() then
         return
       end
 
