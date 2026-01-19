@@ -566,7 +566,8 @@ function Row:Constructor(frame, app)
       end
 
       local isCustom = not not data.isCustom
-      local isPlayerCalendarEvent = (data.calendarType == "PLAYER") and (data.eventID ~= nil)
+      local calendarType = tostring(data.calendarType or "")
+      local isPlayerCalendarEvent = (calendarType == "PLAYER") and (data.eventID ~= nil)
       if not (isCustom or isPlayerCalendarEvent) then
         return
       end
@@ -597,17 +598,17 @@ function Row:Constructor(frame, app)
             local cal = appRef and appRef.calendar
 
             if not (ui and ui.ShowCalendarEventPopup) then
-              UIErrorsFrame:AddMessage("EventQ UI is unavailable.", 1, 0.1, 0.1)
+              PostEventQMessage(appRef, "EventQ UI is unavailable.", 1, 0.1, 0.1)
               return
             end
             if not (cal and cal.GetPlayerEventEditPreset) then
-              UIErrorsFrame:AddMessage("Calendar edit support is unavailable.", 1, 0.1, 0.1)
+              PostEventQMessage(appRef, "Calendar edit support is unavailable.", 1, 0.1, 0.1)
               return
             end
 
             local preset, err = cal:GetPlayerEventEditPreset(ev)
             if not preset then
-              UIErrorsFrame:AddMessage(err or "Could not locate the calendar event.", 1, 0.1, 0.1)
+              PostEventQMessage(appRef, err or "Could not locate the calendar event.", 1, 0.1, 0.1)
               return
             end
 
