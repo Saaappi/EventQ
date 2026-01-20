@@ -725,12 +725,10 @@ local function RefreshFromCalendar(frame)
     frame._eventqDesiredInvitees = desiredInvitees
   end
 
-  local changed, namesReady, ensureErr
-  if calendar.EnsureInvites then
-    changed, namesReady, ensureErr = calendar:EnsureInvites(eventID, signature, desiredInvitees)
-  else
-    namesReady = true
-  end
+	-- IMPORTANT (taint/protected calls): syncing invites requires mutating the calendar (UpdateEvent/AddInvite/etc.)
+	-- which is protected and can only be done from a hardware event (button click). This refresh path is
+	-- called from CALENDAR_UPDATE_* events and must remain read-only.
+	-- Invite changes are applied when the user clicks "Create Event" / "Update Event".
 
   local invites, err = calendar:GetInviteSnapshot(eventID, signature)
   if not invites then
@@ -756,16 +754,7 @@ local function RefreshFromCalendar(frame)
   end
 
   UpdateInviteRows(frame, invites)
-
-  if ensureErr then
-    SetStatus(frame, ensureErr, 1, 0.82, 0)
-  elseif namesReady == false then
-    SetStatus(frame, "Loading invite names...", 1, 0.82, 0)
-  elseif changed then
-    SetStatus(frame, "Invites updated.", 0.2, 1, 0.2)
-  else
-    SetStatus(frame, string.format("Tracking %d invite(s).", #invites))
-  end
+	SetStatus(frame, string.format("Tracking %d invite(s).", #invites))
 end
 
 local function TryLocateEvent(frame)
@@ -1011,6 +1000,10 @@ function CalendarEventPopup:Show(app, preset)
     if frame._eventqSignature and not frame._eventqEventID then
       TryLocateEvent(frame)
     end
+		frame._eventqNeedsRefresh = false
+		if frame._eventqRefreshBtn and frame._eventqRefreshBtn.SetText then
+			frame._eventqRefreshBtn:SetText("Refresh")
+		end
     RefreshFromCalendar(frame)
   end)
 
@@ -1055,22 +1048,21 @@ function CalendarEventPopup:Show(app, preset)
         return
       end
 
-      local cal = frame._eventqApp and frame._eventqApp.calendar
-      if cal and cal.IsMutatingCalendar and cal:IsMutatingCalendar() then
-        return
-      end
-
-      -- Refresh the invite list opportunistically when the calendar reports new information.
-      if frame._eventqSignature then
-        if not frame._eventqEventID then
-          TryLocateEvent(frame)
-        end
-        RefreshFromCalendar(frame)
-      end
+			-- NOTE: Calendar event / invite manipulation is protected. Even some "read" paths like OpenEvent can
+			-- taint if run from a non-hardware event (CALENDAR_UPDATE_*). Keep this handler UI-only.
+			frame._eventqNeedsRefresh = true
+			if frame._eventqRefreshBtn and frame._eventqRefreshBtn.SetText then
+				frame._eventqRefreshBtn:SetText("Refresh*")
+			end
+			SetStatus(frame, "Calendar updated. Click Refresh to update invite status.", 1, 0.82, 0)
     end)
   end
 
-  RefreshFromCalendar(frame)
+	frame._eventqNeedsRefresh = false
+	if frame._eventqRefreshBtn and frame._eventqRefreshBtn.SetText then
+		frame._eventqRefreshBtn:SetText("Refresh")
+	end
+	RefreshFromCalendar(frame)
   frame:Show()
 end
 

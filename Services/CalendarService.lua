@@ -193,6 +193,23 @@ function CalendarService:IsMutatingCalendar()
   return (self._calendarMutationDepth or 0) > 0
 end
 
+function CalendarService:_TryRefreshBlizzardCalendarUI()
+  if InCombatLockdown and InCombatLockdown() then
+    return
+  end
+
+  -- Only attempt a UI refresh when the Blizzard calendar add-on is loaded.
+  if not self._calendarLoaded then
+    return
+  end
+
+  -- CalendarFrame_Update drives both the list and the day grid refresh.
+  -- Wrapping in pcall keeps us from breaking if Blizzard renames internals.
+  if type(CalendarFrame_Update) == "function" then
+    pcall(CalendarFrame_Update)
+  end
+end
+
 
 function CalendarService:_SafeCalendarCall(func, ...)
   -- Guard against re-entrant refresh loops caused by synchronous CALENDAR_UPDATE_* events.
@@ -493,6 +510,25 @@ function CalendarService:_TryTimewalkingExpansionIcon(monthOffset, monthDay, eve
   end
   return nil
 end
+
+-- Blizzard_Calendar also provides a fixed icon per event type. Our dynamic icon
+-- resolution (textureIndex -> EventGetTextures) doesn't cover Meeting/Other
+-- categories, so we apply the same fallback mapping.
+local function GetFallbackEventTypeTexture(eventType)
+  if not (Enum and Enum.CalendarEventType) then return nil end
+  if eventType == Enum.CalendarEventType.Raid then
+    return "Interface\\LFGFrame\\LFGIcon-Raid"
+  elseif eventType == Enum.CalendarEventType.Dungeon then
+    return "Interface\\LFGFrame\\LFGIcon-Dungeon"
+  elseif eventType == Enum.CalendarEventType.PvP then
+    return "Interface\\Calendar\\UI-Calendar-Event-PVP"
+  elseif eventType == Enum.CalendarEventType.Meeting then
+    return "Interface\\Calendar\\MeetingIcon"
+  elseif eventType == Enum.CalendarEventType.Other then
+    return "Interface\\Calendar\\UI-Calendar-Event-Other"
+  end
+  return nil
+end
 function CalendarService:EnhanceEventIcon(event)
   if not event then return end
 
@@ -533,6 +569,19 @@ function CalendarService:EnhanceEventIcon(event)
       -- Icons coming from textureIndex -> EventGetTextures(eventType) are typically icon sheets
       -- that need quadrant cropping in the UI.
       event.iconIsCalendarSheet = true
+      return
+    end
+  end
+
+  -- Fallback: for player-created events (and some system events) the calendar does not expose
+  -- a textureIndex sheet. Use the standard event type icon so our rows don't show the
+  -- question mark placeholder.
+  if not event.icon and event.eventType then
+    local fallback = GetFallbackEventTypeTexture(event.eventType)
+    if fallback then
+      event.icon = fallback
+      event.iconIsCalendar = false
+      event.iconIsCalendarSheet = nil
     end
   end
 end
@@ -1051,7 +1100,7 @@ end
 ---@field minute number
 ---@field eventType CalendarEventType
 
-local function SignatureFromEpoch(title, startEpoch, eventType)
+local function SignatureFromEpoch(title, startEpoch, eventType, textureIndex)
   local startParts = date("*t", startEpoch or time())
   return {
     title = title,
@@ -1061,6 +1110,7 @@ local function SignatureFromEpoch(title, startEpoch, eventType)
     hour = startParts.hour,
     minute = startParts.min,
     eventType = eventType,
+    textureIndex = textureIndex,
   }
 end
 
@@ -1159,6 +1209,8 @@ function CalendarService:GetPlayerEventEditPreset(eventData)
 
   local title = dayEvent.title or eventData.title or "Event"
   local eventType = dayEvent.eventType or eventData.eventType or ((Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or nil)
+  local textureIndex = dayEvent.textureIndex or eventData.textureIndex
+  local textureIndex = dayEvent.textureIndex or eventData.textureIndex
 
   -- Convert the calendar time struct into an epoch so we can populate the edit fields.
   local startEpoch = (dayEvent.startTime and self.dateUtil:CalendarTimeToEpoch(dayEvent.startTime)) or eventData.startEpoch
@@ -1168,7 +1220,7 @@ function CalendarService:GetPlayerEventEditPreset(eventData)
     return nil, "Event start time could not be determined."
   end
 
-  local signature = SignatureFromEpoch(title, startEpoch, eventType)
+  local signature = SignatureFromEpoch(title, startEpoch, eventType, textureIndex)
   if not SignatureIsValid(signature) then
     return nil, "Event signature could not be built."
   end
@@ -1340,7 +1392,9 @@ function CalendarService:CreatePlayerEvent(spec)
     return nil, "Calendar refused to create the event."
   end
 
-  return SignatureFromEpoch(title, startEpoch, eventType), nil, snapped
+  self:_TryRefreshBlizzardCalendarUI()
+
+  return SignatureFromEpoch(title, startEpoch, eventType, textureIndex), nil, snapped
 end
 
 local function IsRaidOrDungeonEventType(eventType)
@@ -1434,48 +1488,10 @@ function CalendarService:UpdatePlayerEvent(eventID, signature, spec)
   self:_SafeCalendarCall(C_Calendar.EventSetDescription, description)
   self:_SafeCalendarCall(C_Calendar.EventSetDate, startParts.month, startParts.day, startParts.year)
 
-  -- CalendarCreateEventFrame stores the time selection in 12h/24h fields and uses
-  -- CalendarCreateEvent_SetEventTime() to translate those into the 24h hour value passed
-  -- to C_Calendar.EventSetTime(). We prefer that path when available because it mirrors
-  -- Blizzard_Calendar's edit flow and avoids subtle edge cases when the player's time
-  -- settings change mid-session.
-  if type(CalendarCreateEvent_SetEventTime) == "function" and CalendarCreateEventFrame and CalendarFrame and type(GetCVarBool) == "function" then
-    CalendarFrame.militaryTime = GetCVarBool("timeMgrUseMilitaryTime")
-    if CalendarFrame.militaryTime then
-      CalendarCreateEventFrame.selectedHour = startParts.hour
-      CalendarCreateEventFrame.selectedAM = nil
-    else
-      -- GameTime_ComputeStandardTime returns hour in 1-12 range and a boolean AM flag.
-      if type(GameTime_ComputeStandardTime) == "function" then
-        CalendarCreateEventFrame.selectedHour, CalendarCreateEventFrame.selectedAM = GameTime_ComputeStandardTime(startParts.hour)
-      else
-        -- Fallback: best-effort 24h -> 12h conversion.
-        local hour24 = tonumber(startParts.hour) or 0
-        local am = hour24 < 12
-        local hour12 = hour24 % 12
-        if hour12 == 0 then hour12 = 12 end
-        CalendarCreateEventFrame.selectedHour = hour12
-        CalendarCreateEventFrame.selectedAM = am
-      end
-    end
-    CalendarCreateEventFrame.selectedMinute = startParts.min
-    self:_SafeCalendarCall(CalendarCreateEvent_SetEventTime)
-
-    -- If the stock calendar UI is currently visible, updating the selected time values is
-    -- not enough for the drop-downs to refresh. Regenerate their menus so the on-screen
-    -- widgets reflect the new selection.
-    if CalendarCreateEventFrame.HourDropdown and CalendarCreateEventFrame.HourDropdown.GenerateMenu then
-      CalendarCreateEventFrame.HourDropdown:GenerateMenu()
-    end
-    if CalendarCreateEventFrame.MinuteDropdown and CalendarCreateEventFrame.MinuteDropdown.GenerateMenu then
-      CalendarCreateEventFrame.MinuteDropdown:GenerateMenu()
-    end
-    if CalendarCreateEventFrame.AMPMDropdown and CalendarCreateEventFrame.AMPMDropdown.GenerateMenu then
-      CalendarCreateEventFrame.AMPMDropdown:GenerateMenu()
-    end
-  else
-    self:_SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
-  end
+  -- Use the API directly. Relying on Blizzard_Calendar frame helpers here is fragile
+  -- (they may be nil if the calendar UI isn't currently constructed, and they can
+  -- silently no-op if the frame isn't in edit mode).
+  self:_SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
   self:_SafeCalendarCall(C_Calendar.EventSetType, eventType)
   if textureIndex and C_Calendar.EventSetTextureID then
     -- For dungeon/raid categories the selected instance is represented as a texture index.
@@ -1496,7 +1512,31 @@ function CalendarService:UpdatePlayerEvent(eventID, signature, spec)
     return nil, "Calendar refused to update the event."
   end
 
-  return SignatureFromEpoch(title, startEpoch, eventType), nil, snapped
+  -- Some calendar back-end failures don't return an error; they simply keep the old values.
+  -- Verify that the opened event reflects our edits before we update SavedVariables.
+  if C_Calendar.GetEventInfo then
+    local okInfo, info = self:_SafeCalendarCall(C_Calendar.GetEventInfo)
+    if okInfo and info and info.time and info.title then
+      local t = info.time
+      local applied = (info.title == title)
+        and (t.year == startParts.year and t.month == startParts.month and t.monthDay == startParts.day)
+        and (t.hour == startParts.hour and t.minute == startParts.min)
+        and (info.eventType == eventType)
+
+      -- textureIndex only matters for raid/dungeon categories.
+      if textureIndex ~= nil and info.textureIndex ~= nil then
+        applied = applied and (info.textureIndex == textureIndex)
+      end
+
+      if not applied then
+        return nil, "Calendar did not apply the changes (try again once the calendar finishes loading)."
+      end
+    end
+  end
+
+  self:_TryRefreshBlizzardCalendarUI()
+
+  return SignatureFromEpoch(title, startEpoch, eventType, textureIndex), nil, snapped
 end
 
 ---@param desiredInvitees string[]
@@ -1577,12 +1617,8 @@ function CalendarService:RemovePlayerEvent(eventID, signature)
     return false, err
   end
 
-  -- Match Blizzard_Calendar's deletion flow:
-  --   1) Navigate to the month/year
-  --   2) Resolve the day/eventIndex
-  --   3) Select the event for the context menu system
-  --   4) Call ContextMenuEventRemove (invoked by the stock delete confirmation)
-  -- This is more reliable than calling RemoveEvent() directly.
+  -- Deletion is stateful: we must navigate to the correct month and open the
+  -- event so that RemoveEvent() applies to the intended target.
   self:_SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
 
   local idx = ResolveEventIndexInfo(eventID, 0, signature.day)
@@ -1590,39 +1626,29 @@ function CalendarService:RemovePlayerEvent(eventID, signature)
     return false, "Could not locate the calendar event (data may still be loading)."
   end
 
-  if C_Calendar.ContextMenuSelectEvent and C_Calendar.ContextMenuEventRemove then
-    local canRemove = true
-    if C_Calendar.ContextMenuEventCanRemove then
-      local okCanRemove, canRemoveRet = self:_SafeCalendarCall(C_Calendar.ContextMenuEventCanRemove, idx.offsetMonths, idx.monthDay, idx.eventIndex)
-      canRemove = okCanRemove and canRemoveRet ~= false
-    end
-    if canRemove then
-      self:_SafeCalendarCall(C_Calendar.ContextMenuSelectEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
-      local okDelete = self:_SafeCalendarCall(C_Calendar.ContextMenuEventRemove)
-      if okDelete then
-        return true, nil
-      end
-    else
-      return false, "You do not have permission to delete this calendar event."
-    end
+  local okOpen, opened = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
+  if not okOpen or opened == false then
+    return false, "Could not open the calendar event."
   end
 
-  -- Fallback: open the event and try RemoveEvent. This may remove invitations rather than delete.
-  local _, openErr = self:_OpenPlayerEvent(eventID, signature)
-  if openErr then
-    return false, openErr
-  end
-
-  local okRemove = self:_SafeCalendarCall(C_Calendar.RemoveEvent)
-  if not okRemove then
+  local okRemove, removed = self:_SafeCalendarCall(C_Calendar.RemoveEvent)
+  if not okRemove or removed == false then
     return false, "Calendar refused to remove the event."
   end
 
-  -- Best-effort verification: if the event index still resolves, it likely was not removed.
+  if C_Calendar.CloseEvent then
+    self:_SafeCalendarCall(C_Calendar.CloseEvent)
+  end
+
+  self:_TryRefreshBlizzardCalendarUI()
+
+  -- Best-effort verification: if the event still resolves by ID, the remove did not apply.
   local stillThere = ResolveEventIndexInfo(eventID, 0, signature.day)
   if stillThere then
     return false, "Calendar did not remove the event (you may not have permission to delete it)."
   end
+
+  self:_TryRefreshBlizzardCalendarUI()
 
   return true, nil
 end

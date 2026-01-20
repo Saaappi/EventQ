@@ -316,17 +316,10 @@ function MainFrame:_EnsureEventsPanel()
   subheader:SetTextColor(0.75, 0.75, 0.75, 1)
 
   -- Import/export controls for backing up and sharing custom events.
-  -- Button order (left -> right): Import, Export All, Calendar Event.
-  local calendarBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-  calendarBtn:SetSize(150, 24)
-  calendarBtn:SetText("Calendar Event")
-  calendarBtn:SetPoint("TOPRIGHT", -14, -10)
-  calendarBtn:SetScript("OnClick", function() self:ShowCalendarEventPopup({ _eventqTrackNew = true }) end)
-
   local exportAllBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   exportAllBtn:SetSize(110, 24)
   exportAllBtn:SetText("Export All")
-  exportAllBtn:SetPoint("RIGHT", calendarBtn, "LEFT", -8, 0)
+  exportAllBtn:SetPoint("TOPRIGHT", -14, -10)
   exportAllBtn:SetScript("OnClick", function() self:ShowExportAllCustomEvents() end)
 
   local importBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
@@ -529,6 +522,7 @@ function MainFrame:_CollectTrackedCalendarEvents(nowEpoch)
         wrapped._eventqSignature = sig
         wrapped.calendarType = "PLAYER"
         wrapped.eventType = sig.eventType
+        wrapped.textureIndex = sig.textureIndex
         wrapped.title = sig.title or "Calendar Event"
         wrapped.startEpoch = startEpoch
         wrapped.endEpoch = (startEpoch or 0) + 3600 -- best-effort placeholder
@@ -539,12 +533,15 @@ function MainFrame:_CollectTrackedCalendarEvents(nowEpoch)
         wrapped.source = "Calendar"
         wrapped.isCustom = false
 
+        -- Let the calendar service pick an icon. Even if the event hasn't resolved an ID
+        -- yet, EnhanceEventIcon supplies a fallback texture based on eventType so the row
+        -- doesn't show the question mark placeholder.
+        cal:EnhanceEventIcon(wrapped)
+        if app.ApplyIconOverrides then
+          app:ApplyIconOverrides(wrapped)
+        end
+
         if eventID then
-          -- Let the calendar service (and our icon overrides) pick the best possible icon.
-          cal:EnhanceEventIcon(wrapped)
-          if app.ApplyIconOverrides then
-            app:ApplyIconOverrides(wrapped)
-          end
 
           -- Best-effort accuracy: read dayEvent times when available.
           if cal.dateUtil and cal.dateUtil.CalendarTimeToEpoch and C_Calendar and C_Calendar.GetDayEvent and wrapped.monthDay then
@@ -563,6 +560,7 @@ function MainFrame:_CollectTrackedCalendarEvents(nowEpoch)
               end
               wrapped.title = dayEvent.title or wrapped.title
               wrapped.eventType = dayEvent.eventType or wrapped.eventType
+              wrapped.textureIndex = dayEvent.textureIndex or wrapped.textureIndex
             end
           end
         end

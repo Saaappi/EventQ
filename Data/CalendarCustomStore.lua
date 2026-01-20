@@ -14,6 +14,9 @@ local function CopySignature(sig)
     hour = sig.hour,
     minute = sig.minute,
     eventType = sig.eventType,
+    -- Only meaningful for raid/dungeon categories; retained so the UI can show
+    -- the same event icon the player picked.
+    textureIndex = sig.textureIndex,
   }
 end
 
@@ -110,6 +113,7 @@ local function SignaturesEqual(a, b)
     and a.hour == b.hour
     and a.minute == b.minute
     and a.eventType == b.eventType
+    and a.textureIndex == b.textureIndex
 end
 
 ---@param signature table
