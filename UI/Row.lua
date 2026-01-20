@@ -133,9 +133,39 @@ local function EnsureConfirmRemoveCalendarDialog()
       local eventData = data.eventData
       local cal = app.calendar
 
+      -- Tracked entries might exist briefly before the calendar API reports an eventID.
+      -- If we have a signature, try to locate the event by signature and remove it.
+      if eventData and eventData.eventID == nil and eventData._eventqSignature and cal.FindPlayerEventBySignature then
+        local foundEventID = cal:FindPlayerEventBySignature(eventData._eventqSignature)
+        if foundEventID then
+          local ok, err = cal:RemovePlayerEvent(foundEventID, eventData._eventqSignature)
+          if not ok then
+            PostEventQMessage(app, err or "Could not remove the calendar event.", 1, 0.1, 0.1)
+            return
+          end
+
+          if app.calendarCustomStore and app.calendarCustomStore.Remove and eventData._eventqTrackedCalendarId then
+            app.calendarCustomStore:Remove(eventData._eventqTrackedCalendarId)
+          end
+
+          if app.RequestCalendar then app:RequestCalendar() end
+          if app.RefreshAll then app:RefreshAll() end
+          PostEventQMessage(app, "Calendar event removed.", 0.2, 1, 0.2)
+          return
+        end
+      end
+
       local preset, buildErr = cal.GetPlayerEventEditPreset and cal:GetPlayerEventEditPreset(eventData)
       if not preset then
-        PostEventQMessage(app, buildErr or "Could not locate the calendar event.", 1, 0.1, 0.1)
+        -- If the user is removing a tracked EventQ calendar event that has already been
+        -- deleted elsewhere, allow clearing the local tracking entry.
+        if eventData and eventData._eventqTrackedCalendarId and app.calendarCustomStore and app.calendarCustomStore.Remove then
+          app.calendarCustomStore:Remove(eventData._eventqTrackedCalendarId)
+          if app.RefreshAll then app:RefreshAll() end
+          PostEventQMessage(app, "Tracking entry removed (calendar event not found).", 0.9, 0.8, 0.2)
+        else
+          PostEventQMessage(app, buildErr or "Could not locate the calendar event.", 1, 0.1, 0.1)
+        end
         return
       end
 
@@ -143,6 +173,16 @@ local function EnsureConfirmRemoveCalendarDialog()
       if not ok then
         PostEventQMessage(app, err or "Could not remove the calendar event.", 1, 0.1, 0.1)
         return
+      end
+
+      if app.calendarCustomStore and app.calendarCustomStore.Remove then
+        local trackedId = eventData and eventData._eventqTrackedCalendarId
+        if not trackedId and app.calendarCustomStore.FindIdBySignature and preset and preset.signature then
+          trackedId = app.calendarCustomStore:FindIdBySignature(preset.signature)
+        end
+        if trackedId then
+          app.calendarCustomStore:Remove(trackedId)
+        end
       end
 
       -- Calendar mutations can take a moment to propagate. Trigger an immediate refresh, then a
@@ -173,7 +213,10 @@ local function EnsureConfirmRemoveCalendarDialog()
 end
 
 local function ConfirmRemoveCalendarEvent(app, eventData)
-  if not (app and eventData and eventData.eventID) then return end
+  if not (app and eventData) then return end
+  if eventData.eventID == nil and eventData._eventqTrackedCalendarId == nil then
+    return
+  end
 
   if InCombatLockdown and InCombatLockdown() then
     PostEventQMessage(app, "You cannot remove calendar events while in combat.", 1, 0.1, 0.1)
@@ -567,7 +610,7 @@ function Row:Constructor(frame, app)
 
       local isCustom = not not data.isCustom
       local calendarType = tostring(data.calendarType or "")
-      local isPlayerCalendarEvent = (calendarType == "PLAYER") and (data.eventID ~= nil)
+      local isPlayerCalendarEvent = (calendarType == "PLAYER") and (data.eventID ~= nil or data._eventqTrackedCalendarId ~= nil)
       if not (isCustom or isPlayerCalendarEvent) then
         return
       end
@@ -591,6 +634,7 @@ function Row:Constructor(frame, app)
           local editInfo = UIDropDownMenu_CreateInfo()
           editInfo.notCheckable = true
           editInfo.text = "Edit"
+          editInfo.disabled = not (menuData and menuData.eventID)
           editInfo.func = function()
             local ev = MENU._eventqData
             local appRef = MENU._eventqApp
@@ -606,10 +650,26 @@ function Row:Constructor(frame, app)
               return
             end
 
+            if not (ev and ev.eventID) then
+              PostEventQMessage(appRef, "Waiting for the calendar to finish syncing this event.", 1, 0.82, 0)
+              return
+            end
+
             local preset, err = cal:GetPlayerEventEditPreset(ev)
             if not preset then
               PostEventQMessage(appRef, err or "Could not locate the calendar event.", 1, 0.1, 0.1)
               return
+            end
+
+            -- If this event is tracked (created via EventQ), preserve the tracking id so
+            -- the popup can update the stored signature when the user edits the event.
+            if ev and ev._eventqTrackedCalendarId then
+              preset._eventqTrackedCalendarId = ev._eventqTrackedCalendarId
+            elseif appRef and appRef.calendarCustomStore and appRef.calendarCustomStore.FindIdBySignature and preset.signature then
+              local trackedId = appRef.calendarCustomStore:FindIdBySignature(preset.signature)
+              if trackedId then
+                preset._eventqTrackedCalendarId = trackedId
+              end
             end
 
             ui:ShowCalendarEventPopup(preset)
@@ -667,6 +727,7 @@ function Row:Constructor(frame, app)
               startEpoch = ev.startEpoch,
               endEpoch = ev.endEpoch,
               eventType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or nil,
+              _eventqTrackNew = true,
             })
           end
         end

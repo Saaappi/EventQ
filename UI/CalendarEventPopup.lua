@@ -838,6 +838,11 @@ function CalendarEventPopup:Show(app, preset)
   frame._eventqSignature = isEditingExisting and preset.signature or nil
   frame._eventqDesiredInvitees = nil
 
+  -- EventQ tracking: only events created via EventQ (or explicitly marked) appear in the
+  -- dedicated Calendar tab.
+  frame._eventqTrackNew = preset and preset._eventqTrackNew or false
+  frame._eventqTrackedCalendarId = preset and preset._eventqTrackedCalendarId or nil
+
   local dateUtil = app and app.dateUtil
   local order = (app and app.db and app.db.settings and app.db.settings.dateOrder) or (dateUtil and dateUtil:GetDefaultDateOrder()) or "MDY"
 
@@ -961,6 +966,10 @@ function CalendarEventPopup:Show(app, preset)
 
       frame._eventqSignature = newSignature
 
+      if frame._eventqTrackedCalendarId and app.calendarCustomStore and app.calendarCustomStore.UpdateSignature then
+        app.calendarCustomStore:UpdateSignature(frame._eventqTrackedCalendarId, newSignature)
+      end
+
       RefreshFromCalendar(frame)
       if snapped then
         SetStatus(frame, "Event updated (minutes snapped to 5-minute steps).", 0.2, 1, 0.2)
@@ -978,6 +987,11 @@ function CalendarEventPopup:Show(app, preset)
 
     frame._eventqEventID = nil
     frame._eventqSignature = signature
+
+    if frame._eventqTrackNew and app.calendarCustomStore and app.calendarCustomStore.Add then
+      frame._eventqTrackedCalendarId = app.calendarCustomStore:Add(signature)
+      frame._eventqTrackNew = false
+    end
 
     if frame._eventqActionBtn then
       frame._eventqActionBtn:Disable()

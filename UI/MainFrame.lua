@@ -123,6 +123,7 @@ end
 local TAB_KEY = {
   MAIN = "MAIN",
   EVENTS = "EVENTS",
+  CALENDAR = "CALENDAR",
   SEARCH = "SEARCH",
 }
 
@@ -206,8 +207,16 @@ function MainFrame:_EnsureSideTabs()
   eventsTab:SetPoint("TOP", mainTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
 
   local searchTab = CreateSideTab(TAB_KEY.SEARCH, "uitools-icon-search", "uitools-icon-search")
+
+  local calendarTab = CreateSideTab(TAB_KEY.CALENDAR, "ui-hud-calendar-1-up", "ui-hud-calendar-1-up")
+  calendarTab:ClearAllPoints()
+  calendarTab:SetPoint("TOP", eventsTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
+  calendarTab._eventqActiveColor = TAB_ACTIVE_COLOR
+  calendarTab._eventqInactiveColor = TAB_INACTIVE_COLOR
+  calendarTab._eventqForceDesaturate = true
+
   searchTab:ClearAllPoints()
-  searchTab:SetPoint("TOP", eventsTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
+  searchTab:SetPoint("TOP", calendarTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
   searchTab._eventqActiveColor = TAB_ACTIVE_COLOR
   searchTab._eventqInactiveColor = TAB_INACTIVE_COLOR
   searchTab._eventqForceDesaturate = true
@@ -222,6 +231,7 @@ function MainFrame:_EnsureSideTabs()
   self._sideTabs = {
     [TAB_KEY.MAIN] = mainTab,
     [TAB_KEY.EVENTS] = eventsTab,
+    [TAB_KEY.CALENDAR] = calendarTab,
     [TAB_KEY.SEARCH] = searchTab,
   }
   self._eventsTabCount = count
@@ -244,6 +254,7 @@ function MainFrame:SetActiveTab(tabKey)
 
   local showMain = (tabKey == TAB_KEY.MAIN)
   local showEvents = (tabKey == TAB_KEY.EVENTS)
+  local showCalendar = (tabKey == TAB_KEY.CALENDAR)
   local showSearch = (tabKey == TAB_KEY.SEARCH)
 
   if previousTab == TAB_KEY.SEARCH and not showSearch then
@@ -252,6 +263,8 @@ function MainFrame:SetActiveTab(tabKey)
 
   if showEvents then
     self:_EnsureEventsPanel()
+  elseif showCalendar then
+    self:_EnsureCalendarPanel()
   elseif showSearch then
     self:_EnsureSearchPanel()
   end
@@ -266,7 +279,13 @@ function MainFrame:SetActiveTab(tabKey)
   if self.editor then self.editor:SetShown(showMain) end
 
   if self.eventsPanel then self.eventsPanel:SetShown(showEvents) end
+  if self.calendarPanel then self.calendarPanel:SetShown(showCalendar) end
   if self.searchPanel then self.searchPanel:SetShown(showSearch) end
+
+  if showCalendar then
+    local nowEpoch = (GetServerTime and GetServerTime()) or time()
+    self:_UpdateCalendarTabData(nowEpoch)
+  end
 
   if self._UpdatePortableToggleVisibility then
     self:_UpdatePortableToggleVisibility()
@@ -302,7 +321,7 @@ function MainFrame:_EnsureEventsPanel()
   calendarBtn:SetSize(150, 24)
   calendarBtn:SetText("Calendar Event")
   calendarBtn:SetPoint("TOPRIGHT", -14, -10)
-  calendarBtn:SetScript("OnClick", function() self:ShowCalendarEventPopup() end)
+  calendarBtn:SetScript("OnClick", function() self:ShowCalendarEventPopup({ _eventqTrackNew = true }) end)
 
   local exportAllBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   exportAllBtn:SetSize(110, 24)
@@ -396,6 +415,186 @@ function MainFrame:_UpdateEventsTabData(nowEpoch, horizonEpoch)
       self._eventsTabCount:SetText("")
       self._eventsTabCount:Hide()
     end
+  end
+end
+
+
+-- -----------------------------------------------------------------------------
+-- Calendar tab: tracked PLAYER calendar events created via EventQ
+-- -----------------------------------------------------------------------------
+
+function MainFrame:_EnsureCalendarPanel()
+  if self.calendarPanel then return end
+  if not self.frame then return end
+
+  local panel = CreateFrame("Frame", nil, self.frame, "BackdropTemplate")
+  panel:SetPoint("TOPLEFT", 12, -40)
+  panel:SetPoint("BOTTOMRIGHT", -12, 12)
+  panel:Hide()
+
+  local header = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  header:SetPoint("TOPLEFT", 8, -8)
+  header:SetText("Calendar (Tracked)")
+
+  local subheader = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  subheader:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -2)
+  subheader:SetText("Events you created via EventQ")
+  subheader:SetTextColor(0.75, 0.75, 0.75, 1)
+
+  local newBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  newBtn:SetSize(160, 24)
+  newBtn:SetText("New Calendar Event")
+  newBtn:SetPoint("TOPRIGHT", -14, -10)
+  newBtn:SetScript("OnClick", function()
+    self:ShowCalendarEventPopup({ _eventqTrackNew = true })
+  end)
+
+  local listLayout = {
+    paddingTop = 44,
+    rightInset = 20,
+    scrollBarInsetX = 6,
+    bottomInset = 8,
+  }
+
+  local scrollBox, dataProvider = CreateModernList(panel, self.app, listLayout)
+  scrollBox:ClearAllPoints()
+  scrollBox:SetPoint("TOPLEFT", 0, -listLayout.paddingTop)
+  scrollBox:SetPoint("BOTTOMRIGHT", -listLayout.rightInset, listLayout.bottomInset)
+
+  local empty = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  empty:SetPoint("TOPLEFT", 8, -72)
+  empty:SetPoint("RIGHT", -12, 0)
+  empty:SetJustifyH("LEFT")
+  empty:SetTextColor(0.6, 0.6, 0.6, 1)
+  empty:SetText("No tracked calendar events yet. Use 'New Calendar Event' to add one.")
+  empty:Hide()
+
+  self.calendarPanel = panel
+  self.calendarScrollBox = scrollBox
+  self.calendarDP = dataProvider
+  self.calendarEmptyText = empty
+end
+
+local function SortByStartThenTitle(left, right)
+  local leftStart = (left and left.startEpoch) or 0
+  local rightStart = (right and right.startEpoch) or 0
+  if leftStart ~= rightStart then
+    return leftStart < rightStart
+  end
+  local leftTitle = (left and left.title) or ""
+  local rightTitle = (right and right.title) or ""
+  return leftTitle < rightTitle
+end
+
+function MainFrame:_CollectTrackedCalendarEvents(nowEpoch)
+  local app = self.app
+  local store = app and app.calendarCustomStore
+  local cal = app and app.calendar
+  local dateUtil = app and app.dateUtil
+  if not (store and store.GetAll and cal and cal.FindPlayerEventBySignature and dateUtil) then
+    return {}
+  end
+
+  local now = tonumber(nowEpoch) or time()
+  local out = self._trackedCalendarScratch or {}
+  self._trackedCalendarScratch = out
+  WipeArray(out)
+
+  -- Wrapper reuse to keep refresh GC-friendly.
+  self._trackedCalendarWrappedById = self._trackedCalendarWrappedById or {}
+  self._trackedCalendarWrappedSeen = self._trackedCalendarWrappedSeen or {}
+  local wrappedById = self._trackedCalendarWrappedById
+  local wrappedSeen = self._trackedCalendarWrappedSeen
+  for k in pairs(wrappedSeen) do wrappedSeen[k] = nil end
+
+  local entries = store:GetAll() or {}
+  for _, entry in ipairs(entries) do
+    local id = entry and entry.id
+    local sig = entry and entry.signature
+    if id and type(sig) == "table" then
+      local startEpoch = store.SignatureToEpoch and store:SignatureToEpoch(sig)
+
+      -- Keep future events and the recent past (store pruning handles the long tail).
+      if startEpoch and (startEpoch >= (now - (14 * 86400))) then
+        local wrapped = wrappedById[id]
+        if not wrapped then
+          wrapped = {}
+          wrappedById[id] = wrapped
+        end
+
+        local eventID, indexInfo = cal:FindPlayerEventBySignature(sig)
+
+        wrapped.id = id
+        wrapped._eventqTrackedCalendarId = id
+        wrapped._eventqSignature = sig
+        wrapped.calendarType = "PLAYER"
+        wrapped.eventType = sig.eventType
+        wrapped.title = sig.title or "Calendar Event"
+        wrapped.startEpoch = startEpoch
+        wrapped.endEpoch = (startEpoch or 0) + 3600 -- best-effort placeholder
+        wrapped.description = wrapped.description -- preserve lazy-fetched description when possible
+        wrapped.eventID = eventID
+        wrapped.monthOffset = indexInfo and indexInfo.offsetMonths or 0
+        wrapped.monthDay = indexInfo and indexInfo.monthDay or (sig.day or nil)
+        wrapped.source = "Calendar"
+        wrapped.isCustom = false
+
+        if eventID then
+          -- Let the calendar service (and our icon overrides) pick the best possible icon.
+          cal:EnhanceEventIcon(wrapped)
+          if app.ApplyIconOverrides then
+            app:ApplyIconOverrides(wrapped)
+          end
+
+          -- Best-effort accuracy: read dayEvent times when available.
+          if cal.dateUtil and cal.dateUtil.CalendarTimeToEpoch and C_Calendar and C_Calendar.GetDayEvent and wrapped.monthDay then
+            local dayEvent = C_Calendar.GetDayEvent(0, wrapped.monthDay, indexInfo and indexInfo.eventIndex or 1)
+            if dayEvent and dayEvent.startTime then
+              local epoch = cal.dateUtil:CalendarTimeToEpoch(dayEvent.startTime)
+              if epoch then
+                wrapped.startEpoch = epoch
+                -- End time is optional; keep placeholder otherwise.
+                if dayEvent.endTime then
+                  local endEpoch = cal.dateUtil:CalendarTimeToEpoch(dayEvent.endTime)
+                  if endEpoch and endEpoch > epoch then
+                    wrapped.endEpoch = endEpoch
+                  end
+                end
+              end
+              wrapped.title = dayEvent.title or wrapped.title
+              wrapped.eventType = dayEvent.eventType or wrapped.eventType
+            end
+          end
+        end
+
+        out[#out + 1] = wrapped
+        wrappedSeen[id] = true
+      end
+    end
+  end
+
+  for id in pairs(wrappedById) do
+    if not wrappedSeen[id] then
+      wrappedById[id] = nil
+    end
+  end
+
+  table.sort(out, SortByStartThenTitle)
+  return out
+end
+
+function MainFrame:_UpdateCalendarTabData(nowEpoch)
+  if not (self.calendarDP and self.calendarScrollBox) then return end
+
+  local events = self:_CollectTrackedCalendarEvents(nowEpoch)
+  self.calendarDP:Flush()
+  for _, eventData in ipairs(events) do
+    self.calendarDP:Insert(eventData)
+  end
+  self.calendarScrollBox:SetDataProvider(self.calendarDP)
+
+  if self.calendarEmptyText then
+    self.calendarEmptyText:SetShown(#events == 0)
   end
 end
 
@@ -3048,6 +3247,10 @@ function MainFrame:UpdateLists()
   self.rightScrollBox:SetDataProvider(self.rightDP)
   local horizonEpoch = nowEpoch + UPCOMING_WINDOW_SECONDS
   self:_UpdateEventsTabData(nowEpoch, horizonEpoch)
+
+  if self._activeTab == TAB_KEY.CALENDAR then
+    self:_UpdateCalendarTabData(nowEpoch)
+  end
   
 
   if self._portableMode then

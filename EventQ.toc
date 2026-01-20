@@ -24,6 +24,7 @@ UI/SeriesViewer.lua
 UI/MainFrame.lua
 UI/MinimapButton.lua
 Data/CustomStore.lua
+Data/CalendarCustomStore.lua
 Services/CalendarService.lua
 Services/ReminderService.lua
 Core/App.lua

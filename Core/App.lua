@@ -413,6 +413,7 @@ function App:Constructor(db)
   end
 
   self.customStore = ns.CustomStore(db)
+  self.calendarCustomStore = ns.CalendarCustomStore and ns.CalendarCustomStore(db) or nil
   self.importExport = ns.ImportExport()
   self.calendar = ns.CalendarService(self.log, self.dateUtil)
   self.reminders = ns.ReminderService and ns.ReminderService(self.log, self.dateUtil, db) or nil
@@ -612,6 +613,9 @@ function App:RefreshAll()
 
   local now = time()
   self.customStore:PruneOld(now)
+  if self.calendarCustomStore and self.calendarCustomStore.PruneOld then
+    self.calendarCustomStore:PruneOld(now)
+  end
 
   local cal = self.calendar:CollectWindow(UPCOMING_DAYS)
   local custom = self.customStore:GetAll()
