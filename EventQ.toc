@@ -15,6 +15,7 @@ Config/PVPQueue.lua
 UI/Settings.lua
 UI/RolePopup.lua
 UI/ImportExportPopup.lua
+Services/InstanceCatalog.lua
 UI/CalendarEventPopup.lua
 UI/Row.lua
 UI/DateTimePicker.lua

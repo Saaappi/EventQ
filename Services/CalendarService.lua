@@ -190,7 +190,21 @@ end
 -- If we respond to those events by refreshing while we are still in the middle of a calendar API call,
 -- we can re-enter the same code path and overflow the Lua/C stack.
 function CalendarService:IsMutatingCalendar()
-  return (self._calendarMutationDepth or 0) > 0
+  if (self._calendarMutationDepth or 0) > 0 then
+    return true
+  end
+
+  -- Some calendar updates are delivered immediately *after* a C_Calendar call returns.
+  -- If we only guard for the duration of the call, we can still schedule a refresh
+  -- from those follow-up events and re-enter a month scan, eventually overflowing
+  -- the Lua/C stack.
+  local last = self._calendarMutatedAt
+  if not last then
+    return false
+  end
+
+  local now = (GetTimePreciseSec and GetTimePreciseSec()) or (GetTime and GetTime()) or 0
+  return (now - last) < 0.40
 end
 
 function CalendarService:_TryRefreshBlizzardCalendarUI()
@@ -215,8 +229,10 @@ end
 function CalendarService:_SafeCalendarCall(func, ...)
   -- Guard against re-entrant refresh loops caused by synchronous CALENDAR_UPDATE_* events.
   self._calendarMutationDepth = (self._calendarMutationDepth or 0) + 1
+  self._calendarMutatedAt = (GetTimePreciseSec and GetTimePreciseSec()) or (GetTime and GetTime()) or 0
   local ok, r1, r2 = SafeCalendarCall(func, ...)
   self._calendarMutationDepth = (self._calendarMutationDepth or 0) - 1
+  self._calendarMutatedAt = (GetTimePreciseSec and GetTimePreciseSec()) or (GetTime and GetTime()) or 0
   return ok, r1, r2
 end
 

@@ -494,13 +494,31 @@ local function SetupInstanceDropdown(frame)
       return
     end
 
-    -- Group instances by expansion. The calendar API provides expansionLevel on each texture info.
-    local buckets = {} -- expansionLevel -> { label=string, items={ {textureIndex=number, label=string} } }
-    local levels = {}
-    local seenLevel = {}
+	    -- Calendar texture names are loaded asynchronously in some clients.
+	    -- If names aren't ready yet, avoid producing a misleading partial list.
+	    local namesReady = (C_Calendar and C_Calendar.AreNamesReady and C_Calendar.AreNamesReady()) or true
+	    if not namesReady then
+	      rootDescription:CreateTitle("Loading instances...")
+	      rootDescription:CreateButton("Retry", function()
+	        if dropdown.GenerateMenu then dropdown:GenerateMenu() end
+	        if dropdown.Update then dropdown:Update() end
+	      end)
+	      return
+	    end
 
-    local seenTextureKeys = {}
-    local allowedRaidDifficulty = { [14] = true, [15] = true, [16] = true }
+	    -- Prefer Encounter Journal tiering for expansion grouping. The Calendar API's expansionLevel can
+	    -- reflect *current* availability (e.g. Mythic+ rotation) rather than the original expansion.
+	    local catalog = app._eventqInstanceCatalog
+	    if not catalog and ns.InstanceCatalog then
+	      catalog = ns.InstanceCatalog()
+	      app._eventqInstanceCatalog = catalog
+	    end
+
+    -- Group instances by expansion. The calendar API provides expansionLevel on each texture info.
+	    local buckets = {} -- expansionLevel -> { label=string, items={ {textureIndex=number, label=string} } }
+	    local levels = {}
+	    local seenLevel = {}
+	    local seenLabelKeys = {}
 
     for textureIndex, textureInfo in ipairs(textures) do
       repeat
@@ -509,26 +527,20 @@ local function SetupInstanceDropdown(frame)
           break
         end
 
-        local difficultyId = textureInfo.difficultyId
+	        local difficultyId = textureInfo.difficultyId
         local difficultyName = ""
         if difficultyId and GetDifficultyInfo then
           difficultyName = select(1, GetDifficultyInfo(difficultyId)) or ""
         end
 
-        -- Filter: exclude LFR, and only include Normal/Heroic/Mythic for raids.
+	        -- Filter: exclude Raid Finder / LFR for raids.
         if eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid) then
-          if difficultyId then
-            if not allowedRaidDifficulty[difficultyId] then
-              break
-            end
-          else
-            local lower = title:lower()
-            local dn = difficultyName:lower()
-            if lower:find("looking for raid", 1, true) or lower:find("lfr", 1, true)
-              or dn:find("looking for raid", 1, true) or dn:find("lfr", 1, true) then
-              break
-            end
-          end
+	          local lower = title:lower()
+	          local dn = difficultyName:lower()
+	          if lower:find("looking for raid", 1, true) or lower:find("raid finder", 1, true) or lower:find("lfr", 1, true)
+	            or dn:find("looking for raid", 1, true) or dn:find("raid finder", 1, true) or dn:find("lfr", 1, true) then
+	            break
+	          end
         elseif eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon) then
           -- Filter: exclude Follower dungeons.
           local lower = title:lower()
@@ -538,17 +550,24 @@ local function SetupInstanceDropdown(frame)
           end
         end
 
-        local expansionLevel = tonumber(textureInfo.expansionLevel) or -1
-        local key = string.format("%s|%s|%s", tostring(expansionLevel), tostring(title), tostring(difficultyId or ""))
-        if seenTextureKeys[key] then
-          break
-        end
-        seenTextureKeys[key] = true
+	        local expansionLevel
+	        if catalog and catalog.GetExpansionLevelForCalendarTitle then
+	          expansionLevel = catalog:GetExpansionLevelForCalendarTitle(title, difficultyId)
+	        end
+	        expansionLevel = tonumber(expansionLevel) or tonumber(textureInfo.expansionLevel) or -1
 
         local label = title
         if difficultyName ~= "" and not title:find(difficultyName, 1, true) then
           label = string.format("%s (%s)", title, difficultyName)
         end
+
+	        -- Dedupe exact label duplicates within the same expansion bucket, but do not discard distinct
+	        -- difficulties (which generally have unique labels after the append above).
+	        local labelKey = string.format("%s|%s", tostring(expansionLevel), tostring(label))
+	        if seenLabelKeys[labelKey] then
+	          break
+	        end
+	        seenLabelKeys[labelKey] = true
 
         local bucket = buckets[expansionLevel]
         if not bucket then
