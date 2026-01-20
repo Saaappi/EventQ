@@ -509,13 +509,24 @@ function MainFrame:_CollectTrackedCalendarEvents(nowEpoch)
 
       -- Keep future events and the recent past (store pruning handles the long tail).
       if startEpoch and (startEpoch >= (now - (14 * 86400))) then
+        repeat
         local wrapped = wrappedById[id]
         if not wrapped then
           wrapped = {}
           wrappedById[id] = wrapped
         end
 
-        local eventID, indexInfo = cal:FindPlayerEventBySignature(sig)
+        local eventID, indexInfo, findErr = cal:FindPlayerEventBySignature(sig)
+
+        -- If the event no longer exists in the Blizzard calendar, drop it from the tracked list.
+        -- IMPORTANT: only prune when the calendar scan succeeded (findErr == nil).
+        if (not eventID) and (findErr == nil) then
+          if store.Remove then
+            store:Remove(id)
+          end
+          -- Skip rendering this entry.
+          break
+        end
 
         wrapped.id = id
         wrapped._eventqTrackedCalendarId = id
@@ -567,6 +578,7 @@ function MainFrame:_CollectTrackedCalendarEvents(nowEpoch)
 
         out[#out + 1] = wrapped
         wrappedSeen[id] = true
+        until true
       end
     end
   end

@@ -631,60 +631,26 @@ function Row:Constructor(frame, app)
         UIDropDownMenu_AddButton(titleInfo, level)
 
         if MENU._eventqKind == "calendar" then
-          local editInfo = UIDropDownMenu_CreateInfo()
-          editInfo.notCheckable = true
-          editInfo.text = "Edit"
-          editInfo.disabled = not (menuData and menuData.eventID)
-          editInfo.func = function()
+          local openInfo = UIDropDownMenu_CreateInfo()
+          openInfo.notCheckable = true
+          openInfo.text = "Open"
+          openInfo.disabled = not (menuData and (menuData.eventID or menuData._eventqSignature) and menuData.startEpoch)
+          openInfo.func = function()
             local ev = MENU._eventqData
             local appRef = MENU._eventqApp
-            local ui = appRef and appRef.ui
             local cal = appRef and appRef.calendar
 
-            if not (ui and ui.ShowCalendarEventPopup) then
-              PostEventQMessage(appRef, "EventQ UI is unavailable.", 1, 0.1, 0.1)
-              return
-            end
-            if not (cal and cal.GetPlayerEventEditPreset) then
-              PostEventQMessage(appRef, "Calendar edit support is unavailable.", 1, 0.1, 0.1)
+            if not (cal and cal.OpenPlayerEventInBlizzardUI) then
+              PostEventQMessage(appRef, "Calendar open support is unavailable.", 1, 0.1, 0.1)
               return
             end
 
-            if not (ev and ev.eventID) then
-              PostEventQMessage(appRef, "Waiting for the calendar to finish syncing this event.", 1, 0.82, 0)
-              return
-            end
-
-            local preset, err = cal:GetPlayerEventEditPreset(ev)
-            if not preset then
-              PostEventQMessage(appRef, err or "Could not locate the calendar event.", 1, 0.1, 0.1)
-              return
-            end
-
-            -- If this event is tracked (created via EventQ), preserve the tracking id so
-            -- the popup can update the stored signature when the user edits the event.
-            if ev and ev._eventqTrackedCalendarId then
-              preset._eventqTrackedCalendarId = ev._eventqTrackedCalendarId
-            elseif appRef and appRef.calendarCustomStore and appRef.calendarCustomStore.FindIdBySignature and preset.signature then
-              local trackedId = appRef.calendarCustomStore:FindIdBySignature(preset.signature)
-              if trackedId then
-                preset._eventqTrackedCalendarId = trackedId
-              end
-            end
-
-            ui:ShowCalendarEventPopup(preset)
-          end
-          UIDropDownMenu_AddButton(editInfo, level)
-
-          local removeInfo = UIDropDownMenu_CreateInfo()
-          removeInfo.notCheckable = true
-          removeInfo.text = "Remove"
-          removeInfo.func = function()
-            if MENU._eventqApp and MENU._eventqData then
-              ConfirmRemoveCalendarEvent(MENU._eventqApp, MENU._eventqData)
+            local ok, err = cal:OpenPlayerEventInBlizzardUI(ev)
+            if not ok then
+              PostEventQMessage(appRef, err or "Could not open the calendar event.", 1, 0.1, 0.1)
             end
           end
-          UIDropDownMenu_AddButton(removeInfo, level)
+          UIDropDownMenu_AddButton(openInfo, level)
           return
         end
 

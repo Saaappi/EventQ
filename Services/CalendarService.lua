@@ -211,6 +211,7 @@ function CalendarService:_TryRefreshBlizzardCalendarUI()
 end
 
 
+
 function CalendarService:_SafeCalendarCall(func, ...)
   -- Guard against re-entrant refresh loops caused by synchronous CALENDAR_UPDATE_* events.
   self._calendarMutationDepth = (self._calendarMutationDepth or 0) + 1
@@ -1144,6 +1145,146 @@ local function SignatureIsValid(signature)
     and type(signature.minute) == "number"
 end
 
+
+-- -----------------------------------------------------------------------------
+-- Open events in the Blizzard calendar UI
+-- -----------------------------------------------------------------------------
+
+local function _TryShowBlizzardCalendarUI()
+  if InCombatLockdown and InCombatLockdown() then
+    return false, "You cannot open the calendar while in combat."
+  end
+
+  -- Ensure the calendar addon/UI is loaded.
+  if not (CalendarFrame and CalendarFrame.IsShown) then
+    if UIParentLoadAddOn then
+      pcall(UIParentLoadAddOn, "Blizzard_Calendar")
+    end
+  end
+
+  if type(ToggleCalendar) == "function" then
+    if not (CalendarFrame and CalendarFrame:IsShown()) then
+      pcall(ToggleCalendar)
+    end
+  elseif CalendarFrame and CalendarFrame.Show then
+    pcall(CalendarFrame.Show, CalendarFrame)
+  end
+
+  if not (CalendarFrame and CalendarFrame.IsShown and CalendarFrame:IsShown()) then
+    return false, "Calendar UI is unavailable."
+  end
+
+  return true, nil
+end
+
+---@param signature CalendarEventSignature
+---@param eventIndex number
+---@return boolean ok
+---@return string|nil err
+local function _OpenInCalendarFrame(signature, eventIndex)
+  if not (signature and signature.year and signature.month and signature.day and eventIndex) then
+    return false, "Event not selected."
+  end
+
+  -- Select the correct day in the month grid.
+  local monthInfo = C_Calendar and C_Calendar.GetMonthInfo and C_Calendar.GetMonthInfo()
+  local firstDay = monthInfo and monthInfo.firstWeekday
+  if not firstDay then
+    return false, "Calendar data is still loading."
+  end
+
+  local firstWeekday = _G.CALENDAR_FIRST_WEEKDAY or 1
+  local buttonIndex = signature.day + firstDay - firstWeekday
+  if firstDay < firstWeekday then
+    buttonIndex = buttonIndex + 7
+  end
+
+  local dayButton = _G["CalendarDayButton" .. tostring(buttonIndex)]
+  if dayButton and type(_G.CalendarDayButton_Click) == "function" then
+    pcall(_G.CalendarDayButton_Click, dayButton)
+  end
+
+  -- Open the event.
+  if eventIndex <= 4 then
+    local eventButton = _G["CalendarDayButton" .. tostring(buttonIndex) .. "EventButton" .. tostring(eventIndex)]
+    if eventButton and type(_G.CalendarDayEventButton_Click) == "function" then
+      pcall(_G.CalendarDayEventButton_Click, eventButton, true)
+      return true, nil
+    end
+  end
+
+  if C_Calendar and C_Calendar.OpenEvent then
+    local ok = pcall(C_Calendar.OpenEvent, 0, signature.day, eventIndex)
+    return ok, ok and nil or "Could not open the calendar event."
+  end
+
+  return false, "Calendar open support is unavailable."
+end
+
+---Open a player calendar event in Blizzard's calendar UI.
+---
+---This does *not* edit or remove the event; it simply opens the stock UI and focuses
+---the target event so the player can manage it there.
+---@param eventData table
+---@return boolean ok
+---@return string|nil err
+function CalendarService:OpenPlayerEventInBlizzardUI(eventData)
+  if type(eventData) ~= "table" then
+    return false, "Event not selected."
+  end
+
+  if not self:_EnsureCalendarLoaded() then
+    return false, "Calendar UI is unavailable."
+  end
+
+  local okAvail, availErr = self:EnsureCalendarAvailable()
+  if not okAvail then
+    return false, availErr
+  end
+
+  local okShow, showErr = _TryShowBlizzardCalendarUI()
+  if not okShow then
+    return false, showErr
+  end
+
+  local eventID = eventData.eventID
+  local signature = eventData._eventqSignature
+
+  -- If the event is tracked via EventQ we may only have a signature; resolve the eventID on demand.
+  if (not eventID) and signature and self.FindPlayerEventBySignature then
+    local foundEventID = self:FindPlayerEventBySignature(signature)
+    if foundEventID then
+      eventID = foundEventID
+    end
+  end
+
+  -- If we still don't have a signature, build one from the list entry.
+  if not signature then
+    local startEpoch = tonumber(eventData.startEpoch)
+    if startEpoch then
+      signature = SignatureFromEpoch(eventData.title or "Event", startEpoch,
+        eventData.eventType or ((Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or nil),
+        eventData.textureIndex)
+    end
+  end
+
+  if not (eventID and SignatureIsValid(signature)) then
+    return false, "Waiting for the calendar to finish syncing this event."
+  end
+
+  -- Snap the UI month to the event month/year so the day buttons exist.
+  self:_SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
+  self:_TryRefreshBlizzardCalendarUI()
+
+  -- Resolve the event index in the currently-viewed month.
+  local idx = ResolveEventIndexInfo(eventID, 0, signature.day)
+  if not idx then
+    return false, "Could not locate the calendar event (data may still be loading)."
+  end
+
+  return _OpenInCalendarFrame(signature, idx.eventIndex)
+end
+
 -- Build a fully-linked preset for editing/removing an existing PLAYER calendar event.
 --
 -- Why this exists:
@@ -1275,16 +1416,16 @@ end
 ---@return table|nil indexInfo CalendarEventIndexInfo
 function CalendarService:FindPlayerEventBySignature(signature)
   if not SignatureIsValid(signature) then
-    return nil, nil
+    return nil, nil, "Invalid signature."
   end
 
   if not self:_EnsureCalendarLoaded() then
-    return nil, nil
+    return nil, nil, "Calendar UI is unavailable."
   end
 
   local ok = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
   if not ok then
-    return nil, nil
+    return nil, nil, "Calendar is not accessible right now (possibly in combat)."
   end
 
   -- Calendar event queries are scoped by a "current" month. Navigating the month lets us
@@ -1301,11 +1442,12 @@ function CalendarService:FindPlayerEventBySignature(signature)
       and dayEvent.startTime
       and dayEvent.startTime.hour == signature.hour
       and dayEvent.startTime.minute == signature.minute then
-      return dayEvent.eventID, { offsetMonths = 0, monthDay = signature.day, eventIndex = eventIndex }
+      return dayEvent.eventID, { offsetMonths = 0, monthDay = signature.day, eventIndex = eventIndex }, nil
     end
   end
 
-  return nil, nil
+  -- Not found.
+  return nil, nil, nil
 end
 
 ---@param spec table
@@ -1378,7 +1520,13 @@ function CalendarService:CreatePlayerEvent(spec)
   self:_SafeCalendarCall(C_Calendar.EventSetDate, startParts.month, startParts.day, startParts.year)
   self:_SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
 
-  if invitees then
+  -- Invite handling is quirky:
+  -- * Blizzard's UI checks CanSendInvite() before calling EventInvite.
+  -- * Immediately after creating a fresh event (or right after login), CanSendInvite() can be false
+  --   even though the event itself can be created.
+  -- We still try to add invites here when allowed, and we also attempt a post-create sync after AddEvent.
+  local pendingInvitees = invitees
+  if invitees and (not C_Calendar.CanSendInvite or C_Calendar.CanSendInvite()) then
     for _, inviteeName in ipairs(invitees) do
       local trimmed = strtrim(inviteeName or "")
       if trimmed ~= "" then
@@ -1394,7 +1542,26 @@ function CalendarService:CreatePlayerEvent(spec)
 
   self:_TryRefreshBlizzardCalendarUI()
 
-  return SignatureFromEpoch(title, startEpoch, eventType, textureIndex), nil, snapped
+  local signature = SignatureFromEpoch(title, startEpoch, eventType, textureIndex)
+
+  -- Best-effort: immediately resolve the created event and re-apply invitees.
+  -- This catches the common case where CanSendInvite() was false during initial creation.
+  local resolvedEventID
+  if pendingInvitees and #pendingInvitees > 0 then
+    local foundEventID = self:FindPlayerEventBySignature(signature)
+    if foundEventID then
+      resolvedEventID = foundEventID
+      local _, openErr = self:_OpenPlayerEvent(foundEventID, signature)
+      if not openErr then
+        self:_SyncCurrentEventInvites(pendingInvitees)
+        if C_Calendar.UpdateEvent then
+          self:_SafeCalendarCall(C_Calendar.UpdateEvent)
+        end
+      end
+    end
+  end
+
+  return signature, nil, snapped, resolvedEventID
 end
 
 local function IsRaidOrDungeonEventType(eventType)
@@ -1455,6 +1622,22 @@ function CalendarService:UpdatePlayerEvent(eventID, signature, spec)
     return nil, err
   end
 
+  if C_Calendar.IsActionPending and C_Calendar.IsActionPending() then
+    return nil, "Calendar is still processing a previous action. Try again once it finishes syncing."
+  end
+
+  if C_Calendar.EventCanEdit and not C_Calendar.EventCanEdit() then
+    return nil, "You do not have permission to edit this calendar event."
+  end
+
+  -- Ensure we actually have an opened event context; otherwise EventSet*/UpdateEvent can silently no-op.
+  if C_Calendar.GetEventInfo then
+    local okInfo, info = self:_SafeCalendarCall(C_Calendar.GetEventInfo)
+    if not okInfo or not info or not info.title or not info.time then
+      return nil, "Could not open the calendar event for editing (it may still be loading)."
+    end
+  end
+
   local title = strtrim(spec.title or "")
   if title == "" then
     return nil, "Calendar events require a name."
@@ -1507,8 +1690,8 @@ function CalendarService:UpdatePlayerEvent(eventID, signature, spec)
     end
   end
 
-  local okUpdate, updated = self:_SafeCalendarCall(C_Calendar.UpdateEvent)
-  if not okUpdate or updated == false then
+  local okUpdate = self:_SafeCalendarCall(C_Calendar.UpdateEvent)
+  if not okUpdate then
     return nil, "Calendar refused to update the event."
   end
 
@@ -1516,27 +1699,38 @@ function CalendarService:UpdatePlayerEvent(eventID, signature, spec)
   -- Verify that the opened event reflects our edits before we update SavedVariables.
   if C_Calendar.GetEventInfo then
     local okInfo, info = self:_SafeCalendarCall(C_Calendar.GetEventInfo)
-    if okInfo and info and info.time and info.title then
-      local t = info.time
-      local applied = (info.title == title)
-        and (t.year == startParts.year and t.month == startParts.month and t.monthDay == startParts.day)
-        and (t.hour == startParts.hour and t.minute == startParts.min)
-        and (info.eventType == eventType)
+    if not okInfo or not info or not info.time or not info.title then
+      return nil, "Calendar did not report the updated event (it may still be syncing)."
+    end
 
-      -- textureIndex only matters for raid/dungeon categories.
-      if textureIndex ~= nil and info.textureIndex ~= nil then
-        applied = applied and (info.textureIndex == textureIndex)
-      end
+    local t = info.time
+    local applied = (info.title == title)
+      and (t.year == startParts.year and t.month == startParts.month and t.monthDay == startParts.day)
+      and (t.hour == startParts.hour and t.minute == startParts.min)
+      and (info.eventType == eventType)
 
-      if not applied then
-        return nil, "Calendar did not apply the changes (try again once the calendar finishes loading)."
-      end
+    -- textureIndex only matters for raid/dungeon categories.
+    if textureIndex ~= nil and info.textureIndex ~= nil then
+      applied = applied and (info.textureIndex == textureIndex)
+    end
+
+    if not applied then
+      return nil, "Calendar did not apply the changes (try again once the calendar finishes loading)."
     end
   end
 
   self:_TryRefreshBlizzardCalendarUI()
 
-  return SignatureFromEpoch(title, startEpoch, eventType, textureIndex), nil, snapped
+  local newSignature = SignatureFromEpoch(title, startEpoch, eventType, textureIndex)
+
+  -- Event IDs can change when the event is moved to another date/time. Re-resolve by signature.
+  local resolvedEventID = eventID
+  local foundEventID = self:FindPlayerEventBySignature(newSignature)
+  if foundEventID then
+    resolvedEventID = foundEventID
+  end
+
+  return newSignature, nil, snapped, resolvedEventID
 end
 
 ---@param desiredInvitees string[]
@@ -1612,27 +1806,25 @@ function CalendarService:RemovePlayerEvent(eventID, signature)
     return false, "Event not selected."
   end
 
-  local ok, err = self:EnsureCalendarAvailable()
-  if not ok then
-    return false, err
+  local idx, openErr = self:_OpenPlayerEvent(eventID, signature)
+  if openErr then
+    -- If the stored eventID is stale (common after edits that move the event), fall back to signature lookup.
+    local foundEventID = self:FindPlayerEventBySignature(signature)
+    if foundEventID then
+      eventID = foundEventID
+      idx, openErr = self:_OpenPlayerEvent(foundEventID, signature)
+    end
+  end
+  if openErr then
+    return false, openErr
   end
 
-  -- Deletion is stateful: we must navigate to the correct month and open the
-  -- event so that RemoveEvent() applies to the intended target.
-  self:_SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
-
-  local idx = ResolveEventIndexInfo(eventID, 0, signature.day)
-  if not idx then
-    return false, "Could not locate the calendar event (data may still be loading)."
+  if C_Calendar.IsActionPending and C_Calendar.IsActionPending() then
+    return false, "Calendar is still processing a previous action. Try again once it finishes syncing."
   end
 
-  local okOpen, opened = self:_SafeCalendarCall(C_Calendar.OpenEvent, idx.offsetMonths, idx.monthDay, idx.eventIndex)
-  if not okOpen or opened == false then
-    return false, "Could not open the calendar event."
-  end
-
-  local okRemove, removed = self:_SafeCalendarCall(C_Calendar.RemoveEvent)
-  if not okRemove or removed == false then
+  local okRemove = self:_SafeCalendarCall(C_Calendar.RemoveEvent)
+  if not okRemove then
     return false, "Calendar refused to remove the event."
   end
 
@@ -1642,10 +1834,10 @@ function CalendarService:RemovePlayerEvent(eventID, signature)
 
   self:_TryRefreshBlizzardCalendarUI()
 
-  -- Best-effort verification: if the event still resolves by ID, the remove did not apply.
-  local stillThere = ResolveEventIndexInfo(eventID, 0, signature.day)
+  -- Best-effort verification: if we can still find the event by signature, the remove did not apply.
+  local stillThere = self:FindPlayerEventBySignature(signature)
   if stillThere then
-    return false, "Calendar did not remove the event (you may not have permission to delete it)."
+    return false, "Calendar did not remove the event (it may still be syncing, or you may not have permission)."
   end
 
   self:_TryRefreshBlizzardCalendarUI()
@@ -1671,6 +1863,14 @@ function CalendarService:EnsureInvites(eventID, signature, desiredInvitees)
   local _, err = self:_OpenPlayerEvent(eventID, signature)
   if err then
     return nil, nil, err
+  end
+
+  if C_Calendar.IsActionPending and C_Calendar.IsActionPending() then
+    return nil, nil, "Calendar is still processing a previous action. Try again once it finishes syncing."
+  end
+
+  if C_Calendar.EventCanEdit and not C_Calendar.EventCanEdit() then
+    return nil, nil, "You do not have permission to edit this calendar event."
   end
 
   local changed, namesReady, syncErr = self:_SyncCurrentEventInvites(desiredInvitees)

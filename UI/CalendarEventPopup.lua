@@ -11,6 +11,50 @@ local function isBlank(inputText)
   return (not inputText) or strtrim(inputText) == ""
 end
 
+-- Calendar category options (Raid/Dungeon/PvP/Meeting/Other).
+-- Keep these local to avoid collisions with globals in other addons/UI.
+local function EventQ_SafeGlobalLabel(globalName, fallback)
+  local value = _G and _G[globalName]
+  if type(value) == "string" and value ~= "" then
+    return value
+  end
+  return fallback
+end
+
+local CATEGORIES = (function()
+  local types = Enum and Enum.CalendarEventType
+  if not types then
+    return { { label = "Other", eventType = 0 } }
+  end
+  return {
+    { label = EventQ_SafeGlobalLabel("CALENDAR_TYPE_RAID", "Raid"), eventType = types.Raid },
+    { label = EventQ_SafeGlobalLabel("CALENDAR_TYPE_DUNGEON", "Dungeon"), eventType = types.Dungeon },
+    { label = EventQ_SafeGlobalLabel("CALENDAR_TYPE_PVP", "PvP"), eventType = types.PvP },
+    { label = EventQ_SafeGlobalLabel("CALENDAR_TYPE_MEETING", "Meeting"), eventType = types.Meeting },
+    { label = EventQ_SafeGlobalLabel("CALENDAR_TYPE_OTHER", "Other"), eventType = types.Other },
+  }
+end)()
+
+local function FindCategoryLabel(eventType)
+  if type(CATEGORIES) ~= "table" then
+    return "Other"
+  end
+  for _, entry in ipairs(CATEGORIES) do
+    if entry and entry.eventType == eventType then
+      return entry.label or "Other"
+    end
+  end
+  return (CATEGORIES[#CATEGORIES] and CATEGORIES[#CATEGORIES].label) or "Other"
+end
+
+local function IsRaidOrDungeon(eventType)
+  local types = Enum and Enum.CalendarEventType
+  if not types then
+    return false
+  end
+  return eventType == types.Raid or eventType == types.Dungeon
+end
+
 local function SplitLines(multilineText)
   local out = {}
   if type(multilineText) ~= "string" then
@@ -43,123 +87,45 @@ local function ParseInviteList(multilineText)
   return out
 end
 
-local function EnsureAtlas(atlas)
-  return (C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)) and atlas or nil
-end
-
-local ACCEPTED_ATLAS = EnsureAtlas("UI-LFG-ReadyMark-Raid")
-local DECLINED_ATLAS = EnsureAtlas("UI-LFG-DeclineMark-Raid")
-local TENTATIVE_ATLAS = EnsureAtlas("UI-LFG-PendingMark-Raid")
-
-local function PickStatusVisual(inviteStatus)
-  -- CalendarStatus values are shared across multiple calendar UIs.
-  -- We treat these as:
-  --  - accepted: Available / Confirmed / Signedup
-  --  - tentative: Tentative / Standby
-  --  - declined: Declined / Out
-  --  - no response: Invited / nil
-  if Enum and Enum.CalendarStatus then
-    if inviteStatus == Enum.CalendarStatus.Available
-      or inviteStatus == Enum.CalendarStatus.Confirmed
-      or inviteStatus == Enum.CalendarStatus.Signedup then
-      return ACCEPTED_ATLAS, 1, 1, 1, false
-    end
-
-    if inviteStatus == Enum.CalendarStatus.Declined
-      or inviteStatus == Enum.CalendarStatus.Out then
-      return DECLINED_ATLAS, 1, 1, 1, false
-    end
-
-    if inviteStatus == Enum.CalendarStatus.Tentative
-      or inviteStatus == Enum.CalendarStatus.Standby then
-      return TENTATIVE_ATLAS, 1, 1, 1, false
-    end
-
-    if inviteStatus == Enum.CalendarStatus.Invited or inviteStatus == nil then
-      return nil, 0.55, 0.55, 0.55, true
-    end
+-- Small helper for the "Pending sync" badge next to the Invitees header.
+-- Keep this local so we don't leak globals (and so calls resolve correctly in Lua 5.1).
+local function SetInviteSyncBadge(frame, pending, text)
+  if not frame then
+    return
   end
 
-  return nil, 0.55, 0.55, 0.55, true
-end
-
-local CATEGORIES = {
-  { label = "Raid", eventType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid) or 0 },
-  { label = "Dungeon", eventType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon) or 1 },
-  { label = "PvP", eventType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.PvP) or 2 },
-  { label = "Meeting", eventType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Meeting) or 3 },
-  { label = "Other", eventType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or 4 },
-}
-
-local function FindCategoryLabel(eventType)
-  for _, entry in ipairs(CATEGORIES) do
-    if entry.eventType == eventType then
-      return entry.label
-    end
+  local badge = frame._eventqInviteSyncBadge
+  if not badge then
+    return
   end
-  return "Other"
-end
 
-local function IsRaidOrDungeon(eventType)
-  return Enum and Enum.CalendarEventType
-    and (eventType == Enum.CalendarEventType.Raid or eventType == Enum.CalendarEventType.Dungeon)
-end
-
-local function SetStatus(frame, text, r, g, b)
-  if not (frame and frame._eventqStatus) then return end
-  frame._eventqStatus:SetText(text or "")
-  if r and g and b then
-    frame._eventqStatus:SetTextColor(r, g, b, 1)
+  if pending then
+    badge:SetText(text or "Pending sync")
+    badge:Show()
   else
-    frame._eventqStatus:SetTextColor(0.75, 0.75, 0.75, 1)
+    badge:SetText("")
+    badge:Hide()
   end
 end
 
-local function EnsureInviteRow(container, index)
-  container._eventqRows = container._eventqRows or {}
-  local rows = container._eventqRows
-
-  if rows[index] then
-    return rows[index]
+-- Status line helper (bottom of the Invitees column).
+-- Keep it local and nil-safe so we never rely on a global.
+local function SetStatus(frame, message, r, g, b)
+  if not frame then
+    return
   end
 
-  local row = CreateFrame("Frame", nil, container)
-  row:SetHeight(20)
-
-  local icon = row:CreateTexture(nil, "ARTWORK")
-  icon:SetSize(14, 14)
-  icon:SetPoint("LEFT", 2, 0)
-  row.Icon = icon
-
-  local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  nameText:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-  nameText:SetJustifyH("LEFT")
-  nameText:SetTextColor(1, 1, 1, 1)
-  nameText:SetText("")
-  row.NameText = nameText
-
-  rows[index] = row
-  return row
-end
-
-local function LayoutInviteRows(scrollChild, names)
-  local rowHeight = 20
-
-  for index = 1, #names do
-    local row = EnsureInviteRow(scrollChild, index)
-    row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", 0, -((index - 1) * rowHeight))
-    row:SetPoint("TOPRIGHT", 0, -((index - 1) * rowHeight))
-    row:Show()
+  local status = frame._eventqStatus
+  if not status then
+    return
   end
 
-  if scrollChild._eventqRows then
-    for index = #names + 1, #scrollChild._eventqRows do
-      scrollChild._eventqRows[index]:Hide()
-    end
+  status:SetText(message or "")
+  if r and g and b then
+    status:SetTextColor(r, g, b, 1)
+  else
+    status:SetTextColor(0.75, 0.75, 0.75, 1)
   end
-
-  scrollChild:SetHeight(math.max(#names * rowHeight, 1))
 end
 
 local function CreateScrollingMultilineEditBox(parent, width, height, onEscapePressed)
@@ -368,6 +334,15 @@ local function EnsureFrame(self)
   inviteLabel:SetText("Invitees")
   inviteLabel:SetTextColor(0.85, 0.85, 0.85, 1)
 
+  -- When calendar name resolution is still running, invite removals can be deferred.
+  -- This small badge makes it obvious that the calendar still needs another pass.
+  local syncBadge = right:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  syncBadge:SetPoint("TOPRIGHT", right, "TOPRIGHT", 0, 0)
+  syncBadge:SetJustifyH("RIGHT")
+  syncBadge:SetText("")
+  syncBadge:Hide()
+  popup._eventqInviteSyncBadge = syncBadge
+
   local inviteTip = right:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   inviteTip:SetPoint("TOPLEFT", inviteLabel, "BOTTOMLEFT", 0, -4)
   inviteTip:SetWidth(280)
@@ -383,23 +358,8 @@ local function EnsureFrame(self)
   popup._eventqInviteScroll = inviteScroll
   popup._eventqInviteEdit = inviteEdit
 
-  local statusLabel = AddLabel(right, "Invitee Status", inviteScroll)
-
-  local statusScroll = CreateFrame("ScrollFrame", nil, right, "UIPanelScrollFrameTemplate")
-  statusScroll:SetSize(280, 210)
-  statusScroll:SetPoint("TOPLEFT", statusLabel, "BOTTOMLEFT", -8, -8)
-
-  local statusChild = CreateFrame("Frame", nil, statusScroll)
-  statusChild:SetPoint("TOPLEFT")
-  statusChild:SetPoint("TOPRIGHT")
-  statusChild:SetHeight(1)
-  statusScroll:SetScrollChild(statusChild)
-
-  popup._eventqStatusScroll = statusScroll
-  popup._eventqStatusChild = statusChild
-
   local statusFooter = right:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  statusFooter:SetPoint("TOPLEFT", statusScroll, "BOTTOMLEFT", 8, -10)
+  statusFooter:SetPoint("TOPLEFT", inviteFrame, "BOTTOMLEFT", 2, -10)
   statusFooter:SetWidth(280)
   statusFooter:SetJustifyH("LEFT")
   statusFooter:SetText("")
@@ -413,16 +373,6 @@ local function EnsureFrame(self)
   actionBtn:SetText("Add to Calendar")
   popup._eventqActionBtn = actionBtn
 
-  local refreshBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  refreshBtn:SetSize(120, 24)
-  refreshBtn:SetText("Refresh")
-  popup._eventqRefreshBtn = refreshBtn
-
-  local inviteBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  inviteBtn:SetSize(160, 24)
-  inviteBtn:SetText("Invite Accepted")
-  popup._eventqInviteBtn = inviteBtn
-
   local closeBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
   closeBtn:SetSize(110, 24)
   closeBtn:SetText(CLOSE)
@@ -432,25 +382,17 @@ local function EnsureFrame(self)
   local gap = 10
   local buttonBar = CreateFrame("Frame", nil, popup)
   buttonBar:SetHeight(24)
-  buttonBar:SetWidth(actionBtn:GetWidth() + refreshBtn:GetWidth() + inviteBtn:GetWidth() + closeBtn:GetWidth() + (gap * 3))
+  buttonBar:SetWidth(actionBtn:GetWidth() + closeBtn:GetWidth() + gap)
   buttonBar:SetPoint("BOTTOM", popup, "BOTTOM", 0, 14)
 
   actionBtn:SetParent(buttonBar)
-  refreshBtn:SetParent(buttonBar)
-  inviteBtn:SetParent(buttonBar)
   closeBtn:SetParent(buttonBar)
 
   actionBtn:ClearAllPoints()
   actionBtn:SetPoint("LEFT", buttonBar, "LEFT", 0, 0)
 
-  refreshBtn:ClearAllPoints()
-  refreshBtn:SetPoint("LEFT", actionBtn, "RIGHT", gap, 0)
-
-  inviteBtn:ClearAllPoints()
-  inviteBtn:SetPoint("LEFT", refreshBtn, "RIGHT", gap, 0)
-
   closeBtn:ClearAllPoints()
-  closeBtn:SetPoint("LEFT", inviteBtn, "RIGHT", gap, 0)
+  closeBtn:SetPoint("LEFT", actionBtn, "RIGHT", gap, 0)
   -- Allow closing with Escape (even if the user changed the global UISpecialFrames list).
   local popupName = popup:GetName()
   if popupName and UISpecialFrames then
@@ -545,25 +487,108 @@ local function SetupInstanceDropdown(frame)
     end
 
     local eventType = frame._eventqSelectedType
-    local textures = (C_Calendar and C_Calendar.EventGetTextures) and C_Calendar.EventGetTextures(eventType) or {}
-    if not textures or #textures == 0 then
+    local texturesRaw = (C_Calendar and C_Calendar.EventGetTextures) and C_Calendar.EventGetTextures(eventType) or {}
+    local textures = (type(texturesRaw) == "table") and texturesRaw or {}
+    if #textures == 0 then
       rootDescription:CreateTitle("No instances found")
       return
     end
 
+    -- Group instances by expansion. The calendar API provides expansionLevel on each texture info.
+    local buckets = {} -- expansionLevel -> { label=string, items={ {textureIndex=number, label=string} } }
+    local levels = {}
+    local seenLevel = {}
+
+    local seenTextureKeys = {}
+    local allowedRaidDifficulty = { [14] = true, [15] = true, [16] = true }
+
     for textureIndex, textureInfo in ipairs(textures) do
-      local title = textureInfo and textureInfo.title
-      if title and title ~= "" then
-        local difficultyName = ""
-        if textureInfo.difficultyId and GetDifficultyInfo then
-          difficultyName = select(1, GetDifficultyInfo(textureInfo.difficultyId)) or ""
+      repeat
+        local title = textureInfo and textureInfo.title
+        if not title or title == "" then
+          break
         end
+
+        local difficultyId = textureInfo.difficultyId
+        local difficultyName = ""
+        if difficultyId and GetDifficultyInfo then
+          difficultyName = select(1, GetDifficultyInfo(difficultyId)) or ""
+        end
+
+        -- Filter: exclude LFR, and only include Normal/Heroic/Mythic for raids.
+        if eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid) then
+          if difficultyId then
+            if not allowedRaidDifficulty[difficultyId] then
+              break
+            end
+          else
+            local lower = title:lower()
+            local dn = difficultyName:lower()
+            if lower:find("looking for raid", 1, true) or lower:find("lfr", 1, true)
+              or dn:find("looking for raid", 1, true) or dn:find("lfr", 1, true) then
+              break
+            end
+          end
+        elseif eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon) then
+          -- Filter: exclude Follower dungeons.
+          local lower = title:lower()
+          local dn = difficultyName:lower()
+          if lower:find("follower", 1, true) or dn:find("follower", 1, true) then
+            break
+          end
+        end
+
+        local expansionLevel = tonumber(textureInfo.expansionLevel) or -1
+        local key = string.format("%s|%s|%s", tostring(expansionLevel), tostring(title), tostring(difficultyId or ""))
+        if seenTextureKeys[key] then
+          break
+        end
+        seenTextureKeys[key] = true
+
         local label = title
-        if difficultyName ~= "" then
+        if difficultyName ~= "" and not title:find(difficultyName, 1, true) then
           label = string.format("%s (%s)", title, difficultyName)
         end
 
-        rootDescription:CreateRadio(label, function() return IsSelected(textureIndex) end, function() SetSelected(textureIndex, label) end, textureIndex)
+        local bucket = buckets[expansionLevel]
+        if not bucket then
+          local expansionLabel = _G["EXPANSION_NAME" .. tostring(expansionLevel)]
+          if not expansionLabel or expansionLabel == "" then
+            expansionLabel = (expansionLevel >= 0) and ("Expansion " .. tostring(expansionLevel)) or "Other"
+          end
+          bucket = { label = expansionLabel, items = {} }
+          buckets[expansionLevel] = bucket
+        end
+
+        bucket.items[#bucket.items + 1] = { textureIndex = textureIndex, label = label }
+        if not seenLevel[expansionLevel] then
+          seenLevel[expansionLevel] = true
+          levels[#levels + 1] = expansionLevel
+        end
+      until true
+    end
+
+    if #levels == 0 then
+      rootDescription:CreateTitle("No instances found")
+      return
+    end
+
+    table.sort(levels, function(a, b)
+      -- Prefer showing the newest expansions first.
+      return (tonumber(a) or -1) > (tonumber(b) or -1)
+    end)
+
+    for _, expansionLevel in ipairs(levels) do
+      local bucket = buckets[expansionLevel]
+      if bucket and bucket.items and #bucket.items > 0 then
+        table.sort(bucket.items, function(left, right)
+          return (left.label or "") < (right.label or "")
+        end)
+
+        local submenu = rootDescription:CreateButton(bucket.label)
+        for _, item in ipairs(bucket.items) do
+          submenu:CreateRadio(item.label, function() return IsSelected(item.textureIndex) end, function() SetSelected(item.textureIndex, item.label) end, item.textureIndex)
+        end
       end
     end
 
@@ -614,15 +639,27 @@ local function InitializeDropdown(frame)
 
   dropdown:SetupMenu(function(_, rootDescription)
     rootDescription:SetTag("MENU_EVENTQ_CALENDAR_CATEGORY")
-    for _, entry in ipairs(CATEGORIES) do
-      rootDescription:CreateRadio(entry.label, IsSelected, SetSelected, entry.eventType)
+
+    local categories = (type(CATEGORIES) == "table") and CATEGORIES or {}
+    if #categories == 0 then
+      local fallbackType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or 0
+      rootDescription:CreateRadio("Other", IsSelected, SetSelected, fallbackType)
+    else
+      for _, entry in ipairs(categories) do
+        if entry and entry.eventType then
+          rootDescription:CreateRadio(entry.label or "Other", IsSelected, SetSelected, entry.eventType)
+        end
+      end
     end
+
     local menuMinWidth = math.floor((dropdown.GetWidth and dropdown:GetWidth()) or 180)
     rootDescription:SetMinimumWidth(menuMinWidth)
     rootDescription:SetMaximumWidth(menuMinWidth + 60)
   end)
 
-  frame._eventqSelectedType = frame._eventqSelectedType or CATEGORIES[#CATEGORIES].eventType
+  local defaultType = (type(CATEGORIES) == "table" and CATEGORIES[#CATEGORIES] and CATEGORIES[#CATEGORIES].eventType)
+    or (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or 0
+  frame._eventqSelectedType = frame._eventqSelectedType or defaultType
   dropdown:SetDefaultText(FindCategoryLabel(frame._eventqSelectedType))
   dropdown:SetText(FindCategoryLabel(frame._eventqSelectedType))
 
@@ -663,47 +700,6 @@ local function AttachDateTimePicker(frame, editBox, isEnd)
   end)
 end
 
-local function UpdateInviteRows(frame, inviteInfoList)
-  local rows = {}
-
-  for _, inviteInfo in ipairs(inviteInfoList or {}) do
-    local name = inviteInfo and inviteInfo.name
-    if name then
-      rows[#rows + 1] = { name = name, status = inviteInfo.inviteStatus }
-    end
-  end
-
-  table.sort(rows, function(left, right)
-    return (left.name or "") < (right.name or "")
-  end)
-
-  local child = frame and frame._eventqStatusChild
-  if not child then return end
-
-  local names = {}
-  for _, row in ipairs(rows) do
-    names[#names + 1] = row
-  end
-
-  LayoutInviteRows(child, names)
-
-  for index, rowData in ipairs(names) do
-    local row = EnsureInviteRow(child, index)
-    local atlas, r, g, b, greyed = PickStatusVisual(rowData.status)
-
-    if atlas and row.Icon.SetAtlas then
-      row.Icon:SetAtlas(atlas, true)
-      row.Icon:Show()
-    else
-      row.Icon:Hide()
-    end
-
-    row.NameText:SetText(rowData.name)
-    row.NameText:SetTextColor(r, g, b, 1)
-    row.NameText:SetAlpha(greyed and 0.9 or 1)
-  end
-end
-
 local function RefreshFromCalendar(frame)
   if not (frame and frame._eventqApp and frame._eventqApp.calendar) then
     return
@@ -712,8 +708,9 @@ local function RefreshFromCalendar(frame)
   local eventID = frame._eventqEventID
   local signature = frame._eventqSignature
   if not eventID or not signature then
-    SetStatus(frame, "Create an event to see invitation status.")
-    UpdateInviteRows(frame, {})
+    SetStatus(frame, "Create an event first.")
+    frame._eventqInviteSyncPending = false
+    SetInviteSyncBadge(frame, false)
     return
   end
 
@@ -725,36 +722,74 @@ local function RefreshFromCalendar(frame)
     frame._eventqDesiredInvitees = desiredInvitees
   end
 
-	-- IMPORTANT (taint/protected calls): syncing invites requires mutating the calendar (UpdateEvent/AddInvite/etc.)
-	-- which is protected and can only be done from a hardware event (button click). This refresh path is
-	-- called from CALENDAR_UPDATE_* events and must remain read-only.
-	-- Invite changes are applied when the user clicks "Create Event" / "Update Event".
+  -- IMPORTANT (taint/protected calls): syncing invites requires mutating the calendar (UpdateEvent/AddInvite/etc.)
+  -- which is protected and can only be done from a hardware event (button click). This refresh path must remain read-only.
 
   local invites, err = calendar:GetInviteSnapshot(eventID, signature)
   if not invites then
-    SetStatus(frame, err or "Could not read invites.", 1, 0.1, 0.1)
-    UpdateInviteRows(frame, {})
+    SetStatus(frame, err or "Could not read invite list.", 1, 0.1, 0.1)
+    SetInviteSyncBadge(frame, false)
     return
   end
 
-  -- If names are not ready yet, the calendar API can return incomplete invite records.
-  -- We still show the intended invitee list so the user can confirm who should be invited.
-  local present = {}
-  for _, inviteInfo in ipairs(invites) do
-    local name = inviteInfo and inviteInfo.name
-    if name then
-      present[strtrim(name):lower()] = true
-    end
-  end
-  for _, name in ipairs(desiredInvitees or {}) do
+  local namesReady = (C_Calendar and C_Calendar.AreNamesReady and C_Calendar.AreNamesReady()) or true
+
+  local desiredSet = {}
+  local desiredList = (type(desiredInvitees) == "table") and desiredInvitees or {}
+  for _, name in ipairs(desiredList) do
     local trimmed = strtrim(name or "")
-    if trimmed ~= "" and not present[trimmed:lower()] then
-      invites[#invites + 1] = { name = trimmed, inviteStatus = nil }
+    if trimmed ~= "" then
+      desiredSet[trimmed:lower()] = true
     end
   end
 
-  UpdateInviteRows(frame, invites)
-	SetStatus(frame, string.format("Tracking %d invite(s).", #invites))
+  local present = {}
+  local totalInvites = 0
+  local extraCount = 0
+  local inviteList = (type(invites) == "table") and invites or {}
+  for _, inviteInfo in ipairs(inviteList) do
+    local name = inviteInfo and inviteInfo.name
+    if name then
+      totalInvites = totalInvites + 1
+      local key = strtrim(name):lower()
+      present[key] = true
+      if next(desiredSet) and not desiredSet[key] then
+        extraCount = extraCount + 1
+      end
+    end
+  end
+
+  local missingCount = 0
+  for key in pairs(desiredSet) do
+    if not present[key] then
+      missingCount = missingCount + 1
+    end
+  end
+
+  local pending = false
+  if not namesReady and extraCount > 0 then
+    pending = true
+  elseif frame._eventqInviteSyncPending then
+    pending = not (namesReady and extraCount == 0 and missingCount == 0)
+  end
+
+  frame._eventqInviteSyncPending = pending
+  SetInviteSyncBadge(frame, pending)
+
+  if pending then
+    if not namesReady and extraCount > 0 then
+      SetStatus(frame, string.format("Invites: %d (pending removals: %d). Name resolution still in progress.", totalInvites, extraCount), 1, 0.82, 0)
+    else
+      SetStatus(frame, string.format("Invites: %d (pending sync).", totalInvites), 1, 0.82, 0)
+    end
+    return
+  end
+
+  if missingCount > 0 then
+    SetStatus(frame, string.format("Invites: %d (missing %d — click Update Event to send).", totalInvites, missingCount), 1, 0.82, 0)
+  else
+    SetStatus(frame, string.format("Invites: %d.", totalInvites))
+  end
 end
 
 local function TryLocateEvent(frame)
@@ -762,11 +797,18 @@ local function TryLocateEvent(frame)
     return false
   end
 
-  local eventID, _ = frame._eventqApp.calendar:FindPlayerEventBySignature(frame._eventqSignature)
+  local calendar = frame._eventqApp.calendar
+  local eventID, _, findErr = calendar:FindPlayerEventBySignature(frame._eventqSignature)
+  if findErr then
+    -- Calendar is temporarily unavailable (combat / loading). Keep retrying.
+    return false
+  end
+
   if eventID then
     frame._eventqEventID = eventID
+    frame._eventqLinking = false
+    frame._eventqPendingWaits = 0
 
-    -- Once we have a stable eventID we can safely update the event from within EventQ.
     if frame._eventqActionBtn then
       frame._eventqActionBtn:Enable()
       frame._eventqActionBtn:SetText("Update Event")
@@ -781,8 +823,7 @@ end
 
 local function RetryLocateEvent(frame, remainingAttempts)
   remainingAttempts = tonumber(remainingAttempts) or 0
-  if remainingAttempts <= 0 then
-    SetStatus(frame, "Event created, but it could not be located yet. Click Refresh once the calendar updates.", 1, 0.82, 0)
+  if not (frame and frame.IsShown and frame:IsShown()) then
     return
   end
 
@@ -791,11 +832,43 @@ local function RetryLocateEvent(frame, remainingAttempts)
     return
   end
 
+  -- If the calendar is still processing an action (common when invites are added), keep waiting.
+  -- Guard against getting stuck if the client never clears the pending flag.
+  if C_Calendar and C_Calendar.IsActionPending and C_Calendar.IsActionPending() then
+    frame._eventqPendingWaits = (frame._eventqPendingWaits or 0) + 1
+    if frame._eventqPendingWaits > 40 then
+      -- ~20 seconds worth of retries at 0.5s. Stop auto-looping and let the user retry manually.
+      frame._eventqLinking = true
+      if frame._eventqActionBtn then
+        frame._eventqActionBtn:Enable()
+        frame._eventqActionBtn:SetText("Find Event")
+      end
+      SetStatus(frame, "Calendar is taking too long to finish syncing. Click Find Event to retry.", 1, 0.82, 0)
+      return
+    end
+
+    if C_Timer and C_Timer.After then
+      C_Timer.After(0.5, function()
+        RetryLocateEvent(frame, remainingAttempts)
+      end)
+    end
+    return
+  end
+
+
+  if remainingAttempts <= 0 then
+    frame._eventqLinking = true
+    if frame._eventqActionBtn then
+      frame._eventqActionBtn:Enable()
+      frame._eventqActionBtn:SetText("Find Event")
+    end
+    SetStatus(frame, "Event created, but it is not visible to the calendar API yet. Click Find Event to retry.", 1, 0.82, 0)
+    return
+  end
+
   if C_Timer and C_Timer.After then
     C_Timer.After(0.5, function()
-      if frame and frame.IsShown and frame:IsShown() then
-        RetryLocateEvent(frame, remainingAttempts - 1)
-      end
+      RetryLocateEvent(frame, remainingAttempts - 1)
     end)
   end
 end
@@ -826,6 +899,9 @@ function CalendarEventPopup:Show(app, preset)
   frame._eventqEventID = isEditingExisting and preset.eventID or nil
   frame._eventqSignature = isEditingExisting and preset.signature or nil
   frame._eventqDesiredInvitees = nil
+  frame._eventqInviteSyncPending = false
+  frame._eventqLinking = false
+  SetInviteSyncBadge(frame, false)
 
   -- EventQ tracking: only events created via EventQ (or explicitly marked) appear in the
   -- dedicated Calendar tab.
@@ -946,14 +1022,29 @@ function CalendarEventPopup:Show(app, preset)
       return
     end
 
+    if frame._eventqSignature and not frame._eventqEventID and frame._eventqLinking then
+      if TryLocateEvent(frame) then
+        SetStatus(frame, "Event linked.", 0.2, 1, 0.2)
+        return
+      end
+      SetStatus(frame, "Still waiting for the calendar to expose the event. Try again in a moment.", 1, 0.82, 0)
+      frame._eventqPendingWaits = 0
+      RetryLocateEvent(frame, 10)
+      return
+    end
+
     if frame._eventqEventID and frame._eventqSignature then
-      local newSignature, err, snapped = app.calendar:UpdatePlayerEvent(frame._eventqEventID, frame._eventqSignature, spec)
+      local newSignature, err, snapped, resolvedEventID = app.calendar:UpdatePlayerEvent(frame._eventqEventID, frame._eventqSignature, spec)
       if not newSignature then
         SetStatus(frame, err or "Could not update the calendar event.", 1, 0.1, 0.1)
         return
       end
 
       frame._eventqSignature = newSignature
+      frame._eventqLinking = false
+      if resolvedEventID then
+        frame._eventqEventID = resolvedEventID
+      end
 
       if frame._eventqTrackedCalendarId and app.calendarCustomStore and app.calendarCustomStore.UpdateSignature then
         app.calendarCustomStore:UpdateSignature(frame._eventqTrackedCalendarId, newSignature)
@@ -968,73 +1059,52 @@ function CalendarEventPopup:Show(app, preset)
       return
     end
 
-    local signature, err, snapped = app.calendar:CreatePlayerEvent(spec)
+    local signature, err, snapped, resolvedEventID = app.calendar:CreatePlayerEvent(spec)
     if not signature then
       SetStatus(frame, err or "Could not create the calendar event.", 1, 0.1, 0.1)
       return
     end
 
-    frame._eventqEventID = nil
+    frame._eventqEventID = resolvedEventID
     frame._eventqSignature = signature
+
+    if not frame._eventqEventID then
+      frame._eventqLinking = true
+      frame._eventqPendingWaits = 0
+    end
 
     if frame._eventqTrackNew and app.calendarCustomStore and app.calendarCustomStore.Add then
       frame._eventqTrackedCalendarId = app.calendarCustomStore:Add(signature)
       frame._eventqTrackNew = false
     end
 
-    if frame._eventqActionBtn then
-      frame._eventqActionBtn:Disable()
-      frame._eventqActionBtn:SetText("Linking...")
-    end
-
-    UpdateInviteRows(frame, {})
-    if snapped then
-      SetStatus(frame, "Event created (minutes snapped to 5-minute steps). Waiting for calendar sync...", 1, 0.82, 0)
+    if frame._eventqEventID then
+      frame._eventqLinking = false
+      -- We managed to resolve the eventID immediately. Treat it as linked.
+      if frame._eventqActionBtn then
+        frame._eventqActionBtn:Enable()
+        frame._eventqActionBtn:SetText("Update Event")
+      end
+      RefreshFromCalendar(frame)
+      if snapped then
+        SetStatus(frame, "Event created (minutes snapped to 5-minute steps).", 0.2, 1, 0.2)
+      else
+        SetStatus(frame, "Event created.", 0.2, 1, 0.2)
+      end
     else
-      SetStatus(frame, "Event created. Waiting for calendar sync...", 1, 0.82, 0)
-    end
-    RetryLocateEvent(frame, 12)
-  end)
+      if frame._eventqActionBtn then
+        frame._eventqActionBtn:Enable()
+        frame._eventqActionBtn:SetText("Linking...")
+      end
 
-  frame._eventqRefreshBtn:SetScript("OnClick", function()
-    if frame._eventqSignature and not frame._eventqEventID then
-      TryLocateEvent(frame)
+      if snapped then
+        SetStatus(frame, "Event created (minutes snapped to 5-minute steps). Waiting for calendar sync...", 1, 0.82, 0)
+      else
+        SetStatus(frame, "Event created. Waiting for calendar sync...", 1, 0.82, 0)
+      end
+      frame._eventqPendingWaits = 0
+      RetryLocateEvent(frame, 12)
     end
-		frame._eventqNeedsRefresh = false
-		if frame._eventqRefreshBtn and frame._eventqRefreshBtn.SetText then
-			frame._eventqRefreshBtn:SetText("Refresh")
-		end
-    RefreshFromCalendar(frame)
-  end)
-
-  frame._eventqInviteBtn:SetScript("OnClick", function()
-    if not (app and app.calendar) then
-      SetStatus(frame, "Calendar services are not ready.", 1, 0.1, 0.1)
-      return
-    end
-
-    if not (frame._eventqEventID and frame._eventqSignature) then
-      SetStatus(frame, "Create an event first.", 1, 0.82, 0)
-      return
-    end
-
-    local invitedCount, err = app.calendar:InviteAcceptedToGroup(frame._eventqEventID, frame._eventqSignature)
-    if invitedCount == nil then
-      SetStatus(frame, err or "Could not invite players.", 1, 0.1, 0.1)
-      return
-    end
-
-    if err then
-      SetStatus(frame, err, 1, 0.82, 0)
-      return
-    end
-
-    if invitedCount == 0 then
-      SetStatus(frame, "No accepted invitees to invite right now.")
-      return
-    end
-
-    SetStatus(frame, string.format("Sent %d group invite(s) to accepted players.", invitedCount), 0.2, 1, 0.2)
   end)
 
   if not frame._eventqEventsRegistered then
@@ -1048,21 +1118,15 @@ function CalendarEventPopup:Show(app, preset)
         return
       end
 
-			-- NOTE: Calendar event / invite manipulation is protected. Even some "read" paths like OpenEvent can
-			-- taint if run from a non-hardware event (CALENDAR_UPDATE_*). Keep this handler UI-only.
-			frame._eventqNeedsRefresh = true
-			if frame._eventqRefreshBtn and frame._eventqRefreshBtn.SetText then
-				frame._eventqRefreshBtn:SetText("Refresh*")
-			end
-			SetStatus(frame, "Calendar updated. Click Refresh to update invite status.", 1, 0.82, 0)
+      -- Keep CALENDAR_UPDATE_* handlers read-only. We can re-render existing info and attempt to locate a newly created event.
+      if frame._eventqSignature and not frame._eventqEventID then
+        RetryLocateEvent(frame, 6)
+      else
+        RefreshFromCalendar(frame)
+      end
     end)
   end
-
-	frame._eventqNeedsRefresh = false
-	if frame._eventqRefreshBtn and frame._eventqRefreshBtn.SetText then
-		frame._eventqRefreshBtn:SetText("Refresh")
-	end
-	RefreshFromCalendar(frame)
+  RefreshFromCalendar(frame)
   frame:Show()
 end
 
