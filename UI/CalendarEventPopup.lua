@@ -58,66 +58,105 @@ end
 -- Difficulty labels returned by GetDifficultyInfo occasionally lag behind newly added calendar textures.
 -- Keep conservative fallbacks so the Instance dropdown never collapses distinct difficulties into a single row.
 
-local function EventQ_InstallFullWidthHoverHighlight(button)
-  if not button or button._eventqFullWidthHighlightInstalled then
-    return
-  end
-  button._eventqFullWidthHighlightInstalled = true
-
-  -- DarkMenuElementTemplate uses HighlightBGTex containing an atlas-sized texture (useAtlasSize=true)
-  -- with no anchors, so the hover highlight does not stretch. Rather than fighting template timing,
-  -- install our own hover texture that always fills the entire row and force the stock highlight off.
-  local hover = button:CreateTexture(nil, "BACKGROUND")
-  hover:SetAllPoints(button)
-  hover:SetAlpha(0)
-  hover:SetBlendMode("BLEND")
-  if hover.SetAtlas then
-    -- useAtlasSize=false so the atlas can stretch to our anchors.
-    hover:SetAtlas("common-dropdown-customize-mouseover", false)
-  end
-  button._eventqFullWidthHoverTex = hover
-
-  local function SuppressDefaultHighlight()
-    local h = button.HighlightBGTex
-    if h and h.SetAlpha then
-      h:SetAlpha(0)
-    end
-  end
-
-  local function Apply(state)
-    SuppressDefaultHighlight()
-    if not hover then
-      return
+local function EventQ_BuildKnownDifficultySuffixes()
+  local suffixes = {}
+  if GetDifficultyInfo then
+    -- Dungeons
+    for _, id in ipairs({ 1, 2, 8, 23 }) do
+      local name = GetDifficultyInfo(id)
+      if type(name) == "string" and name ~= "" then
+        suffixes[name:lower()] = name
+      end
     end
 
-    if state then
-      -- Match Blizzard's hover opacity in MenuTemplates.CreateHighlightRadio.
-      hover:SetAlpha(0.15)
-    else
-      hover:SetAlpha(0)
+    -- Raids
+    for _, id in ipairs({ 14, 15, 16, 17 }) do
+      local name = GetDifficultyInfo(id)
+      if type(name) == "string" and name ~= "" then
+        suffixes[name:lower()] = name
+      end
     end
   end
-
-  -- Ensure we win even if Blizzard sets HighlightBGTex alpha later in the handler chain.
-  if button.HookScript then
-    button:HookScript("OnEnter", function() Apply(true) end)
-    button:HookScript("OnLeave", function() Apply(false) end)
-    button:HookScript("OnShow", function()
-      Apply(button.IsMouseOver and button:IsMouseOver())
-    end)
-  end
-
-  -- Initial state.
-  Apply(button.IsMouseOver and button:IsMouseOver())
+  return suffixes
 end
 
-local function EventQ_ApplyFullWidthMenuHighlight(elementDescription)
+local _eventqKnownDifficultySuffixes
+
+local function EventQ_IsKnownDifficultySuffix(suffix)
+  if type(suffix) ~= "string" then
+    return false
+  end
+
+  local s = strtrim(suffix)
+  if s == "" then
+    return false
+  end
+
+  if not _eventqKnownDifficultySuffixes then
+    _eventqKnownDifficultySuffixes = EventQ_BuildKnownDifficultySuffixes()
+  end
+
+  local lower = s:lower()
+  if _eventqKnownDifficultySuffixes and _eventqKnownDifficultySuffixes[lower] then
+    return true
+  end
+
+  -- Conservative English fallbacks for cases where GetDifficultyInfo is unavailable.
+  if lower:find("normal", 1, true) then return true end
+  if lower:find("heroic", 1, true) then return true end
+  if lower:find("mythic", 1, true) then return true end
+  if lower:find("mythic+", 1, true) then return true end
+  if lower:find("mythic plus", 1, true) then return true end
+  if lower:find("looking for raid", 1, true) then return true end
+  if lower == "lfr" then return true end
+  if lower:find("raid finder", 1, true) then return true end
+
+  return false
+end
+
+-- DarkMenuElementTemplate (SharedUIPanelTemplates.xml) defines HighlightBGTex with an atlas-sized texture
+-- (useAtlasSize=true) and no anchors, which prevents the hover highlight from stretching across the row.
+-- We cannot create new textures inside the Menu compositor execution range, so instead we retarget the
+-- existing template texture to fill the highlight frame and disable atlas sizing.
+local function EventQ_FixDarkMenuElementHighlight(button)
+  if not button then
+    return
+  end
+
+  local highlightFrame = button.HighlightBGTex
+  if not highlightFrame then
+    return
+  end
+
+  local highlightTexture = nil
+  local regions = { highlightFrame:GetRegions() }
+  for _, region in ipairs(regions) do
+    if region and region.IsObjectType and region:IsObjectType("Texture") then
+      highlightTexture = region
+      break
+    end
+  end
+
+  if not highlightTexture then
+    return
+  end
+
+  highlightTexture:ClearAllPoints()
+  highlightTexture:SetAllPoints(highlightFrame)
+
+  if highlightTexture.SetAtlas then
+    -- useAtlasSize=false so the atlas stretches to our anchors.
+    highlightTexture:SetAtlas("common-dropdown-customize-mouseover", false)
+  end
+end
+
+local function EventQ_ApplyDarkMenuHighlightFix(elementDescription)
   if not (elementDescription and elementDescription.AddInitializer) then
     return
   end
 
   elementDescription:AddInitializer(function(button)
-    EventQ_InstallFullWidthHoverHighlight(button)
+    EventQ_FixDarkMenuElementHighlight(button)
   end)
 end
 
@@ -135,18 +174,8 @@ local function EventQ_ResolveTitleDifficulty(rawTitle)
     return rawTitle, nil
   end
 
-  local s = suffix:lower()
-  -- Conservative matching: only treat well-known difficulty suffixes as difficulties.
-  if s:find("normal", 1, true)
-    or s:find("heroic", 1, true)
-    or s:find("mythic", 1, true)
-    or s:find("mythic+", 1, true)
-    or s:find("challenge", 1, true)
-    or s:find("timewalking", 1, true)
-    or s:find("raid finder", 1, true)
-    or s:find("looking for raid", 1, true)
-    or s == "lfr"
-    or s:find("follower", 1, true) then
+  -- Locale-safe: treat the trailing parenthetical as a difficulty if it matches a known difficulty name.
+  if EventQ_IsKnownDifficultySuffix(suffix) then
     return base, suffix
   end
 
@@ -984,13 +1013,13 @@ local function InitializeDropdown(frame)
     local categories = (type(CATEGORIES) == "table") and CATEGORIES or {}
     if #categories == 0 then
       local fallbackType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or 0
-      local radio = rootDescription:CreateRadio("Other", IsSelected, SetSelected, fallbackType)
-      EventQ_ApplyFullWidthMenuHighlight(radio)
+      local radio = rootDescription:CreateHighlightRadio("Other", IsSelected, SetSelected, fallbackType)
+      EventQ_ApplyDarkMenuHighlightFix(radio)
     else
       for _, entry in ipairs(categories) do
         if entry and entry.eventType then
-          local radio = rootDescription:CreateRadio(entry.label or "Other", IsSelected, SetSelected, entry.eventType)
-          EventQ_ApplyFullWidthMenuHighlight(radio)
+          local radio = rootDescription:CreateHighlightRadio(entry.label or "Other", IsSelected, SetSelected, entry.eventType)
+          EventQ_ApplyDarkMenuHighlightFix(radio)
         end
       end
     end

@@ -58,6 +58,52 @@ local function EnsureEncounterJournalLoaded()
   return (IsAddOnLoaded and IsAddOnLoaded("Blizzard_EncounterJournal")) or false
 end
 
+local function BuildKnownDifficultySuffixes()
+  local suffixes = {}
+  if GetDifficultyInfo then
+    for _, id in ipairs({ 1, 2, 8, 23, 14, 15, 16, 17 }) do
+      local name = GetDifficultyInfo(id)
+      if type(name) == "string" and name ~= "" then
+        suffixes[name:lower()] = true
+      end
+    end
+  end
+  return suffixes
+end
+
+local _knownDifficultySuffixes
+
+local function IsKnownDifficultySuffix(suffix)
+  if type(suffix) ~= "string" then
+    return false
+  end
+  local s = strtrim(suffix)
+  if s == "" then
+    return false
+  end
+
+  if not _knownDifficultySuffixes then
+    _knownDifficultySuffixes = BuildKnownDifficultySuffixes()
+  end
+
+  local lower = s:lower()
+  if _knownDifficultySuffixes and _knownDifficultySuffixes[lower] then
+    return true
+  end
+
+  -- Conservative English fallbacks.
+  if lower:find("normal", 1, true) then return true end
+  if lower:find("heroic", 1, true) then return true end
+  if lower:find("mythic", 1, true) then return true end
+  if lower:find("mythic+", 1, true) then return true end
+  if lower:find("mythic plus", 1, true) then return true end
+  if lower:find("looking for raid", 1, true) then return true end
+  if lower == "lfr" then return true end
+  if lower:find("raid finder", 1, true) then return true end
+
+  return false
+end
+
 local function StripDifficultySuffix(title, difficultyId)
   title = strtrim(tostring(title or ""))
   if title == "" then return "" end
@@ -73,6 +119,16 @@ local function StripDifficultySuffix(title, difficultyId)
     if title:sub(-#suffix) == suffix then
       title = title:sub(1, #title - #suffix)
       return strtrim(title)
+    end
+  end
+
+  -- Locale-safe: strip a trailing parenthetical if it matches a known difficulty name.
+  do
+    local base, suffix = title:match("^(.-)%s*%(([^)]+)%)%s*$")
+    base = strtrim(base or "")
+    suffix = strtrim(suffix or "")
+    if base ~= "" and suffix ~= "" and IsKnownDifficultySuffix(suffix) then
+      return base
     end
   end
 
