@@ -58,48 +58,57 @@ end
 -- Difficulty labels returned by GetDifficultyInfo occasionally lag behind newly added calendar textures.
 -- Keep conservative fallbacks so the Instance dropdown never collapses distinct difficulties into a single row.
 
-local function EventQ_ForceFullWidthHighlight(button)
-  -- DarkMenuElementTemplate's highlight uses an atlas-sized texture with no anchors.
-  -- Ensure it is anchored to the element bounds and does not enforce atlas sizing.
-  if not button then
+local function EventQ_InstallFullWidthHoverHighlight(button)
+  if not button or button._eventqFullWidthHighlightInstalled then
     return
   end
+  button._eventqFullWidthHighlightInstalled = true
 
-  local highlight = button.HighlightBGTex
-  if not highlight then
-    return
+  -- DarkMenuElementTemplate uses HighlightBGTex containing an atlas-sized texture (useAtlasSize=true)
+  -- with no anchors, so the hover highlight does not stretch. Rather than fighting template timing,
+  -- install our own hover texture that always fills the entire row and force the stock highlight off.
+  local hover = button:CreateTexture(nil, "BACKGROUND")
+  hover:SetAllPoints(button)
+  hover:SetAlpha(0)
+  hover:SetBlendMode("BLEND")
+  if hover.SetAtlas then
+    -- useAtlasSize=false so the atlas can stretch to our anchors.
+    hover:SetAtlas("common-dropdown-customize-mouseover", false)
   end
+  button._eventqFullWidthHoverTex = hover
 
-  local highlightTexture = nil
-
-  if highlight.GetObjectType and highlight:GetObjectType() == "Texture" then
-    highlightTexture = highlight
-  elseif highlight.GetRegions then
-    local regionCount = select("#", highlight:GetRegions())
-    for i = 1, regionCount do
-      local region = select(i, highlight:GetRegions())
-      if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-        highlightTexture = region
-        break
-      end
+  local function SuppressDefaultHighlight()
+    local h = button.HighlightBGTex
+    if h and h.SetAlpha then
+      h:SetAlpha(0)
     end
   end
 
-  -- If the template didn't expose a texture directly (or something replaced it), create our own.
-  if not highlightTexture and highlight.CreateTexture then
-    highlightTexture = highlight:CreateTexture(nil, "BACKGROUND")
+  local function Apply(state)
+    SuppressDefaultHighlight()
+    if not hover then
+      return
+    end
+
+    if state then
+      -- Match Blizzard's hover opacity in MenuTemplates.CreateHighlightRadio.
+      hover:SetAlpha(0.15)
+    else
+      hover:SetAlpha(0)
+    end
   end
 
-  if not (highlightTexture and highlightTexture.ClearAllPoints and highlightTexture.SetAllPoints) then
-    return
+  -- Ensure we win even if Blizzard sets HighlightBGTex alpha later in the handler chain.
+  if button.HookScript then
+    button:HookScript("OnEnter", function() Apply(true) end)
+    button:HookScript("OnLeave", function() Apply(false) end)
+    button:HookScript("OnShow", function()
+      Apply(button.IsMouseOver and button:IsMouseOver())
+    end)
   end
 
-  highlightTexture:ClearAllPoints()
-  highlightTexture:SetAllPoints(highlight)
-
-  if highlightTexture.SetAtlas then
-    highlightTexture:SetAtlas("common-dropdown-customize-mouseover", false)
-  end
+  -- Initial state.
+  Apply(button.IsMouseOver and button:IsMouseOver())
 end
 
 local function EventQ_ApplyFullWidthMenuHighlight(elementDescription)
@@ -108,17 +117,7 @@ local function EventQ_ApplyFullWidthMenuHighlight(elementDescription)
   end
 
   elementDescription:AddInitializer(function(button)
-    if not button or button._eventqFullWidthHighlight then
-      return
-    end
-    button._eventqFullWidthHighlight = true
-
-    -- Apply immediately and again on hover to cover late layout passes.
-    EventQ_ForceFullWidthHighlight(button)
-    if button.HookScript then
-      button:HookScript("OnEnter", EventQ_ForceFullWidthHighlight)
-      button:HookScript("OnShow", EventQ_ForceFullWidthHighlight)
-    end
+    EventQ_InstallFullWidthHoverHighlight(button)
   end)
 end
 
