@@ -105,7 +105,16 @@ function EventQWowStyle1DropdownControlMixin:InitDropdown()
   if not (setting and options) then return end
 
   local initTooltip = Settings.CreateOptionsInitTooltip(setting, initializer:GetName(), initializer:GetTooltip(), options)
-  local inserter = Settings.CreateDropdownOptionInserter(options)
+
+  -- Settings.CreateDropdownOptionInserter expects a function. Blizzard's own dropdown control passes
+  -- the initializer's raw options, which is typically a function but can be a static table.
+  local optionsFunc = options
+  if type(optionsFunc) ~= "function" then
+    local optionData = optionsFunc
+    optionsFunc = function() return optionData end
+  end
+
+  local inserter = Settings.CreateDropdownOptionInserter(setting, optionsFunc)
   Settings.InitDropdown(self.Dropdown, setting, inserter, initTooltip)
 end
 

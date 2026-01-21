@@ -158,7 +158,7 @@ function MainFrame:_EnsureSideTabs()
 
   -- Match Blizzard's quest log side tabs: top tab anchors to the frame's TOPRIGHT, subsequent
   -- tabs anchor to the previous tab with a small vertical gap.
-  local function CreateSideTab(tabKey, activeAtlas, inactiveAtlas)
+  local function CreateSideTab(tabKey, activeAtlas, inactiveAtlas, tooltipText)
     local tab = CreateFrame("Frame", nil, self.frame, "QuestLogTabButtonTemplate")
     tab:SetClampedToScreen(true)
     tab:SetFrameStrata(self.frame:GetFrameStrata())
@@ -172,9 +172,20 @@ function MainFrame:_EnsureSideTabs()
 
     RunTemplateOnLoad(tab)
 
-    -- The tab icons are self-explanatory; suppress the default tooltip to avoid localization overhead.
-    tab:SetScript("OnEnter", nil)
-    tab:SetScript("OnLeave", nil)
+    tab._eventqTooltipText = tooltipText
+    tab:SetScript("OnEnter", function()
+      if not (GameTooltip and tab._eventqTooltipText) then
+        return
+      end
+      GameTooltip:SetOwner(tab, "ANCHOR_LEFT")
+      GameTooltip:SetText(tab._eventqTooltipText, 1, 1, 1)
+      GameTooltip:Show()
+    end)
+    tab:SetScript("OnLeave", function()
+      if GameTooltip then
+        GameTooltip:Hide()
+      end
+    end)
 
     SetTabChecked(tab, false)
 
@@ -192,23 +203,22 @@ function MainFrame:_EnsureSideTabs()
     return tab
   end
 
-  local mainTab = CreateSideTab(TAB_KEY.MAIN, "QuestLog-tab-icon-MapLegend", "QuestLog-tab-icon-MapLegend")
+  local mainTab = CreateSideTab(TAB_KEY.MAIN, "QuestLog-tab-icon-MapLegend", "QuestLog-tab-icon-MapLegend", "Main")
   mainTab._eventqActiveColor = TAB_ACTIVE_COLOR
   mainTab._eventqInactiveColor = TAB_INACTIVE_COLOR
   mainTab._eventqForceDesaturate = true
   mainTab:ClearAllPoints()
   mainTab:SetPoint("TOPLEFT", self.frame, "TOPRIGHT", SIDE_TAB_ANCHOR_X, SIDE_TAB_ANCHOR_Y)
 
-  local eventsTab = CreateSideTab(TAB_KEY.EVENTS, "questlog-tab-icon-event", "questlog-tab-icon-event-inactive")
+  local eventsTab = CreateSideTab(TAB_KEY.EVENTS, "questlog-tab-icon-event", "questlog-tab-icon-event-inactive", "Future Events")
   eventsTab._eventqActiveColor = TAB_ACTIVE_COLOR
   eventsTab._eventqInactiveColor = TAB_INACTIVE_COLOR
   eventsTab._eventqForceDesaturate = true
   eventsTab:ClearAllPoints()
   eventsTab:SetPoint("TOP", mainTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
 
-  local searchTab = CreateSideTab(TAB_KEY.SEARCH, "uitools-icon-search", "uitools-icon-search")
-
-  local calendarTab = CreateSideTab(TAB_KEY.CALENDAR, "ui-hud-calendar-1-up", "ui-hud-calendar-1-up")
+  local calendarTab = CreateSideTab(TAB_KEY.CALENDAR, "ui-hud-calendar-1-up", "ui-hud-calendar-1-up", "Calendar Events")
+  local searchTab = CreateSideTab(TAB_KEY.SEARCH, "uitools-icon-search", "uitools-icon-search", "Search")
   calendarTab:ClearAllPoints()
   calendarTab:SetPoint("TOP", eventsTab, "BOTTOM", 0, SIDE_TAB_GAP_Y)
   calendarTab._eventqActiveColor = TAB_ACTIVE_COLOR

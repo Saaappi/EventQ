@@ -55,6 +55,43 @@ local function IsRaidOrDungeon(eventType)
   return eventType == types.Raid or eventType == types.Dungeon
 end
 
+-- Difficulty labels returned by GetDifficultyInfo occasionally lag behind newly added calendar textures.
+-- Keep conservative fallbacks so the Instance dropdown never collapses distinct difficulties into a single row.
+local function GetDifficultyNameSafe(difficultyId)
+  if difficultyId and GetDifficultyInfo then
+    local name = select(1, GetDifficultyInfo(difficultyId))
+    if type(name) == "string" and name ~= "" then
+      return name
+    end
+  end
+
+  local fallbacks = {
+    -- Raids
+    [14] = { "PLAYER_DIFFICULTY1", "Normal" },
+    [15] = { "PLAYER_DIFFICULTY2", "Heroic" },
+    [16] = { "PLAYER_DIFFICULTY6", "Mythic" },
+    [17] = { "PLAYER_DIFFICULTY3", "Raid Finder" },
+
+    -- Dungeons
+    [1] = { "DUNGEON_DIFFICULTY1", "Normal" },
+    [2] = { "DUNGEON_DIFFICULTY2", "Heroic" },
+    [23] = { "DUNGEON_DIFFICULTY3", "Mythic" },
+    [8] = { "CHALLENGE_MODE", "Mythic+" },
+  }
+
+  local entry = difficultyId and fallbacks[difficultyId]
+  if entry then
+    local globalKey, fallback = entry[1], entry[2]
+    local value = _G and _G[globalKey]
+    if type(value) == "string" and value ~= "" then
+      return value
+    end
+    return fallback
+  end
+
+  return ""
+end
+
 local function SplitLines(multilineText)
   local out = {}
   if type(multilineText) ~= "string" then
@@ -514,6 +551,111 @@ local function SetupInstanceDropdown(frame)
 	      app._eventqInstanceCatalog = catalog
 	    end
 
+        -- "Current Season" (dungeons only): list the M+ season pool at the top of the menu.
+        -- The Challenges UI uses C_ChallengeMode.GetMapTable() for the current season, so we mirror that.
+        if eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon) then
+          local seasonMapNamesByMapID = nil
+          if C_ChallengeMode and C_ChallengeMode.GetMapTable and C_ChallengeMode.GetMapUIInfo then
+            local challengeMaps = C_ChallengeMode.GetMapTable()
+            if type(challengeMaps) == "table" and #challengeMaps > 0 then
+              seasonMapNamesByMapID = {}
+              for _, challengeMapID in ipairs(challengeMaps) do
+                local name, _, _, _, _, mapID = C_ChallengeMode.GetMapUIInfo(challengeMapID)
+                if mapID then
+                  seasonMapNamesByMapID[tonumber(mapID)] = name or ("Map " .. tostring(mapID))
+                end
+              end
+              if not next(seasonMapNamesByMapID) then
+                seasonMapNamesByMapID = nil
+              end
+            end
+          end
+
+          if seasonMapNamesByMapID then
+            local seasonByMapID = {} -- mapID -> { name=string, options={ {textureIndex, diffLabel, displayText} } }
+            local seenSeasonOption = {}
+
+            for textureIndex, textureInfo in ipairs(textures) do
+              repeat
+                local mapID = textureInfo and tonumber(textureInfo.mapId)
+                if not (mapID and seasonMapNamesByMapID[mapID]) then
+                  break
+                end
+
+                local title = textureInfo and textureInfo.title
+                if not title or title == "" then
+                  break
+                end
+
+                local difficultyId = textureInfo.difficultyId
+                local difficultyName = GetDifficultyNameSafe(difficultyId)
+
+                -- Exclude follower dungeons.
+                local lower = title:lower()
+                local dn = (difficultyName or ""):lower()
+                if lower:find("follower", 1, true) or dn:find("follower", 1, true) then
+                  break
+                end
+
+                local dungeonName = seasonMapNamesByMapID[mapID] or title
+                local displayText = dungeonName
+                if difficultyName ~= "" then
+                  displayText = string.format("%s (%s)", dungeonName, difficultyName)
+                end
+
+                local optionKey = string.format("%s|%s|%s", tostring(mapID), tostring(difficultyId), tostring(displayText))
+                if seenSeasonOption[optionKey] then
+                  break
+                end
+                seenSeasonOption[optionKey] = true
+
+                local bucket = seasonByMapID[mapID]
+                if not bucket then
+                  bucket = { name = dungeonName, options = {} }
+                  seasonByMapID[mapID] = bucket
+                end
+
+                bucket.options[#bucket.options + 1] = {
+                  textureIndex = textureIndex,
+                  diffLabel = difficultyName,
+                  displayText = displayText,
+                }
+              until true
+            end
+
+            local mapIDs = {}
+            for mapID in pairs(seasonByMapID) do
+              mapIDs[#mapIDs + 1] = mapID
+            end
+            table.sort(mapIDs, function(a, b)
+              return (seasonByMapID[a] and seasonByMapID[a].name or "") < (seasonByMapID[b] and seasonByMapID[b].name or "")
+            end)
+
+            if #mapIDs > 0 then
+              local seasonMenu = rootDescription:CreateButton("Current Season")
+              for _, mapID in ipairs(mapIDs) do
+                local bucket = seasonByMapID[mapID]
+                if bucket and bucket.options and #bucket.options > 0 then
+                  table.sort(bucket.options, function(left, right)
+                    return (left.displayText or "") < (right.displayText or "")
+                  end)
+
+                  local dungeonMenu = seasonMenu:CreateButton(bucket.name)
+                  for _, opt in ipairs(bucket.options) do
+                    local label = opt.diffLabel ~= "" and opt.diffLabel or opt.displayText
+                    dungeonMenu:CreateRadio(label, function() return IsSelected(opt.textureIndex) end, function()
+                      SetSelected(opt.textureIndex, opt.displayText)
+                    end, opt.textureIndex)
+                  end
+                end
+              end
+
+              -- Visual separator before the full expansion-grouped list.
+              rootDescription:CreateDivider()
+            end
+          end
+        end
+
     -- Group instances by expansion. The calendar API provides expansionLevel on each texture info.
 	    local buckets = {} -- expansionLevel -> { label=string, items={ {textureIndex=number, label=string} } }
 	    local levels = {}
@@ -528,10 +670,7 @@ local function SetupInstanceDropdown(frame)
         end
 
 	        local difficultyId = textureInfo.difficultyId
-        local difficultyName = ""
-        if difficultyId and GetDifficultyInfo then
-          difficultyName = select(1, GetDifficultyInfo(difficultyId)) or ""
-        end
+        local difficultyName = GetDifficultyNameSafe(difficultyId)
 
 	        -- Filter: exclude Raid Finder / LFR for raids.
         if eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid) then
@@ -556,14 +695,16 @@ local function SetupInstanceDropdown(frame)
 	        end
 	        expansionLevel = tonumber(expansionLevel) or tonumber(textureInfo.expansionLevel) or -1
 
-        local label = title
-        if difficultyName ~= "" and not title:find(difficultyName, 1, true) then
-          label = string.format("%s (%s)", title, difficultyName)
-        end
+	        local label = title
+	        if difficultyName ~= "" and not title:find(difficultyName, 1, true) then
+	          label = string.format("%s (%s)", title, difficultyName)
+	        end
 
 	        -- Dedupe exact label duplicates within the same expansion bucket, but do not discard distinct
 	        -- difficulties (which generally have unique labels after the append above).
-	        local labelKey = string.format("%s|%s", tostring(expansionLevel), tostring(label))
+	        -- Dedupe exact duplicates, but keep distinct difficulties even if the base label is identical.
+	        -- (Some raids have calendar textures where the difficulty label is not yet localized.)
+	        local labelKey = string.format("%s|%s|%s", tostring(expansionLevel), tostring(label), tostring(difficultyId))
 	        if seenLabelKeys[labelKey] then
 	          break
 	        end
