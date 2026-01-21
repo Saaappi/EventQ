@@ -510,6 +510,13 @@ local function SetupInstanceDropdown(frame)
   dropdown:SetupMenu(function(_, rootDescription)
     rootDescription:SetTag("MENU_EVENTQ_CALENDAR_INSTANCE")
 
+    local menuMinWidth = math.floor((dropdown.GetWidth and dropdown:GetWidth()) or 180)
+    rootDescription:SetMinimumWidth(menuMinWidth)
+    rootDescription:SetMaximumWidth(menuMinWidth + 140)
+    if MenuConstants and MenuConstants.VerticalGridDirection then
+      rootDescription:SetGridMode(MenuConstants.VerticalGridDirection)
+    end
+
     local app = frame._eventqApp
     local calendar = app and app.calendar
     if not calendar then
@@ -694,11 +701,15 @@ local function SetupInstanceDropdown(frame)
 	          expansionLevel = catalog:GetExpansionLevelForCalendarTitle(title, difficultyId)
 	        end
 	        expansionLevel = tonumber(expansionLevel) or tonumber(textureInfo.expansionLevel) or -1
+		local baseTitle = title
+		if catalog and catalog.GetBaseTitle then
+			baseTitle = catalog:GetBaseTitle(title, difficultyId)
+		end
 
-	        local label = title
-	        if difficultyName ~= "" and not title:find(difficultyName, 1, true) then
-	          label = string.format("%s (%s)", title, difficultyName)
-	        end
+		local label = baseTitle
+		if difficultyName ~= "" then
+			label = string.format("%s (%s)", baseTitle, difficultyName)
+		end
 
 	        -- Dedupe exact label duplicates within the same expansion bucket, but do not discard distinct
 	        -- difficulties (which generally have unique labels after the append above).
@@ -751,10 +762,6 @@ local function SetupInstanceDropdown(frame)
         end
       end
     end
-
-    local menuMinWidth = math.floor((dropdown.GetWidth and dropdown:GetWidth()) or 180)
-    rootDescription:SetMinimumWidth(menuMinWidth)
-    rootDescription:SetMaximumWidth(menuMinWidth + 140)
   end)
 end
 
@@ -800,6 +807,13 @@ local function InitializeDropdown(frame)
   dropdown:SetupMenu(function(_, rootDescription)
     rootDescription:SetTag("MENU_EVENTQ_CALENDAR_CATEGORY")
 
+    local menuMinWidth = math.floor((dropdown.GetWidth and dropdown:GetWidth()) or 180)
+    rootDescription:SetMinimumWidth(menuMinWidth)
+    rootDescription:SetMaximumWidth(menuMinWidth + 60)
+    if MenuConstants and MenuConstants.VerticalGridDirection then
+      rootDescription:SetGridMode(MenuConstants.VerticalGridDirection)
+    end
+
     local categories = (type(CATEGORIES) == "table") and CATEGORIES or {}
     if #categories == 0 then
       local fallbackType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or 0
@@ -811,10 +825,6 @@ local function InitializeDropdown(frame)
         end
       end
     end
-
-    local menuMinWidth = math.floor((dropdown.GetWidth and dropdown:GetWidth()) or 180)
-    rootDescription:SetMinimumWidth(menuMinWidth)
-    rootDescription:SetMaximumWidth(menuMinWidth + 60)
   end)
 
   local defaultType = (type(CATEGORIES) == "table" and CATEGORIES[#CATEGORIES] and CATEGORIES[#CATEGORIES].eventType)

@@ -177,7 +177,7 @@ function MainFrame:_EnsureSideTabs()
       if not (GameTooltip and tab._eventqTooltipText) then
         return
       end
-      GameTooltip:SetOwner(tab, "ANCHOR_LEFT")
+      GameTooltip:SetOwner(tab, "ANCHOR_CURSOR")
       GameTooltip:SetText(tab._eventqTooltipText, 1, 1, 1)
       GameTooltip:Show()
     end)

@@ -114,6 +114,23 @@ function EventQWowStyle1DropdownControlMixin:InitDropdown()
     optionsFunc = function() return optionData end
   end
 
+  
+
+  -- Some callers provide optionData without a controlType (Blizzard dropdowns default to Radio).
+  -- The Settings API asserts on missing controlType, so normalize defensively.
+  local rawOptionsFunc = optionsFunc
+  optionsFunc = function()
+    local optionData = rawOptionsFunc()
+    if type(optionData) == "table" and Settings and Settings.ControlType then
+      for _, opt in ipairs(optionData) do
+        if type(opt) == "table" and opt.controlType == nil then
+          opt.controlType = Settings.ControlType.Radio
+        end
+      end
+    end
+    return optionData
+  end
+
   local inserter = Settings.CreateDropdownOptionInserter(setting, optionsFunc)
   Settings.InitDropdown(self.Dropdown, setting, inserter, initTooltip)
 end
@@ -249,6 +266,7 @@ function SettingsModule:Init(db)
     return {
       {
         value = "text",
+        controlType = Settings.ControlType.Radio,
         label = "Text",
         text = "Text (UIErrorsFrame)",
         tooltip = "Shows reminders as on-screen text similar to error messages.",
@@ -256,12 +274,14 @@ function SettingsModule:Init(db)
       },
       {
         value = "toast",
+        controlType = Settings.ControlType.Radio,
         label = "Toast",
         text = "Toast (Achievement style)",
         tooltip = "Shows reminders as achievement-style toasts.",
       },
       {
         value = "off",
+        controlType = Settings.ControlType.Radio,
         label = "Off",
         text = "Disabled",
         tooltip = "Disables upcoming custom event reminders.",
