@@ -1,9 +1,10 @@
-## Interface: 110207
+## Interface: 120000
 ## Title: EventQ
 ## Notes: Queue for dungeon and PvP events directly from the interface, search for events, add custom events, and an optional portable mode for a smaller visual footprint and quick queues.
 ## SavedVariables: EventQDB
 ## Author: LightskyGG
 ## Version: 2.0.1
+## IconTexture: Interface\Icons\trade_archaeology_nerubian_obelisk
 EventQ.xml
 Core/Class.lua
 Core/ImportExport.lua
