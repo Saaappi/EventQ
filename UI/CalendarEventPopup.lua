@@ -57,6 +57,103 @@ end
 
 -- Difficulty labels returned by GetDifficultyInfo occasionally lag behind newly added calendar textures.
 -- Keep conservative fallbacks so the Instance dropdown never collapses distinct difficulties into a single row.
+
+local function EventQ_ForceFullWidthHighlight(button)
+  -- DarkMenuElementTemplate's highlight uses an atlas-sized texture with no anchors.
+  -- Ensure it is anchored to the element bounds and does not enforce atlas sizing.
+  if not button then
+    return
+  end
+
+  local highlight = button.HighlightBGTex
+  if not highlight then
+    return
+  end
+
+  local highlightTexture = nil
+
+  if highlight.GetObjectType and highlight:GetObjectType() == "Texture" then
+    highlightTexture = highlight
+  elseif highlight.GetRegions then
+    local regionCount = select("#", highlight:GetRegions())
+    for i = 1, regionCount do
+      local region = select(i, highlight:GetRegions())
+      if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+        highlightTexture = region
+        break
+      end
+    end
+  end
+
+  -- If the template didn't expose a texture directly (or something replaced it), create our own.
+  if not highlightTexture and highlight.CreateTexture then
+    highlightTexture = highlight:CreateTexture(nil, "BACKGROUND")
+  end
+
+  if not (highlightTexture and highlightTexture.ClearAllPoints and highlightTexture.SetAllPoints) then
+    return
+  end
+
+  highlightTexture:ClearAllPoints()
+  highlightTexture:SetAllPoints(highlight)
+
+  if highlightTexture.SetAtlas then
+    highlightTexture:SetAtlas("common-dropdown-customize-mouseover", false)
+  end
+end
+
+local function EventQ_ApplyFullWidthMenuHighlight(elementDescription)
+  if not (elementDescription and elementDescription.AddInitializer) then
+    return
+  end
+
+  elementDescription:AddInitializer(function(button)
+    if not button or button._eventqFullWidthHighlight then
+      return
+    end
+    button._eventqFullWidthHighlight = true
+
+    -- Apply immediately and again on hover to cover late layout passes.
+    EventQ_ForceFullWidthHighlight(button)
+    if button.HookScript then
+      button:HookScript("OnEnter", EventQ_ForceFullWidthHighlight)
+      button:HookScript("OnShow", EventQ_ForceFullWidthHighlight)
+    end
+  end)
+end
+
+local function EventQ_ResolveTitleDifficulty(rawTitle)
+  -- Returns: baseTitle, diffFromTitle (may be nil)
+  if type(rawTitle) ~= "string" then
+    return "", nil
+  end
+
+  local base, suffix = rawTitle:match("^(.-)%s*%(([^)]+)%)%s*$")
+  base = strtrim(base or "")
+  suffix = strtrim(suffix or "")
+
+  if base == "" or suffix == "" then
+    return rawTitle, nil
+  end
+
+  local s = suffix:lower()
+  -- Conservative matching: only treat well-known difficulty suffixes as difficulties.
+  if s:find("normal", 1, true)
+    or s:find("heroic", 1, true)
+    or s:find("mythic", 1, true)
+    or s:find("mythic+", 1, true)
+    or s:find("challenge", 1, true)
+    or s:find("timewalking", 1, true)
+    or s:find("raid finder", 1, true)
+    or s:find("looking for raid", 1, true)
+    or s == "lfr"
+    or s:find("follower", 1, true) then
+    return base, suffix
+  end
+
+  return rawTitle, nil
+end
+
 local function GetDifficultyNameSafe(difficultyId)
   if difficultyId and GetDifficultyInfo then
     local name = select(1, GetDifficultyInfo(difficultyId))
@@ -513,8 +610,16 @@ local function SetupInstanceDropdown(frame)
     local menuMinWidth = math.floor((dropdown.GetWidth and dropdown:GetWidth()) or 180)
     rootDescription:SetMinimumWidth(menuMinWidth)
     rootDescription:SetMaximumWidth(menuMinWidth + 140)
+    local dungeonType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon)
+    local selectedType = frame._eventqSelectedType
+    local isDungeonTwoColumn = (dungeonType and selectedType == dungeonType) and (MenuConstants and MenuConstants.AutoCalculateColumns) ~= nil
+
     if MenuConstants and MenuConstants.VerticalGridDirection then
-      rootDescription:SetGridMode(MenuConstants.VerticalGridDirection)
+      if isDungeonTwoColumn and MenuConstants.AutoCalculateColumns then
+        rootDescription:SetGridMode(MenuConstants.VerticalGridDirection, MenuConstants.AutoCalculateColumns)
+      else
+        rootDescription:SetGridMode(MenuConstants.VerticalGridDirection, 1)
+      end
     end
 
     local app = frame._eventqApp
@@ -649,25 +754,40 @@ local function SetupInstanceDropdown(frame)
 
                   local dungeonMenu = seasonMenu:CreateButton(bucket.name)
                   for _, opt in ipairs(bucket.options) do
-                    local label = opt.diffLabel ~= "" and opt.diffLabel or opt.displayText
+                    local label = (opt.diffLabel and opt.diffLabel ~= "") and opt.diffLabel or "Unknown"
                     dungeonMenu:CreateRadio(label, function() return IsSelected(opt.textureIndex) end, function()
-                      SetSelected(opt.textureIndex, opt.displayText)
+                      SetSelected(opt.textureIndex, string.format("%s > %s > %s", "Current Season", bucket.name, label))
                     end, opt.textureIndex)
                   end
                 end
               end
 
               -- Visual separator before the full expansion-grouped list.
+              if not isDungeonTwoColumn then
               rootDescription:CreateDivider()
+            end
             end
           end
         end
 
-    -- Group instances by expansion. The calendar API provides expansionLevel on each texture info.
-	    local buckets = {} -- expansionLevel -> { label=string, items={ {textureIndex=number, label=string} } }
+    -- Group instances by expansion -> instance name -> difficulty.
+	    local buckets = {} -- expansionLevel -> { label=string, instances={ [baseTitle]= { name=string, options={} } } }
 	    local levels = {}
 	    local seenLevel = {}
-	    local seenLabelKeys = {}
+
+    local difficultySortOrder = {
+      -- Raids
+      [14] = 10, -- Normal
+      [15] = 20, -- Heroic
+      [16] = 30, -- Mythic
+      [17] = 40, -- Raid Finder
+
+      -- Dungeons
+      [1] = 10, -- Normal
+      [2] = 20, -- Heroic
+      [23] = 30, -- Mythic
+      [8] = 40, -- Mythic+
+    }
 
     for textureIndex, textureInfo in ipairs(textures) do
       repeat
@@ -679,19 +799,24 @@ local function SetupInstanceDropdown(frame)
 	        local difficultyId = textureInfo.difficultyId
         local difficultyName = GetDifficultyNameSafe(difficultyId)
 
+        local baseFromTitle, diffFromTitle = EventQ_ResolveTitleDifficulty(title)
+
 	        -- Filter: exclude Raid Finder / LFR for raids.
         if eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid) then
 	          local lower = title:lower()
-	          local dn = difficultyName:lower()
+	          local dn = (difficultyName or ""):lower()
+	          local dt = (diffFromTitle or ""):lower()
 	          if lower:find("looking for raid", 1, true) or lower:find("raid finder", 1, true) or lower:find("lfr", 1, true)
-	            or dn:find("looking for raid", 1, true) or dn:find("raid finder", 1, true) or dn:find("lfr", 1, true) then
+	            or dn:find("looking for raid", 1, true) or dn:find("raid finder", 1, true) or dn:find("lfr", 1, true)
+	            or dt:find("looking for raid", 1, true) or dt:find("raid finder", 1, true) or dt:find("lfr", 1, true) then
 	            break
 	          end
         elseif eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon) then
           -- Filter: exclude Follower dungeons.
           local lower = title:lower()
-          local dn = difficultyName:lower()
-          if lower:find("follower", 1, true) or dn:find("follower", 1, true) then
+          local dn = (difficultyName or ""):lower()
+          local dt = (diffFromTitle or ""):lower()
+          if lower:find("follower", 1, true) or dn:find("follower", 1, true) or dt:find("follower", 1, true) then
             break
           end
         end
@@ -701,25 +826,26 @@ local function SetupInstanceDropdown(frame)
 	          expansionLevel = catalog:GetExpansionLevelForCalendarTitle(title, difficultyId)
 	        end
 	        expansionLevel = tonumber(expansionLevel) or tonumber(textureInfo.expansionLevel) or -1
-		local baseTitle = title
-		if catalog and catalog.GetBaseTitle then
-			baseTitle = catalog:GetBaseTitle(title, difficultyId)
-		end
 
-		local label = baseTitle
-		if difficultyName ~= "" then
-			label = string.format("%s (%s)", baseTitle, difficultyName)
-		end
+        local baseTitle = baseFromTitle
+        if catalog and catalog.GetBaseTitle then
+          -- Catalog knows how to strip localized difficulty suffixes when difficultyId is present.
+          baseTitle = catalog:GetBaseTitle(title, difficultyId) or baseTitle
+        end
+        baseTitle = strtrim(baseTitle or "")
+        if baseTitle == "" then
+          break
+        end
 
-	        -- Dedupe exact label duplicates within the same expansion bucket, but do not discard distinct
-	        -- difficulties (which generally have unique labels after the append above).
-	        -- Dedupe exact duplicates, but keep distinct difficulties even if the base label is identical.
-	        -- (Some raids have calendar textures where the difficulty label is not yet localized.)
-	        local labelKey = string.format("%s|%s|%s", tostring(expansionLevel), tostring(label), tostring(difficultyId))
-	        if seenLabelKeys[labelKey] then
-	          break
-	        end
-	        seenLabelKeys[labelKey] = true
+        -- Recover missing difficulty labels when difficultyId is nil or not yet localized.
+        local diffLabel = difficultyName
+        if (diffLabel == "" or not diffLabel) and diffFromTitle then
+          diffLabel = diffFromTitle
+        end
+        diffLabel = strtrim(diffLabel or "")
+        if diffLabel == "" then
+          diffLabel = "Unknown"
+        end
 
         local bucket = buckets[expansionLevel]
         if not bucket then
@@ -727,11 +853,28 @@ local function SetupInstanceDropdown(frame)
           if not expansionLabel or expansionLabel == "" then
             expansionLabel = (expansionLevel >= 0) and ("Expansion " .. tostring(expansionLevel)) or "Other"
           end
-          bucket = { label = expansionLabel, items = {} }
+          bucket = { label = expansionLabel, instances = {} }
           buckets[expansionLevel] = bucket
         end
 
-        bucket.items[#bucket.items + 1] = { textureIndex = textureIndex, label = label }
+        local instance = bucket.instances[baseTitle]
+        if not instance then
+          instance = { name = baseTitle, options = {}, _seen = {} }
+          bucket.instances[baseTitle] = instance
+        end
+
+        local optionKey = tostring(difficultyId or diffFromTitle or textureIndex)
+        if instance._seen[optionKey] then
+          break
+        end
+        instance._seen[optionKey] = true
+
+        instance.options[#instance.options + 1] = {
+          textureIndex = textureIndex,
+          diffLabel = diffLabel,
+          difficultyId = difficultyId,
+        }
+
         if not seenLevel[expansionLevel] then
           seenLevel[expansionLevel] = true
           levels[#levels + 1] = expansionLevel
@@ -751,14 +894,39 @@ local function SetupInstanceDropdown(frame)
 
     for _, expansionLevel in ipairs(levels) do
       local bucket = buckets[expansionLevel]
-      if bucket and bucket.items and #bucket.items > 0 then
-        table.sort(bucket.items, function(left, right)
-          return (left.label or "") < (right.label or "")
-        end)
+      if bucket and bucket.instances then
+        local instances = {}
+        for _, instance in pairs(bucket.instances) do
+          if instance and instance.options and #instance.options > 0 then
+            instances[#instances + 1] = instance
+          end
+        end
 
-        local submenu = rootDescription:CreateButton(bucket.label)
-        for _, item in ipairs(bucket.items) do
-          submenu:CreateRadio(item.label, function() return IsSelected(item.textureIndex) end, function() SetSelected(item.textureIndex, item.label) end, item.textureIndex)
+        if #instances > 0 then
+          table.sort(instances, function(left, right)
+            return (left.name or "") < (right.name or "")
+          end)
+
+          local expansionMenu = rootDescription:CreateButton(bucket.label)
+          for _, instance in ipairs(instances) do
+            local instanceMenu = expansionMenu:CreateButton(instance.name)
+
+            table.sort(instance.options, function(left, right)
+              local leftOrder = difficultySortOrder[left.difficultyId] or 1000
+              local rightOrder = difficultySortOrder[right.difficultyId] or 1000
+              if leftOrder ~= rightOrder then
+                return leftOrder < rightOrder
+              end
+              return (left.diffLabel or "") < (right.diffLabel or "")
+            end)
+
+            for _, opt in ipairs(instance.options) do
+              local diffLabel = opt.diffLabel or "Unknown"
+              instanceMenu:CreateRadio(diffLabel, function() return IsSelected(opt.textureIndex) end, function()
+                SetSelected(opt.textureIndex, string.format("%s > %s > %s", bucket.label, instance.name, diffLabel))
+              end, opt.textureIndex)
+            end
+          end
         end
       end
     end
@@ -811,17 +979,19 @@ local function InitializeDropdown(frame)
     rootDescription:SetMinimumWidth(menuMinWidth)
     rootDescription:SetMaximumWidth(menuMinWidth + 60)
     if MenuConstants and MenuConstants.VerticalGridDirection then
-      rootDescription:SetGridMode(MenuConstants.VerticalGridDirection)
+      rootDescription:SetGridMode(MenuConstants.VerticalGridDirection, 1)
     end
 
     local categories = (type(CATEGORIES) == "table") and CATEGORIES or {}
     if #categories == 0 then
       local fallbackType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or 0
-      rootDescription:CreateRadio("Other", IsSelected, SetSelected, fallbackType)
+      local radio = rootDescription:CreateRadio("Other", IsSelected, SetSelected, fallbackType)
+      EventQ_ApplyFullWidthMenuHighlight(radio)
     else
       for _, entry in ipairs(categories) do
         if entry and entry.eventType then
-          rootDescription:CreateRadio(entry.label or "Other", IsSelected, SetSelected, entry.eventType)
+          local radio = rootDescription:CreateRadio(entry.label or "Other", IsSelected, SetSelected, entry.eventType)
+          EventQ_ApplyFullWidthMenuHighlight(radio)
         end
       end
     end
