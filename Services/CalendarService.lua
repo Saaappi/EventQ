@@ -120,6 +120,7 @@ function CalendarService:Constructor(logger, dateUtil)
   -- Search tab can query up to a year of calendar data. Scanning the calendar API is expensive,
   -- so we cache a compact "next-occurrence" index and reuse it while the UI is open.
   self._searchCache = { expiresEpoch = 0, maxDaysAhead = 0, events = {} }
+  self._windowCache = { expiresEpoch = 0, maxDaysAhead = 0, events = {} }
   self._searchBestByKey = {}
   -- Some repeating events can surface with distinct eventIDs per occurrence.
   -- For those, we keep a small "top N" list rather than one logical entry.
@@ -236,6 +237,20 @@ function CalendarService:_SafeCalendarCall(func, ...)
   return ok, r1, r2
 end
 
+-- Treat any calendar API interaction as a mutation scope so CALENDAR_UPDATE_* events
+-- fired by the calendar subsystem do not re-enter our refresh path and overflow the stack.
+function CalendarService:_BeginCalendarMutationScope()
+  self._calendarMutationDepth = (self._calendarMutationDepth or 0) + 1
+  self._calendarMutatedAt = (GetTimePreciseSec and GetTimePreciseSec()) or (GetTime and GetTime()) or 0
+end
+
+function CalendarService:_EndCalendarMutationScope()
+  self._calendarMutationDepth = (self._calendarMutationDepth or 0) - 1
+  if self._calendarMutationDepth < 0 then
+    self._calendarMutationDepth = 0
+  end
+  self._calendarMutatedAt = (GetTimePreciseSec and GetTimePreciseSec()) or (GetTime and GetTime()) or 0
+end
 
 function CalendarService:RequestRefresh()
   self._descCache = {} -- descriptions can change as calendar data loads
@@ -953,135 +968,175 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
 end
 
 function CalendarService:CollectWindow(maxDaysAhead)
-  local nowEpoch = time()
-
-  -- Calendar data is loaded lazily; keep the calendar opened, but throttle the call.
-  if not self._lastOpenCalendarEpoch or (nowEpoch - self._lastOpenCalendarEpoch) > 300 then
-    self:_EnsureCalendarLoaded()
-    self:_SafeCalendarCall(C_Calendar.OpenCalendar)
-    self._lastOpenCalendarEpoch = nowEpoch
+  self._collectWindowDepth = (self._collectWindowDepth or 0) + 1
+  if self._collectWindowDepth > 1 then
+    self._collectWindowDepth = self._collectWindowDepth - 1
+    local cache = self._windowCache
+    if cache and type(cache.events) == "table" then
+      return cache.events
+    end
+    return {}
   end
 
-  local CalendarAPI = C_Calendar
-  local GetNumDayEvents = CalendarAPI.GetNumDayEvents
-  local GetDayEvent = CalendarAPI.GetDayEvent
-  local GetHolidayInfo = CalendarAPI.GetHolidayInfo
-  local dateUtil = self.dateUtil
+  self:_BeginCalendarMutationScope()
+  local ok, result = xpcall(function()
+      local nowEpoch = time()
 
-  maxDaysAhead = tonumber(maxDaysAhead) or 0
-  if maxDaysAhead < 0 then maxDaysAhead = 0 end
+      -- Calendar data is loaded lazily; keep the calendar opened, but throttle the call.
+      if not self._lastOpenCalendarEpoch or (nowEpoch - self._lastOpenCalendarEpoch) > 300 then
+        self:_EnsureCalendarLoaded()
+        self:_SafeCalendarCall(C_Calendar.OpenCalendar)
+        self._lastOpenCalendarEpoch = nowEpoch
+      end
 
-  local startDayEpoch = time(date("*t", nowEpoch))
-  local endEpoch = nowEpoch + maxDaysAhead * 86400
+      local CalendarAPI = C_Calendar
+      local GetNumDayEvents = CalendarAPI.GetNumDayEvents
+      local GetDayEvent = CalendarAPI.GetDayEvent
+      local GetHolidayInfo = CalendarAPI.GetHolidayInfo
+      local dateUtil = self.dateUtil
 
-  local byKey = self._tmpByKey
-  wipe(byKey)
+      maxDaysAhead = tonumber(maxDaysAhead) or 0
+      if maxDaysAhead < 0 then maxDaysAhead = 0 end
+      if maxDaysAhead > 366 then maxDaysAhead = 366 end
 
-  local order = self._tmpOrder
-  wipeArray(order)
+      local cache = self._windowCache
+      if cache and type(cache.events) == "table" and (cache.expiresEpoch or 0) > nowEpoch and (cache.maxDaysAhead or 0) >= maxDaysAhead then
+        return cache.events
+      end
 
-  local function upsert(event)
-    local key = mkKey(event.title, event.startEpoch, event.endEpoch)
-    local existing = byKey[key]
-    if not existing then
-      byKey[key] = event
-      order[#order + 1] = key
-      return
-    end
 
-    local chosen = prefer(existing, event)
-    local other = (chosen == existing) and event or existing
+      local startDayEpoch = time(date("*t", nowEpoch))
+      local endEpoch = nowEpoch + maxDaysAhead * 86400
 
-    if chosen.holidayID == nil and other.holidayID ~= nil then
-      chosen.holidayID = other.holidayID
-    end
-    if chosen.description == nil and other.description ~= nil then
-      chosen.description = other.description
-    end
-    if chosen.icon == nil and other.icon ~= nil then
-      chosen.icon = other.icon
-      chosen.iconIsCalendar = other.iconIsCalendar
-      chosen.iconIsCalendarSheet = other.iconIsCalendarSheet
-      chosen.textureIndex = other.textureIndex
-    end
+      local byKey = self._tmpByKey
+      wipe(byKey)
 
-    byKey[key] = chosen
-  end
+      local order = self._tmpOrder
+      wipeArray(order)
 
-  for dayOffset = 0, maxDaysAhead do
-    local dayEpoch = startDayEpoch + dayOffset * 86400
-    local monthOffset, monthDay = dateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
+      local function upsert(event)
+        local key = mkKey(event.title, event.startEpoch, event.endEpoch)
+        local existing = byKey[key]
+        if not existing then
+          byKey[key] = event
+          order[#order + 1] = key
+          return
+        end
 
-    local numDayEvents = GetNumDayEvents(monthOffset, monthDay)
-    for eventIndex = 1, numDayEvents do
-      local dayEvent = GetDayEvent(monthOffset, monthDay, eventIndex)
-      if dayEvent and dayEvent.startTime then
-        local startEpoch = dateUtil:CalendarTimeToEpoch(dayEvent.startTime)
-        if startEpoch then
-          local eventEndEpoch = ComputeEndEpoch(startEpoch, dayEvent.endTime, dayEvent.calendarType, dateUtil)
-          if eventEndEpoch then
-            upsert({
-              id = dayEvent.eventID or mkKey(dayEvent.title, startEpoch, eventEndEpoch),
-              eventID = dayEvent.eventID,
-              title = dayEvent.title,
-              description = nil,
-              startEpoch = startEpoch,
-              endEpoch = eventEndEpoch,
-              endIsAssumed = (not dayEvent.endTime) or nil,
-              icon = dayEvent.iconTexture,
-              iconIsCalendar = true,
-              source = "Calendar (" .. (dayEvent.calendarType or "UNKNOWN") .. ")",
-              calendarType = dayEvent.calendarType,
-              invitedBy = (not isBlank(dayEvent.invitedBy)) and strtrim(dayEvent.invitedBy) or nil,
-              monthOffset = monthOffset,
-              monthDay = monthDay,
-            })
+        local chosen = prefer(existing, event)
+        local other = (chosen == existing) and event or existing
+
+        if chosen.holidayID == nil and other.holidayID ~= nil then
+          chosen.holidayID = other.holidayID
+        end
+        if chosen.description == nil and other.description ~= nil then
+          chosen.description = other.description
+        end
+        if chosen.icon == nil and other.icon ~= nil then
+          chosen.icon = other.icon
+          chosen.iconIsCalendar = other.iconIsCalendar
+          chosen.iconIsCalendarSheet = other.iconIsCalendarSheet
+          chosen.textureIndex = other.textureIndex
+        end
+
+        byKey[key] = chosen
+      end
+
+      for dayOffset = 0, maxDaysAhead do
+        local dayEpoch = startDayEpoch + dayOffset * 86400
+        local monthOffset, monthDay = dateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
+
+        local numDayEvents = GetNumDayEvents(monthOffset, monthDay)
+        for eventIndex = 1, numDayEvents do
+          local dayEvent = GetDayEvent(monthOffset, monthDay, eventIndex)
+          if dayEvent and dayEvent.startTime then
+            local startEpoch = dateUtil:CalendarTimeToEpoch(dayEvent.startTime)
+            if startEpoch then
+              local eventEndEpoch = ComputeEndEpoch(startEpoch, dayEvent.endTime, dayEvent.calendarType, dateUtil)
+              if eventEndEpoch then
+                upsert({
+                  id = dayEvent.eventID or mkKey(dayEvent.title, startEpoch, eventEndEpoch),
+                  eventID = dayEvent.eventID,
+                  title = dayEvent.title,
+                  description = nil,
+                  startEpoch = startEpoch,
+                  endEpoch = eventEndEpoch,
+                  endIsAssumed = (not dayEvent.endTime) or nil,
+                  icon = dayEvent.iconTexture,
+                  iconIsCalendar = true,
+                  source = "Calendar (" .. (dayEvent.calendarType or "UNKNOWN") .. ")",
+                  calendarType = dayEvent.calendarType,
+                  invitedBy = (not isBlank(dayEvent.invitedBy)) and strtrim(dayEvent.invitedBy) or nil,
+                  monthOffset = monthOffset,
+                  monthDay = monthDay,
+                })
+              end
+            end
           end
         end
+
+        for holidayIndex = 1, 50 do
+          local holidayInfo = GetHolidayInfo(monthOffset, monthDay, holidayIndex)
+          if not holidayInfo then break end
+
+          local startEpoch = holidayInfo.startTime and dateUtil:CalendarTimeToEpoch(holidayInfo.startTime) or dayEpoch
+          local holidayEndEpoch = holidayInfo.endTime and dateUtil:CalendarTimeToEpoch(holidayInfo.endTime) or (dayEpoch + 86399)
+          local holidayID = holidayInfo.holidayID or holidayInfo.holidayId or holidayInfo.id or holidayInfo.ID
+          local holidayTexture = holidayInfo.texture or holidayTextureByName(monthOffset, monthDay, holidayInfo.name)
+
+          upsert({
+            id = "holiday:" .. mkKey(holidayInfo.name, startEpoch, holidayEndEpoch),
+            eventID = nil,
+            holidayID = holidayID,
+            title = holidayInfo.name,
+            description = holidayInfo.description,
+            startEpoch = startEpoch,
+            endEpoch = holidayEndEpoch,
+            icon = holidayTexture,
+            iconIsCalendar = false,
+            source = "Holiday",
+            calendarType = "HOLIDAY",
+            monthOffset = monthOffset,
+            monthDay = monthDay,
+          })
+        end
       end
+
+      local filtered = self._tmpFiltered
+      wipeArray(filtered)
+      for _, key in ipairs(order) do
+        local event = byKey[key]
+        if event and event.endEpoch >= nowEpoch and event.startEpoch <= endEpoch then
+          filtered[#filtered + 1] = event
+        end
+      end
+
+      table.sort(filtered, SortByStartThenTitle)
+      if cache then
+        cache.events = filtered
+        cache.maxDaysAhead = maxDaysAhead
+        cache.expiresEpoch = nowEpoch + 30
+      end
+
+      return filtered
+  end, function(err) return err end)
+  self:_EndCalendarMutationScope()
+
+  if not ok then
+    if self.log and self.log.Error then
+      self.log:Error("CollectWindow failed: " .. tostring(result))
     end
+  self._collectWindowDepth = (self._collectWindowDepth or 1) - 1
+  if self._collectWindowDepth < 0 then self._collectWindowDepth = 0 end
 
-    for holidayIndex = 1, 50 do
-      local holidayInfo = GetHolidayInfo(monthOffset, monthDay, holidayIndex)
-      if not holidayInfo then break end
-
-      local startEpoch = holidayInfo.startTime and dateUtil:CalendarTimeToEpoch(holidayInfo.startTime) or dayEpoch
-      local holidayEndEpoch = holidayInfo.endTime and dateUtil:CalendarTimeToEpoch(holidayInfo.endTime) or (dayEpoch + 86399)
-      local holidayID = holidayInfo.holidayID or holidayInfo.holidayId or holidayInfo.id or holidayInfo.ID
-      local holidayTexture = holidayInfo.texture or holidayTextureByName(monthOffset, monthDay, holidayInfo.name)
-
-      upsert({
-        id = "holiday:" .. mkKey(holidayInfo.name, startEpoch, holidayEndEpoch),
-        eventID = nil,
-        holidayID = holidayID,
-        title = holidayInfo.name,
-        description = holidayInfo.description,
-        startEpoch = startEpoch,
-        endEpoch = holidayEndEpoch,
-        icon = holidayTexture,
-        iconIsCalendar = false,
-        source = "Holiday",
-        calendarType = "HOLIDAY",
-        monthOffset = monthOffset,
-        monthDay = monthDay,
-      })
-    end
+    return {}
   end
 
-  local filtered = self._tmpFiltered
-  wipeArray(filtered)
-  for _, key in ipairs(order) do
-    local event = byKey[key]
-    if event and event.endEpoch >= nowEpoch and event.startEpoch <= endEpoch then
-      filtered[#filtered + 1] = event
-    end
-  end
+  self._collectWindowDepth = (self._collectWindowDepth or 1) - 1
+  if self._collectWindowDepth < 0 then self._collectWindowDepth = 0 end
 
-  table.sort(filtered, SortByStartThenTitle)
-  return filtered
+  return result
 end
-
-
 
 -- -----------------------------------------------------------------------------
 -- Custom calendar event creation + invite management
@@ -1431,153 +1486,178 @@ end
 ---@return string|nil eventID
 ---@return table|nil indexInfo CalendarEventIndexInfo
 function CalendarService:FindPlayerEventBySignature(signature)
-  if not SignatureIsValid(signature) then
-    return nil, nil, "Invalid signature."
-  end
-
-  if not self:_EnsureCalendarLoaded() then
-    return nil, nil, "Calendar UI is unavailable."
-  end
-
-  local ok = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
-  if not ok then
-    return nil, nil, "Calendar is not accessible right now (possibly in combat)."
-  end
-
-  -- Calendar event queries are scoped by a "current" month. Navigating the month lets us
-  -- scan with offsetMonths=0 (avoiding date math for month offsets).
-  self:_SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
-
-  local numDayEvents = C_Calendar.GetNumDayEvents(0, signature.day)
-  for eventIndex = 1, numDayEvents do
-    local dayEvent = C_Calendar.GetDayEvent(0, signature.day, eventIndex)
-    if dayEvent
-      and dayEvent.calendarType == "PLAYER"
-      and dayEvent.title == signature.title
-      and dayEvent.eventType == signature.eventType
-      and dayEvent.startTime
-      and dayEvent.startTime.hour == signature.hour
-      and dayEvent.startTime.minute == signature.minute then
-      return dayEvent.eventID, { offsetMonths = 0, monthDay = signature.day, eventIndex = eventIndex }, nil
+  self:_BeginCalendarMutationScope()
+  local ok, r1, r2, r3 = xpcall(function()
+    if not SignatureIsValid(signature) then
+      return nil, nil, "Invalid signature."
     end
+  
+    if not self:_EnsureCalendarLoaded() then
+      return nil, nil, "Calendar UI is unavailable."
+    end
+  
+    local ok = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
+    if not ok then
+      return nil, nil, "Calendar is not accessible right now (possibly in combat)."
+    end
+  
+    -- Calendar event queries are scoped by a "current" month. Navigating the month lets us
+    -- scan with offsetMonths=0 (avoiding date math for month offsets).
+    self:_SafeCalendarCall(C_Calendar.SetAbsMonth, signature.month, signature.year)
+  
+    local numDayEvents = C_Calendar.GetNumDayEvents(0, signature.day)
+    for eventIndex = 1, numDayEvents do
+      local dayEvent = C_Calendar.GetDayEvent(0, signature.day, eventIndex)
+      if dayEvent
+        and dayEvent.calendarType == "PLAYER"
+        and dayEvent.title == signature.title
+        and dayEvent.eventType == signature.eventType
+        and dayEvent.startTime
+        and dayEvent.startTime.hour == signature.hour
+        and dayEvent.startTime.minute == signature.minute then
+        return dayEvent.eventID, { offsetMonths = 0, monthDay = signature.day, eventIndex = eventIndex }, nil
+      end
+    end
+  
+    -- Not found.
+    return nil, nil, nil
+  end, function(err) return err end)
+  self:_EndCalendarMutationScope()
+
+  if not ok then
+    if self.log and self.log.Error then
+      self.log:Error("FindPlayerEventBySignature failed: " .. tostring(r1))
+    end
+    return nil, nil, "Calendar lookup failed."
   end
 
-  -- Not found.
-  return nil, nil, nil
+  return r1, r2, r3
 end
+
 
 ---@param spec table
 ---@return CalendarEventSignature|nil
 ---@return string|nil err
 function CalendarService:CreatePlayerEvent(spec)
-  if type(spec) ~= "table" then
-    return nil, "Invalid event data."
-  end
-
-  if not self:_EnsureCalendarLoaded() then
-    return nil, "Calendar UI is unavailable."
-  end
-
-  local title = strtrim(spec.title or "")
-  if title == "" then
-    return nil, "Calendar events require a name."
-  end
-
-  local startEpoch = tonumber(spec.startEpoch)
-  if not startEpoch then
-    return nil, "Calendar events require a start time."
-  end
-
-  local snapped
-  startEpoch, snapped = NormalizeToFiveMinuteEpoch(startEpoch)
-
-  local startParts = date("*t", startEpoch)
-  if not (startParts and startParts.year and startParts.month and startParts.day) then
-    return nil, "Invalid start time."
-  end
-
-  local eventType = spec.eventType
-  if eventType == nil and Enum and Enum.CalendarEventType then
-    eventType = Enum.CalendarEventType.Other
-  end
-  if eventType == nil then
-    eventType = 4
-  end
-
-  local description = tostring(spec.description or "")
-  local invitees = (type(spec.invitees) == "table") and spec.invitees or nil
-  local textureIndex = tonumber(spec.textureIndex)
-
-  if (eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid) or eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon))
-    and not textureIndex then
-    -- Blizzard's UI requires a dungeon/raid selection for these categories, because the type icon comes from
-    -- the texture picker list.
-    return nil, "Select a raid/dungeon before creating the calendar event."
-  end
-
-  local okOpen = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
-  if not okOpen then
-    return nil, "Calendar is not accessible right now (possibly in combat)."
-  end
-
-  self:_SafeCalendarCall(C_Calendar.SetAbsMonth, startParts.month, startParts.year)
-
-  local okCreate = self:_SafeCalendarCall(C_Calendar.CreatePlayerEvent)
-  if not okCreate then
-    return nil, "Unable to start a new calendar event."
-  end
-
-  self:_SafeCalendarCall(C_Calendar.EventSetTitle, title)
-  self:_SafeCalendarCall(C_Calendar.EventSetDescription, description)
-  self:_SafeCalendarCall(C_Calendar.EventSetType, eventType)
-  if textureIndex and C_Calendar.EventSetTextureID then
-    self:_SafeCalendarCall(C_Calendar.EventSetTextureID, textureIndex)
-  end
-  self:_SafeCalendarCall(C_Calendar.EventSetDate, startParts.month, startParts.day, startParts.year)
-  self:_SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
-
-  -- Invite handling is quirky:
-  -- * Blizzard's UI checks CanSendInvite() before calling EventInvite.
-  -- * Immediately after creating a fresh event (or right after login), CanSendInvite() can be false
-  --   even though the event itself can be created.
-  -- We still try to add invites here when allowed, and we also attempt a post-create sync after AddEvent.
-  local pendingInvitees = invitees
-  if invitees and (not C_Calendar.CanSendInvite or C_Calendar.CanSendInvite()) then
-    for _, inviteeName in ipairs(invitees) do
-      local trimmed = strtrim(inviteeName or "")
-      if trimmed ~= "" then
-        self:_SafeCalendarCall(C_Calendar.EventInvite, trimmed)
+  self:_BeginCalendarMutationScope()
+  local ok, a, b, c, d = xpcall(function()
+          if type(spec) ~= "table" then
+        return nil, "Invalid event data."
       end
-    end
-  end
 
-  local okAdd = self:_SafeCalendarCall(C_Calendar.AddEvent)
-  if not okAdd then
-    return nil, "Calendar refused to create the event."
-  end
+      if not self:_EnsureCalendarLoaded() then
+        return nil, "Calendar UI is unavailable."
+      end
 
-  self:_TryRefreshBlizzardCalendarUI()
+      local title = strtrim(spec.title or "")
+      if title == "" then
+        return nil, "Calendar events require a name."
+      end
 
-  local signature = SignatureFromEpoch(title, startEpoch, eventType, textureIndex)
+      local startEpoch = tonumber(spec.startEpoch)
+      if not startEpoch then
+        return nil, "Calendar events require a start time."
+      end
 
-  -- Best-effort: immediately resolve the created event and re-apply invitees.
-  -- This catches the common case where CanSendInvite() was false during initial creation.
-  local resolvedEventID
-  if pendingInvitees and #pendingInvitees > 0 then
-    local foundEventID = self:FindPlayerEventBySignature(signature)
-    if foundEventID then
-      resolvedEventID = foundEventID
-      local _, openErr = self:_OpenPlayerEvent(foundEventID, signature)
-      if not openErr then
-        self:_SyncCurrentEventInvites(pendingInvitees)
-        if C_Calendar.UpdateEvent then
-          self:_SafeCalendarCall(C_Calendar.UpdateEvent)
+      local snapped
+      startEpoch, snapped = NormalizeToFiveMinuteEpoch(startEpoch)
+
+      local startParts = date("*t", startEpoch)
+      if not (startParts and startParts.year and startParts.month and startParts.day) then
+        return nil, "Invalid start time."
+      end
+
+      local eventType = spec.eventType
+      if eventType == nil and Enum and Enum.CalendarEventType then
+        eventType = Enum.CalendarEventType.Other
+      end
+      if eventType == nil then
+        eventType = 4
+      end
+
+      local description = tostring(spec.description or "")
+      local invitees = (type(spec.invitees) == "table") and spec.invitees or nil
+      local textureIndex = tonumber(spec.textureIndex)
+
+      if (eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid) or eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon))
+        and not textureIndex then
+        -- Blizzard's UI requires a dungeon/raid selection for these categories, because the type icon comes from
+        -- the texture picker list.
+        return nil, "Select a raid/dungeon before creating the calendar event."
+      end
+
+      local okOpen = self:_SafeCalendarCall(C_Calendar.OpenCalendar)
+      if not okOpen then
+        return nil, "Calendar is not accessible right now (possibly in combat)."
+      end
+
+      self:_SafeCalendarCall(C_Calendar.SetAbsMonth, startParts.month, startParts.year)
+
+      local okCreate = self:_SafeCalendarCall(C_Calendar.CreatePlayerEvent)
+      if not okCreate then
+        return nil, "Unable to start a new calendar event."
+      end
+
+      self:_SafeCalendarCall(C_Calendar.EventSetTitle, title)
+      self:_SafeCalendarCall(C_Calendar.EventSetDescription, description)
+      self:_SafeCalendarCall(C_Calendar.EventSetType, eventType)
+      if textureIndex and C_Calendar.EventSetTextureID then
+        self:_SafeCalendarCall(C_Calendar.EventSetTextureID, textureIndex)
+      end
+      self:_SafeCalendarCall(C_Calendar.EventSetDate, startParts.month, startParts.day, startParts.year)
+      self:_SafeCalendarCall(C_Calendar.EventSetTime, startParts.hour, startParts.min)
+
+      -- Invite handling is quirky:
+      -- * Blizzard's UI checks CanSendInvite() before calling EventInvite.
+      -- * Immediately after creating a fresh event (or right after login), CanSendInvite() can be false
+      --   even though the event itself can be created.
+      -- We still try to add invites here when allowed, and we also attempt a post-create sync after AddEvent.
+      local pendingInvitees = invitees
+      if invitees and (not C_Calendar.CanSendInvite or C_Calendar.CanSendInvite()) then
+        for _, inviteeName in ipairs(invitees) do
+          local trimmed = strtrim(inviteeName or "")
+          if trimmed ~= "" then
+            self:_SafeCalendarCall(C_Calendar.EventInvite, trimmed)
+          end
         end
       end
-    end
-  end
 
-  return signature, nil, snapped, resolvedEventID
+      local okAdd = self:_SafeCalendarCall(C_Calendar.AddEvent)
+      if not okAdd then
+        return nil, "Calendar refused to create the event."
+      end
+
+      self:_TryRefreshBlizzardCalendarUI()
+
+      local signature = SignatureFromEpoch(title, startEpoch, eventType, textureIndex)
+
+      -- Best-effort: immediately resolve the created event and re-apply invitees.
+      -- This catches the common case where CanSendInvite() was false during initial creation.
+      local resolvedEventID
+      if pendingInvitees and #pendingInvitees > 0 then
+        local foundEventID = self:FindPlayerEventBySignature(signature)
+        if foundEventID then
+          resolvedEventID = foundEventID
+          local _, openErr = self:_OpenPlayerEvent(foundEventID, signature)
+          if not openErr then
+            self:_SyncCurrentEventInvites(pendingInvitees)
+            if C_Calendar.UpdateEvent then
+              self:_SafeCalendarCall(C_Calendar.UpdateEvent)
+            end
+          end
+        end
+      end
+
+      return signature, nil, snapped, resolvedEventID
+    end, function(err) return err end)
+
+  self:_EndCalendarMutationScope()
+
+  if not ok then
+    if self.log and self.log.Error then self.log:Error("CreatePlayerEvent failed: " .. tostring(a)) end
+    return nil, "Calendar operation failed."
+  end
+  return a, b, c, d
 end
 
 local function IsRaidOrDungeonEventType(eventType)

@@ -117,47 +117,38 @@ end
 -- DarkMenuElementTemplate (SharedUIPanelTemplates.xml) defines HighlightBGTex with an atlas-sized texture
 -- (useAtlasSize=true) and no anchors, which prevents the hover highlight from stretching across the row.
 -- We cannot create new textures inside the Menu compositor execution range, so instead we retarget the
--- existing template texture to fill the highlight frame and disable atlas sizing.
-local function EventQ_FixDarkMenuElementHighlight(button)
-  if not button then
-    return
+
+local function FixMenuHighlight(elementDescription)
+  if not elementDescription or type(elementDescription) ~= "table" then
+    return elementDescription
   end
 
-  local highlightFrame = button.HighlightBGTex
-  if not highlightFrame then
-    return
+  if elementDescription.AddInitializer then
+    elementDescription:AddInitializer(function(button)
+      if not button then return end
+
+      local hl = button.HighlightBGTex or button.HighlightTexture or button.Highlight or nil
+      if not hl and button.GetHighlightTexture then
+        local tex = button:GetHighlightTexture()
+        if tex then hl = tex end
+      end
+
+      if hl and hl.ClearAllPoints and hl.SetAllPoints then
+        hl:ClearAllPoints()
+        hl:SetAllPoints(button)
+
+        -- If the highlight uses an atlas, re-apply it without native sizing so it can stretch.
+        if hl.GetAtlas and hl.SetAtlas then
+          local atlas = hl:GetAtlas()
+          if atlas then
+            hl:SetAtlas(atlas, false)
+          end
+        end
+      end
+    end)
   end
 
-  local highlightTexture = nil
-  local regions = { highlightFrame:GetRegions() }
-  for _, region in ipairs(regions) do
-    if region and region.IsObjectType and region:IsObjectType("Texture") then
-      highlightTexture = region
-      break
-    end
-  end
-
-  if not highlightTexture then
-    return
-  end
-
-  highlightTexture:ClearAllPoints()
-  highlightTexture:SetAllPoints(highlightFrame)
-
-  if highlightTexture.SetAtlas then
-    -- useAtlasSize=false so the atlas stretches to our anchors.
-    highlightTexture:SetAtlas("common-dropdown-customize-mouseover", false)
-  end
-end
-
-local function EventQ_ApplyDarkMenuHighlightFix(elementDescription)
-  if not (elementDescription and elementDescription.AddInitializer) then
-    return
-  end
-
-  elementDescription:AddInitializer(function(button)
-    EventQ_FixDarkMenuElementHighlight(button)
-  end)
+  return elementDescription
 end
 
 local function EventQ_ResolveTitleDifficulty(rawTitle)
@@ -635,6 +626,10 @@ local function SetupInstanceDropdown(frame)
   dropdown:SetupMenu(function(_, rootDescription)
     rootDescription:SetTag("MENU_EVENTQ_CALENDAR_INSTANCE")
 
+    -- Keep menu hover visuals consistent with the Category dropdown.
+    -- The default dark menu templates size highlight atlases to their native dimensions,
+    -- which results in a truncated/partial-width hover highlight.
+
     local menuMinWidth = math.floor((dropdown.GetWidth and dropdown:GetWidth()) or 180)
     rootDescription:SetMinimumWidth(menuMinWidth)
     rootDescription:SetMaximumWidth(menuMinWidth + 140)
@@ -676,10 +671,10 @@ local function SetupInstanceDropdown(frame)
 	    local namesReady = (C_Calendar and C_Calendar.AreNamesReady and C_Calendar.AreNamesReady()) or true
 	    if not namesReady then
 	      rootDescription:CreateTitle("Loading instances...")
-	      rootDescription:CreateButton("Retry", function()
+	      FixMenuHighlight(rootDescription:CreateButton("Retry", function()
 	        if dropdown.GenerateMenu then dropdown:GenerateMenu() end
 	        if dropdown.Update then dropdown:Update() end
-	      end)
+	      end))
 	      return
 	    end
 
@@ -772,7 +767,7 @@ local function SetupInstanceDropdown(frame)
             end)
 
             if #mapIDs > 0 then
-              local seasonMenu = rootDescription:CreateButton("Current Season")
+              local seasonMenu = FixMenuHighlight(rootDescription:CreateButton("Current Season"))
               for _, mapID in ipairs(mapIDs) do
                 local bucket = seasonByMapID[mapID]
                 if bucket and bucket.options and #bucket.options > 0 then
@@ -780,12 +775,12 @@ local function SetupInstanceDropdown(frame)
                     return (left.displayText or "") < (right.displayText or "")
                   end)
 
-                  local dungeonMenu = seasonMenu:CreateButton(bucket.name)
+                  local dungeonMenu = FixMenuHighlight(seasonMenu:CreateButton(bucket.name))
                   for _, opt in ipairs(bucket.options) do
                     local label = (opt.diffLabel and opt.diffLabel ~= "") and opt.diffLabel or "Unknown"
-                    dungeonMenu:CreateRadio(label, function() return IsSelected(opt.textureIndex) end, function()
+                    FixMenuHighlight(dungeonMenu:CreateRadio(label, function() return IsSelected(opt.textureIndex) end, function()
                       SetSelected(opt.textureIndex, string.format("%s > %s > %s", "Current Season", bucket.name, label))
-                    end, opt.textureIndex)
+                    end, opt.textureIndex))
                   end
                 end
               end
@@ -935,9 +930,9 @@ local function SetupInstanceDropdown(frame)
             return (left.name or "") < (right.name or "")
           end)
 
-          local expansionMenu = rootDescription:CreateButton(bucket.label)
+          local expansionMenu = FixMenuHighlight(rootDescription:CreateButton(bucket.label))
           for _, instance in ipairs(instances) do
-            local instanceMenu = expansionMenu:CreateButton(instance.name)
+            local instanceMenu = FixMenuHighlight(expansionMenu:CreateButton(instance.name))
 
             table.sort(instance.options, function(left, right)
               local leftOrder = difficultySortOrder[left.difficultyId] or 1000
@@ -950,9 +945,9 @@ local function SetupInstanceDropdown(frame)
 
             for _, opt in ipairs(instance.options) do
               local diffLabel = opt.diffLabel or "Unknown"
-              instanceMenu:CreateRadio(diffLabel, function() return IsSelected(opt.textureIndex) end, function()
+              FixMenuHighlight(instanceMenu:CreateRadio(diffLabel, function() return IsSelected(opt.textureIndex) end, function()
                 SetSelected(opt.textureIndex, string.format("%s > %s > %s", bucket.label, instance.name, diffLabel))
-              end, opt.textureIndex)
+              end, opt.textureIndex))
             end
           end
         end
@@ -1013,13 +1008,11 @@ local function InitializeDropdown(frame)
     local categories = (type(CATEGORIES) == "table") and CATEGORIES or {}
     if #categories == 0 then
       local fallbackType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or 0
-      local radio = rootDescription:CreateHighlightRadio("Other", IsSelected, SetSelected, fallbackType)
-      EventQ_ApplyDarkMenuHighlightFix(radio)
+      local radio = FixMenuHighlight(rootDescription:CreateRadio("Other", function() return IsSelected(fallbackType) end, function() SetSelected(fallbackType) end))
     else
       for _, entry in ipairs(categories) do
         if entry and entry.eventType then
-          local radio = rootDescription:CreateHighlightRadio(entry.label or "Other", IsSelected, SetSelected, entry.eventType)
-          EventQ_ApplyDarkMenuHighlightFix(radio)
+          local radio = FixMenuHighlight(rootDescription:CreateRadio(entry.label or "Other", function() return IsSelected(entry.eventType) end, function() SetSelected(entry.eventType) end))
         end
       end
     end
