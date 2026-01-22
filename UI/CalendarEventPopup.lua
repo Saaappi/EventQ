@@ -128,23 +128,44 @@ local function CreateMenuRadio(menuDescription, label, isSelected, setSelected, 
   return menuDescription:CreateRadio(label, isSelected, setSelected, data, onEnter)
 end
 
+
 local function EventQ_ResolveTitleDifficulty(rawTitle)
   -- Returns: baseTitle, diffFromTitle (may be nil)
   if type(rawTitle) ~= "string" then
     return "", nil
   end
 
-  local base, suffix = rawTitle:match("^(.-)%s*%(([^)]+)%)%s*$")
-  base = strtrim(base or "")
-  suffix = strtrim(suffix or "")
-
-  if base == "" or suffix == "" then
-    return rawTitle, nil
+  local raw = strtrim(rawTitle)
+  if raw == "" then
+    return "", nil
   end
 
-  -- Locale-safe: treat the trailing parenthetical as a difficulty if it matches a known difficulty name.
-  if EventQ_IsKnownDifficultySuffix(suffix) then
-    return base, suffix
+  -- Pattern 1: "Instance (Difficulty)"
+  do
+    local base, suffix = raw:match("^(.-)%s*%(([^)]+)%)%s*$")
+    base = strtrim(base or "")
+    suffix = strtrim(suffix or "")
+    if base ~= "" and suffix ~= "" and EventQ_IsKnownDifficultySuffix(suffix) then
+      return base, suffix
+    end
+  end
+
+  -- Pattern 2: "Instance - Difficulty" / "Instance – Difficulty" / "Instance — Difficulty" / "Instance: Difficulty"
+  local candidates = {
+    { "%-%s*", "^(.-)%s*%-%s*(.+)$" },
+    { "–", "^(.-)%s*–%s*(.+)$" },
+    { "—", "^(.-)%s*—%s*(.+)$" },
+    { ":", "^(.-)%s*:%s*(.+)$" },
+  }
+
+  for _, entry in ipairs(candidates) do
+    local _, pat = entry[1], entry[2]
+    local base, suffix = raw:match(pat)
+    base = strtrim(base or "")
+    suffix = strtrim(suffix or "")
+    if base ~= "" and suffix ~= "" and EventQ_IsKnownDifficultySuffix(suffix) then
+      return base, suffix
+    end
   end
 
   return rawTitle, nil
@@ -574,6 +595,7 @@ local function UpdateInstanceControls(frame)
   startBox:SetPoint("TOPLEFT", startLabel or anchor, "BOTTOMLEFT", 4, -6)
 end
 
+
 local function SetupInstanceDropdown(frame)
   local dropdown = frame and frame._eventqInstanceDrop
   if not (frame and dropdown and dropdown.SetupMenu) then
@@ -600,17 +622,98 @@ local function SetupInstanceDropdown(frame)
     end
   end
 
+  local function GetDifficultyInfoCached(difficultyId, cache)
+    if not (difficultyId and GetDifficultyInfo) then
+      return nil
+    end
+
+    cache = cache or {}
+    local existing = cache[difficultyId]
+    if existing ~= nil then
+      return existing
+    end
+
+    local name, _, _, _, _, _, _, isLFR, _, _, isUserSelectable = GetDifficultyInfo(difficultyId)
+    if type(name) ~= "string" then
+      name = ""
+    end
+
+    local info = {
+      name = name,
+      isLFR = (isLFR == true),
+      isUserSelectable = (isUserSelectable ~= false),
+    }
+
+    cache[difficultyId] = info
+    return info
+  end
+
+  local function IsTextureLFR(textureInfo, difficultyId, diffInfo)
+    if textureInfo and textureInfo.isLfr == true then
+      return true
+    end
+    if diffInfo and diffInfo.isLFR then
+      return true
+    end
+    -- Conservative fallback for old clients.
+    if difficultyId and GetDifficultyInfo then
+      local isLFR = select(8, GetDifficultyInfo(difficultyId))
+      return isLFR == true
+    end
+    return false
+  end
+
+  local function IsTextureSelectable(difficultyId, diffInfo)
+    if diffInfo then
+      return diffInfo.isUserSelectable ~= false
+    end
+    if difficultyId and GetDifficultyInfo then
+      local isUserSelectable = select(11, GetDifficultyInfo(difficultyId))
+      return isUserSelectable ~= false
+    end
+    return true
+  end
+
+  local function BuildDifficultyNameToOrder(eventType)
+    local map = {}
+    local types = Enum and Enum.CalendarEventType
+    local isRaid = types and eventType == types.Raid
+
+    local ordered = isRaid and { 14, 15, 16, 17 } or { 1, 2, 23, 8 }
+    local weights = {
+      [14] = 10, [15] = 20, [16] = 30, [17] = 40,
+      [1] = 10, [2] = 20, [23] = 30, [8] = 40,
+    }
+
+    for _, id in ipairs(ordered) do
+      local name = GetDifficultyNameSafe(id)
+      name = strtrim(name or "")
+      if name ~= "" then
+        map[name:lower()] = weights[id] or 1000
+      end
+    end
+
+    -- Conservative English fallbacks.
+    map["normal"] = map["normal"] or 10
+    map["heroic"] = map["heroic"] or 20
+    map["mythic"] = map["mythic"] or 30
+    map["raid finder"] = map["raid finder"] or 40
+    map["looking for raid"] = map["looking for raid"] or 40
+    map["lfr"] = map["lfr"] or 40
+    map["mythic+"] = map["mythic+"] or 40
+    map["mythic plus"] = map["mythic plus"] or 40
+
+    return map
+  end
+
   dropdown:SetupMenu(function(_, rootDescription)
     rootDescription:SetTag("MENU_EVENTQ_CALENDAR_INSTANCE")
 
-    -- Keep menu hover visuals consistent with the Category dropdown.
-    -- The default dark menu templates size highlight atlases to their native dimensions,
-    -- which results in a truncated/partial-width hover highlight.
-
     local menuMinWidth = math.floor((dropdown.GetWidth and dropdown:GetWidth()) or 180)
     rootDescription:SetMinimumWidth(menuMinWidth)
-    rootDescription:SetMaximumWidth(menuMinWidth + 140)
-    local dungeonType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon)
+
+    local types = Enum and Enum.CalendarEventType
+    local dungeonType = types and types.Dungeon
     local selectedType = frame._eventqSelectedType
     local isDungeonTwoColumn = (dungeonType and selectedType == dungeonType) and (MenuConstants and MenuConstants.AutoCalculateColumns) ~= nil
 
@@ -643,217 +746,213 @@ local function SetupInstanceDropdown(frame)
       return
     end
 
-	    -- Calendar texture names are loaded asynchronously in some clients.
-	    -- If names aren't ready yet, avoid producing a misleading partial list.
-	    local namesReady = (C_Calendar and C_Calendar.AreNamesReady and C_Calendar.AreNamesReady()) or true
-	    if not namesReady then
-	      rootDescription:CreateTitle("Loading instances...")
-	      rootDescription:CreateButton("Retry", function()
-	        if dropdown.GenerateMenu then dropdown:GenerateMenu() end
-	        if dropdown.Update then dropdown:Update() end
-	      end)
-	      return
-	    end
+    local namesReady = (C_Calendar and C_Calendar.AreNamesReady and C_Calendar.AreNamesReady()) or true
+    if not namesReady then
+      rootDescription:CreateTitle("Loading instances...")
+      rootDescription:CreateButton("Retry", function()
+        if dropdown.GenerateMenu then dropdown:GenerateMenu() end
+        if dropdown.Update then dropdown:Update() end
+      end)
+      return
+    end
 
-	    -- Prefer Encounter Journal tiering for expansion grouping. The Calendar API's expansionLevel can
-	    -- reflect *current* availability (e.g. Mythic+ rotation) rather than the original expansion.
-	    local catalog = app._eventqInstanceCatalog
-	    if not catalog and ns.InstanceCatalog then
-	      catalog = ns.InstanceCatalog()
-	      app._eventqInstanceCatalog = catalog
-	    end
+    local catalog = app._eventqInstanceCatalog
+    if not catalog and ns.InstanceCatalog then
+      catalog = ns.InstanceCatalog()
+      app._eventqInstanceCatalog = catalog
+    end
 
-        -- "Current Season" (dungeons only): list the M+ season pool at the top of the menu.
-        -- The Challenges UI uses C_ChallengeMode.GetMapTable() for the current season, so we mirror that.
-        if eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon) then
-          local seasonMapNamesByMapID = nil
-          if C_ChallengeMode and C_ChallengeMode.GetMapTable and C_ChallengeMode.GetMapUIInfo then
-            local challengeMaps = C_ChallengeMode.GetMapTable()
-            if type(challengeMaps) == "table" and #challengeMaps > 0 then
-              seasonMapNamesByMapID = {}
-              for _, challengeMapID in ipairs(challengeMaps) do
-                local name, _, _, _, _, mapID = C_ChallengeMode.GetMapUIInfo(challengeMapID)
-                if mapID then
-                  seasonMapNamesByMapID[tonumber(mapID)] = name or ("Map " .. tostring(mapID))
-                end
-              end
-              if not next(seasonMapNamesByMapID) then
-                seasonMapNamesByMapID = nil
-              end
+    local diffInfoCache = {}
+    local diffNameToOrder = BuildDifficultyNameToOrder(eventType)
+
+    local function GetExpansionLevel(title, difficultyId, textureInfo)
+      local level
+      if catalog and catalog.GetExpansionLevelForCalendarTitle then
+        level = catalog:GetExpansionLevelForCalendarTitle(title, difficultyId)
+      end
+      return tonumber(level) or tonumber(textureInfo and textureInfo.expansionLevel) or -1
+    end
+
+    local function GetExpansionLabel(expansionLevel)
+      local label = _G["EXPANSION_NAME" .. tostring(expansionLevel)]
+      if not label or label == "" then
+        return (expansionLevel >= 0) and ("Expansion " .. tostring(expansionLevel)) or "Other"
+      end
+      return label
+    end
+
+    local function GetBaseTitle(title, difficultyId, baseFromTitle)
+      local baseTitle = baseFromTitle
+      if catalog and catalog.GetBaseTitle then
+        baseTitle = catalog:GetBaseTitle(title, difficultyId) or baseTitle
+      end
+      baseTitle = strtrim(baseTitle or "")
+      return baseTitle
+    end
+
+    local function GetDiffLabel(diffFromTitle, diffInfo)
+      local label = diffFromTitle and strtrim(diffFromTitle) or ""
+      if label == "" and diffInfo and diffInfo.name then
+        label = strtrim(diffInfo.name)
+      end
+      if label == "" then
+        label = "Unknown"
+      end
+      return label
+    end
+
+    local function ShouldSkipTexture(textureInfo)
+      local title = textureInfo and textureInfo.title
+      if not title or title == "" then
+        return true
+      end
+
+      local difficultyId = textureInfo.difficultyId
+      local diffInfo = GetDifficultyInfoCached(difficultyId, diffInfoCache)
+
+      -- Filter: non-selectable entries (e.g., follower dungeons) should not appear.
+      if not IsTextureSelectable(difficultyId, diffInfo) then
+        return true
+      end
+
+      -- Filter: exclude LFR from raids.
+      if types and eventType == types.Raid then
+        if IsTextureLFR(textureInfo, difficultyId, diffInfo) then
+          return true
+        end
+      end
+
+      return false
+    end
+
+    -- "Current Season" (dungeons only): list the M+ season pool at the top of the menu.
+    if types and eventType == types.Dungeon then
+      local seasonMapNamesByMapID
+      if C_ChallengeMode and C_ChallengeMode.GetMapTable and C_ChallengeMode.GetMapUIInfo then
+        local challengeMaps = C_ChallengeMode.GetMapTable()
+        if type(challengeMaps) == "table" and #challengeMaps > 0 then
+          seasonMapNamesByMapID = {}
+          for _, challengeMapID in ipairs(challengeMaps) do
+            local name, _, _, _, _, mapID = C_ChallengeMode.GetMapUIInfo(challengeMapID)
+            if mapID then
+              seasonMapNamesByMapID[tonumber(mapID)] = name or ("Map " .. tostring(mapID))
             end
           end
-
-          if seasonMapNamesByMapID then
-            local seasonByMapID = {} -- mapID -> { name=string, options={ {textureIndex, diffLabel, displayText} } }
-            local seenSeasonOption = {}
-
-            for textureIndex, textureInfo in ipairs(textures) do
-              repeat
-                local mapID = textureInfo and tonumber(textureInfo.mapId)
-                if not (mapID and seasonMapNamesByMapID[mapID]) then
-                  break
-                end
-
-                local title = textureInfo and textureInfo.title
-                if not title or title == "" then
-                  break
-                end
-
-                local difficultyId = textureInfo.difficultyId
-                local difficultyName = GetDifficultyNameSafe(difficultyId)
-
-                -- Exclude follower dungeons.
-                local lower = title:lower()
-                local dn = (difficultyName or ""):lower()
-                if lower:find("follower", 1, true) or dn:find("follower", 1, true) then
-                  break
-                end
-
-                local dungeonName = seasonMapNamesByMapID[mapID] or title
-                local displayText = dungeonName
-                if difficultyName ~= "" then
-                  displayText = string.format("%s (%s)", dungeonName, difficultyName)
-                end
-
-                local optionKey = string.format("%s|%s|%s", tostring(mapID), tostring(difficultyId), tostring(displayText))
-                if seenSeasonOption[optionKey] then
-                  break
-                end
-                seenSeasonOption[optionKey] = true
-
-                local bucket = seasonByMapID[mapID]
-                if not bucket then
-                  bucket = { name = dungeonName, options = {} }
-                  seasonByMapID[mapID] = bucket
-                end
-
-                bucket.options[#bucket.options + 1] = {
-                  textureIndex = textureIndex,
-                  diffLabel = difficultyName,
-                  displayText = displayText,
-                }
-              until true
-            end
-
-            local mapIDs = {}
-            for mapID in pairs(seasonByMapID) do
-              mapIDs[#mapIDs + 1] = mapID
-            end
-            table.sort(mapIDs, function(a, b)
-              return (seasonByMapID[a] and seasonByMapID[a].name or "") < (seasonByMapID[b] and seasonByMapID[b].name or "")
-            end)
-
-            if #mapIDs > 0 then
-              local seasonMenu = rootDescription:CreateButton("Current Season")
-              for _, mapID in ipairs(mapIDs) do
-                local bucket = seasonByMapID[mapID]
-                if bucket and bucket.options and #bucket.options > 0 then
-                  table.sort(bucket.options, function(left, right)
-                    return (left.displayText or "") < (right.displayText or "")
-                  end)
-
-                  local dungeonMenu = seasonMenu:CreateButton(bucket.name)
-                  for _, opt in ipairs(bucket.options) do
-                    local label = (opt.diffLabel and opt.diffLabel ~= "") and opt.diffLabel or "Unknown"
-                    CreateMenuRadio(dungeonMenu, label, function() return IsSelected(opt.textureIndex) end, function()
-                      SetSelected(opt.textureIndex, string.format("%s > %s > %s", "Current Season", bucket.name, label))
-                    end, opt.textureIndex)
-                  end
-                end
-              end
-
-              -- Visual separator before the full expansion-grouped list.
-              if not isDungeonTwoColumn then
-              rootDescription:CreateDivider()
-            end
-            end
+          if not next(seasonMapNamesByMapID) then
+            seasonMapNamesByMapID = nil
           end
         end
+      end
+
+      if seasonMapNamesByMapID then
+        local seasonByMapID = {}
+
+        for textureIndex, textureInfo in ipairs(textures) do
+          repeat
+            if ShouldSkipTexture(textureInfo) then
+              break
+            end
+
+            local mapID = textureInfo and tonumber(textureInfo.mapId)
+            if not (mapID and seasonMapNamesByMapID[mapID]) then
+              break
+            end
+
+            local title = textureInfo.title
+            local difficultyId = textureInfo.difficultyId
+            local diffInfo = GetDifficultyInfoCached(difficultyId, diffInfoCache)
+
+            local _, diffFromTitle = EventQ_ResolveTitleDifficulty(title)
+            local diffLabel = GetDiffLabel(diffFromTitle, diffInfo)
+            local diffKey = (diffLabel or ""):lower()
+
+            local bucket = seasonByMapID[mapID]
+            if not bucket then
+              bucket = { name = seasonMapNamesByMapID[mapID] or title, options = {}, _seen = {} }
+              seasonByMapID[mapID] = bucket
+            end
+
+            local optionKey = tostring(difficultyId or "") .. "|" .. diffKey
+            if bucket._seen[optionKey] then
+              break
+            end
+            bucket._seen[optionKey] = true
+
+            bucket.options[#bucket.options + 1] = {
+              textureIndex = textureIndex,
+              diffLabel = diffLabel,
+              difficultyId = difficultyId,
+            }
+          until true
+        end
+
+        local mapIDs = {}
+        for mapID in pairs(seasonByMapID) do
+          mapIDs[#mapIDs + 1] = mapID
+        end
+        table.sort(mapIDs, function(a, b)
+          return (seasonByMapID[a] and seasonByMapID[a].name or "") < (seasonByMapID[b] and seasonByMapID[b].name or "")
+        end)
+
+        if #mapIDs > 0 then
+          local seasonMenu = rootDescription:CreateButton("Current Season")
+
+          for _, mapID in ipairs(mapIDs) do
+            local bucket = seasonByMapID[mapID]
+            if bucket and bucket.options and #bucket.options > 0 then
+              table.sort(bucket.options, function(left, right)
+                local leftOrder = diffNameToOrder[(left.diffLabel or ""):lower()] or (left.difficultyId and diffNameToOrder[(GetDifficultyNameSafe(left.difficultyId) or ""):lower()]) or 1000
+                local rightOrder = diffNameToOrder[(right.diffLabel or ""):lower()] or (right.difficultyId and diffNameToOrder[(GetDifficultyNameSafe(right.difficultyId) or ""):lower()]) or 1000
+                if leftOrder ~= rightOrder then
+                  return leftOrder < rightOrder
+                end
+                return (left.diffLabel or "") < (right.diffLabel or "")
+              end)
+
+              local dungeonMenu = seasonMenu:CreateButton(bucket.name)
+              for _, opt in ipairs(bucket.options) do
+                local label = opt.diffLabel or "Unknown"
+                CreateMenuRadio(dungeonMenu, label, function() return IsSelected(opt.textureIndex) end, function()
+                  SetSelected(opt.textureIndex, string.format("%s > %s > %s", "Current Season", bucket.name, label))
+                end, opt.textureIndex)
+              end
+            end
+          end
+
+          if not isDungeonTwoColumn then
+            rootDescription:CreateDivider()
+          end
+        end
+      end
+    end
 
     -- Group instances by expansion -> instance name -> difficulty.
-	    local buckets = {} -- expansionLevel -> { label=string, instances={ [baseTitle]= { name=string, options={} } } }
-	    local levels = {}
-	    local seenLevel = {}
-
-    local difficultySortOrder = {
-      -- Raids
-      [14] = 10, -- Normal
-      [15] = 20, -- Heroic
-      [16] = 30, -- Mythic
-      [17] = 40, -- Raid Finder
-
-      -- Dungeons
-      [1] = 10, -- Normal
-      [2] = 20, -- Heroic
-      [23] = 30, -- Mythic
-      [8] = 40, -- Mythic+
-    }
+    local buckets = {}
+    local levels = {}
+    local seenLevel = {}
 
     for textureIndex, textureInfo in ipairs(textures) do
       repeat
-        local title = textureInfo and textureInfo.title
-        if not title or title == "" then
+        if ShouldSkipTexture(textureInfo) then
           break
         end
 
-	        local difficultyId = textureInfo.difficultyId
-        local difficultyName = GetDifficultyNameSafe(difficultyId)
+        local title = textureInfo.title
+        local difficultyId = textureInfo.difficultyId
+        local diffInfo = GetDifficultyInfoCached(difficultyId, diffInfoCache)
 
         local baseFromTitle, diffFromTitle = EventQ_ResolveTitleDifficulty(title)
-
-	        -- Filter: exclude Raid Finder / LFR for raids.
-        if eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Raid) then
-	          local lower = title:lower()
-	          local dn = (difficultyName or ""):lower()
-	          local dt = (diffFromTitle or ""):lower()
-	          if lower:find("looking for raid", 1, true) or lower:find("raid finder", 1, true) or lower:find("lfr", 1, true)
-	            or dn:find("looking for raid", 1, true) or dn:find("raid finder", 1, true) or dn:find("lfr", 1, true)
-	            or dt:find("looking for raid", 1, true) or dt:find("raid finder", 1, true) or dt:find("lfr", 1, true) then
-	            break
-	          end
-        elseif eventType == (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Dungeon) then
-          -- Filter: exclude Follower dungeons.
-          local lower = title:lower()
-          local dn = (difficultyName or ""):lower()
-          local dt = (diffFromTitle or ""):lower()
-          if lower:find("follower", 1, true) or dn:find("follower", 1, true) or dt:find("follower", 1, true) then
-            break
-          end
-        end
-
-	        local expansionLevel
-	        if catalog and catalog.GetExpansionLevelForCalendarTitle then
-	          expansionLevel = catalog:GetExpansionLevelForCalendarTitle(title, difficultyId)
-	        end
-	        expansionLevel = tonumber(expansionLevel) or tonumber(textureInfo.expansionLevel) or -1
-
-        local baseTitle = baseFromTitle
-        if catalog and catalog.GetBaseTitle then
-          -- Catalog knows how to strip localized difficulty suffixes when difficultyId is present.
-          baseTitle = catalog:GetBaseTitle(title, difficultyId) or baseTitle
-        end
-        baseTitle = strtrim(baseTitle or "")
+        local baseTitle = GetBaseTitle(title, difficultyId, baseFromTitle)
         if baseTitle == "" then
           break
         end
 
-        -- Recover missing difficulty labels when difficultyId is nil or not yet localized.
-        local diffLabel = difficultyName
-        if (diffLabel == "" or not diffLabel) and diffFromTitle then
-          diffLabel = diffFromTitle
-        end
-        diffLabel = strtrim(diffLabel or "")
-        if diffLabel == "" then
-          diffLabel = "Unknown"
-        end
+        local diffLabel = GetDiffLabel(diffFromTitle, diffInfo)
+        local expansionLevel = GetExpansionLevel(title, difficultyId, textureInfo)
 
         local bucket = buckets[expansionLevel]
         if not bucket then
-          local expansionLabel = _G["EXPANSION_NAME" .. tostring(expansionLevel)]
-          if not expansionLabel or expansionLabel == "" then
-            expansionLabel = (expansionLevel >= 0) and ("Expansion " .. tostring(expansionLevel)) or "Other"
-          end
-          bucket = { label = expansionLabel, instances = {} }
+          bucket = { label = GetExpansionLabel(expansionLevel), instances = {} }
           buckets[expansionLevel] = bucket
         end
 
@@ -863,7 +962,7 @@ local function SetupInstanceDropdown(frame)
           bucket.instances[baseTitle] = instance
         end
 
-        local optionKey = tostring(difficultyId or diffFromTitle or textureIndex)
+        local optionKey = tostring(difficultyId or "") .. "|" .. (diffLabel or ""):lower()
         if instance._seen[optionKey] then
           break
         end
@@ -888,7 +987,6 @@ local function SetupInstanceDropdown(frame)
     end
 
     table.sort(levels, function(a, b)
-      -- Prefer showing the newest expansions first.
       return (tonumber(a) or -1) > (tonumber(b) or -1)
     end)
 
@@ -912,8 +1010,8 @@ local function SetupInstanceDropdown(frame)
             local instanceMenu = expansionMenu:CreateButton(instance.name)
 
             table.sort(instance.options, function(left, right)
-              local leftOrder = difficultySortOrder[left.difficultyId] or 1000
-              local rightOrder = difficultySortOrder[right.difficultyId] or 1000
+              local leftOrder = diffNameToOrder[(left.diffLabel or ""):lower()] or (left.difficultyId and diffNameToOrder[(GetDifficultyNameSafe(left.difficultyId) or ""):lower()]) or 1000
+              local rightOrder = diffNameToOrder[(right.diffLabel or ""):lower()] or (right.difficultyId and diffNameToOrder[(GetDifficultyNameSafe(right.difficultyId) or ""):lower()]) or 1000
               if leftOrder ~= rightOrder then
                 return leftOrder < rightOrder
               end
@@ -921,9 +1019,9 @@ local function SetupInstanceDropdown(frame)
             end)
 
             for _, opt in ipairs(instance.options) do
-              local diffLabel = opt.diffLabel or "Unknown"
-              CreateMenuRadio(instanceMenu, diffLabel, function() return IsSelected(opt.textureIndex) end, function()
-                SetSelected(opt.textureIndex, string.format("%s > %s > %s", bucket.label, instance.name, diffLabel))
+              local label = opt.diffLabel or "Unknown"
+              CreateMenuRadio(instanceMenu, label, function() return IsSelected(opt.textureIndex) end, function()
+                SetSelected(opt.textureIndex, string.format("%s > %s > %s", bucket.label, instance.name, label))
               end, opt.textureIndex)
             end
           end

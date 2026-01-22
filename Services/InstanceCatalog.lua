@@ -104,6 +104,7 @@ local function IsKnownDifficultySuffix(suffix)
   return false
 end
 
+
 local function StripDifficultySuffix(title, difficultyId)
   title = strtrim(tostring(title or ""))
   if title == "" then return "" end
@@ -120,6 +121,15 @@ local function StripDifficultySuffix(title, difficultyId)
       title = title:sub(1, #title - #suffix)
       return strtrim(title)
     end
+
+    -- Also handle separators like " - Difficulty" and " : Difficulty" when the difficulty name is known.
+    for _, sep in ipairs({ " - ", " – ", " — ", ": " }) do
+      local suf2 = sep .. diffName
+      if title:sub(-#suf2) == suf2 then
+        title = title:sub(1, #title - #suf2)
+        return strtrim(title)
+      end
+    end
   end
 
   -- Locale-safe: strip a trailing parenthetical if it matches a known difficulty name.
@@ -129,6 +139,25 @@ local function StripDifficultySuffix(title, difficultyId)
     suffix = strtrim(suffix or "")
     if base ~= "" and suffix ~= "" and IsKnownDifficultySuffix(suffix) then
       return base
+    end
+  end
+
+  -- Locale-safe: strip a trailing " - Difficulty" / " : Difficulty" if it matches a known difficulty name.
+  do
+    local candidates = {
+      "^(.-)%s*%-%s*(.+)$",
+      "^(.-)%s*–%s*(.+)$",
+      "^(.-)%s*—%s*(.+)$",
+      "^(.-)%s*:%s*(.+)$",
+    }
+
+    for _, pattern in ipairs(candidates) do
+      local base, suffix = title:match(pattern)
+      base = strtrim(base or "")
+      suffix = strtrim(suffix or "")
+      if base ~= "" and suffix ~= "" and IsKnownDifficultySuffix(suffix) then
+        return base
+      end
     end
   end
 
@@ -144,6 +173,22 @@ local function StripDifficultySuffix(title, difficultyId)
     " (looking for raid)",
     " (lfr)",
     " (raid finder)",
+    " - normal",
+    " - heroic",
+    " - mythic",
+    " - mythic+",
+    " - mythic plus",
+    " - looking for raid",
+    " - lfr",
+    " - raid finder",
+    ": normal",
+    ": heroic",
+    ": mythic",
+    ": mythic+",
+    ": mythic plus",
+    ": looking for raid",
+    ": lfr",
+    ": raid finder",
   }
   for _, suf in ipairs(known) do
     if lower:sub(-#suf) == suf then
@@ -156,6 +201,7 @@ local function StripDifficultySuffix(title, difficultyId)
 end
 
 function InstanceCatalog:Constructor()
+
   self._nameToExpansionLevel = {}
   self._tierNameToExpansionLevel = nil
   self._built = false
