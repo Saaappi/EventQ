@@ -124,7 +124,7 @@ function DateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
   return monthOffset, targetParts.day
 end
 
----@param s string
+---@param inputText string
 ---@param order "MDY"|"DMY"|nil
 ---@param isEnd boolean|nil  -- when date-only is provided, choose end-of-day defaults
 ---@return integer|nil epoch, string|nil err
@@ -148,7 +148,7 @@ function DateUtil:ParseUserDateTime(inputText, order, isEnd)
 
   local dateOnly = false
   if not part1 then
-    part1, part2, year = s:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s*$")
+    part1, part2, year = inputText:match("^%s*(%d%d?)%s*/%s*(%d%d?)%s*/%s*(%d%d%d%d)%s*$")
     if part1 then dateOnly = true end
   end
 

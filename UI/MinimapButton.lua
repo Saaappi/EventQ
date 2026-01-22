@@ -228,7 +228,7 @@ function MinimapButton:Init(db, onLeftClick, onRightClick)
 
   local background = btn:CreateTexture(nil, "BACKGROUND")
   background:SetSize(20, 20)
-  background:SetTexture("Interface\Minimap\UI-Minimap-Background")
+  background:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
   background:SetPoint("TOPLEFT", 7, -5)
   btn.background = background
 

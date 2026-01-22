@@ -557,7 +557,9 @@ function Row:Constructor(frame, app)
             return
           end
 
-          SendChatMessage(INVITE_REQUEST_MESSAGE, "WHISPER", nil, whisperTarget)
+          if C_ChatInfo and C_ChatInfo.SendChatMessage then
+            C_ChatInfo.SendChatMessage(INVITE_REQUEST_MESSAGE, "WHISPER", nil, whisperTarget)
+          end
           UIErrorsFrame:AddMessage("Invite request sent to " .. whisperTarget .. ".", 0.2, 1, 0.2)
           return
         end

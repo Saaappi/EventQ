@@ -30,10 +30,6 @@ local function IsAddonLoaded(addonName)
     end
   end
 
-  if type(IsAddOnLoaded) == "function" then
-    return IsAddOnLoaded(addonName)
-  end
-
   return false
 end
 
@@ -137,7 +133,7 @@ function CalendarService:_EnsureCalendarLoaded()
   if self._calendarLoaded then return true end
 
   -- In current Retail builds, addon load state may only be exposed via C_AddOns.
-  -- If we only check IsAddOnLoaded, we'll think the calendar is unavailable forever.
+  -- If we only check one API surface, we'll think the calendar is unavailable forever.
   local candidates = { "Blizzard_Calendar", "Blizzard_CalendarUI" }
   for _, addonName in ipairs(candidates) do
     if IsAddonLoaded(addonName) then
@@ -337,13 +333,7 @@ end
 ---@param eventID string
 ---@param monthOffset number?
 ---@param monthDay number?
----@param title string?
----@param calendarType string?
----@return string|nil
----@param eventID string
----@param monthOffset number?
----@param monthDay number?
----@return number|nil fileID
+---@return number|nil fileID, number|nil textureIndex
 function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
   if not eventID then return nil end
   local key = tostring(eventID)
@@ -487,14 +477,6 @@ function CalendarService:TryFetchCreator(eventID, monthOffset, monthDay)
   return nil
 end
 
----@param maxDaysAhead integer
----@return table events
----@param e table
-
----@param monthOffset number
----@param monthDay number
----@param eventID string
----@return number|nil fileID
 ---@param monthOffset number
 ---@param monthDay number
 ---@param eventID string|nil

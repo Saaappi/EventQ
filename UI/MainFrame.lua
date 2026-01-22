@@ -1949,12 +1949,12 @@ local function EnsureDescriptionPopup(self)
 
       iconButton:SetScript("OnEnter", function(...)
         if prevEnter then prevEnter(...) end
-        ShowIconTooltip(...)
+        ShowIconTooltip()
       end)
 
       iconButton:SetScript("OnLeave", function(...)
         if prevLeave then prevLeave(...) end
-        HideIconTooltip(...)
+        HideIconTooltip()
       end)
     end
   end

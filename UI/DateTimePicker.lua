@@ -725,5 +725,5 @@ function DateTimePicker:AttachCalendarButton(editBox, onClick)
     calendarButton:SetScript("OnClick", onClick)
   end
 
-  return b
+  return calendarButton
 end

@@ -26,7 +26,7 @@ function CustomStore:Constructor(db)
   self.db._nextCustomId = tonumber(self.db._nextCustomId) or 1
 end
 
----@param e table {title,startEpoch,endEpoch,icon?,description?,series?}
+---@param event table {title,startEpoch,endEpoch,icon?,description?,series?}
 ---@return string id
 function CustomStore:Add(event)
   local id = (event and event.id) or self:_NextId()
@@ -74,7 +74,7 @@ function CustomStore:Remove(id)
 end
 
 ---@param oldId string
----@param e table
+---@param event table
 ---@return string newId
 function CustomStore:Replace(oldId, event)
   if oldId then

@@ -114,41 +114,18 @@ local function EventQ_IsKnownDifficultySuffix(suffix)
   return false
 end
 
--- DarkMenuElementTemplate (SharedUIPanelTemplates.xml) defines HighlightBGTex with an atlas-sized texture
--- (useAtlasSize=true) and no anchors, which prevents the hover highlight from stretching across the row.
--- We cannot create new textures inside the Menu compositor execution range, so instead we retarget the
 
-local function FixMenuHighlight(elementDescription)
-  if not elementDescription or type(elementDescription) ~= "table" then
-    return elementDescription
+
+local function CreateMenuRadio(menuDescription, label, isSelected, setSelected, data, onEnter)
+  if not menuDescription then
+    return nil
   end
 
-  if elementDescription.AddInitializer then
-    elementDescription:AddInitializer(function(button)
-      if not button then return end
-
-      local hl = button.HighlightBGTex or button.HighlightTexture or button.Highlight or nil
-      if not hl and button.GetHighlightTexture then
-        local tex = button:GetHighlightTexture()
-        if tex then hl = tex end
-      end
-
-      if hl and hl.ClearAllPoints and hl.SetAllPoints then
-        hl:ClearAllPoints()
-        hl:SetAllPoints(button)
-
-        -- If the highlight uses an atlas, re-apply it without native sizing so it can stretch.
-        if hl.GetAtlas and hl.SetAtlas then
-          local atlas = hl:GetAtlas()
-          if atlas then
-            hl:SetAtlas(atlas, false)
-          end
-        end
-      end
-    end)
+  if menuDescription.CreateHighlightRadio then
+    return menuDescription:CreateHighlightRadio(label, isSelected, setSelected, data, onEnter)
   end
 
-  return elementDescription
+  return menuDescription:CreateRadio(label, isSelected, setSelected, data, onEnter)
 end
 
 local function EventQ_ResolveTitleDifficulty(rawTitle)
@@ -437,9 +414,9 @@ local function EnsureFrame(self)
   -- This prevents cumulative horizontal drift and keeps everything aligned to the Name editbox.
   local typeLabel = AddLabel(left, "Category", nameBox)
 
-  -- Use the modern DropdownButton (WowStyle1DropdownTemplate) instead of UIDropDownMenu.
+  -- Use the Settings-style DropdownButton (WowStyle2DropdownTemplate) instead of UIDropDownMenu.
   -- This matches how Dragonflight-era Blizzard UIs build selection menus (SetupMenu + menu descriptors).
-  local dropdown = CreateFrame("DropdownButton", "EventQCalendarEventCategoryDropdown", left, "WowStyle1DropdownTemplate")
+  local dropdown = CreateFrame("DropdownButton", "EventQCalendarEventCategoryDropdown", left, "WowStyle2DropdownTemplate")
   dropdown:SetPoint("TOPLEFT", typeLabel, "BOTTOMLEFT", -3, -4)
   dropdown:SetWidth(210)
   dropdown:SetDefaultText("Other")
@@ -449,7 +426,7 @@ local function EnsureFrame(self)
   instanceLabel:Hide()
   popup._eventqInstanceLabel = instanceLabel
 
-  local instanceDrop = CreateFrame("DropdownButton", "EventQCalendarEventInstanceDropdown", left, "WowStyle1DropdownTemplate")
+  local instanceDrop = CreateFrame("DropdownButton", "EventQCalendarEventInstanceDropdown", left, "WowStyle2DropdownTemplate")
   instanceDrop:SetPoint("TOPLEFT", instanceLabel, "BOTTOMLEFT", -3, -4)
   instanceDrop:SetWidth(210)
   instanceDrop:SetDefaultText("Select...")
@@ -671,10 +648,10 @@ local function SetupInstanceDropdown(frame)
 	    local namesReady = (C_Calendar and C_Calendar.AreNamesReady and C_Calendar.AreNamesReady()) or true
 	    if not namesReady then
 	      rootDescription:CreateTitle("Loading instances...")
-	      FixMenuHighlight(rootDescription:CreateButton("Retry", function()
+	      rootDescription:CreateButton("Retry", function()
 	        if dropdown.GenerateMenu then dropdown:GenerateMenu() end
 	        if dropdown.Update then dropdown:Update() end
-	      end))
+	      end)
 	      return
 	    end
 
@@ -767,7 +744,7 @@ local function SetupInstanceDropdown(frame)
             end)
 
             if #mapIDs > 0 then
-              local seasonMenu = FixMenuHighlight(rootDescription:CreateButton("Current Season"))
+              local seasonMenu = rootDescription:CreateButton("Current Season")
               for _, mapID in ipairs(mapIDs) do
                 local bucket = seasonByMapID[mapID]
                 if bucket and bucket.options and #bucket.options > 0 then
@@ -775,12 +752,12 @@ local function SetupInstanceDropdown(frame)
                     return (left.displayText or "") < (right.displayText or "")
                   end)
 
-                  local dungeonMenu = FixMenuHighlight(seasonMenu:CreateButton(bucket.name))
+                  local dungeonMenu = seasonMenu:CreateButton(bucket.name)
                   for _, opt in ipairs(bucket.options) do
                     local label = (opt.diffLabel and opt.diffLabel ~= "") and opt.diffLabel or "Unknown"
-                    FixMenuHighlight(dungeonMenu:CreateRadio(label, function() return IsSelected(opt.textureIndex) end, function()
+                    CreateMenuRadio(dungeonMenu, label, function() return IsSelected(opt.textureIndex) end, function()
                       SetSelected(opt.textureIndex, string.format("%s > %s > %s", "Current Season", bucket.name, label))
-                    end, opt.textureIndex))
+                    end, opt.textureIndex)
                   end
                 end
               end
@@ -930,9 +907,9 @@ local function SetupInstanceDropdown(frame)
             return (left.name or "") < (right.name or "")
           end)
 
-          local expansionMenu = FixMenuHighlight(rootDescription:CreateButton(bucket.label))
+          local expansionMenu = rootDescription:CreateButton(bucket.label)
           for _, instance in ipairs(instances) do
-            local instanceMenu = FixMenuHighlight(expansionMenu:CreateButton(instance.name))
+            local instanceMenu = expansionMenu:CreateButton(instance.name)
 
             table.sort(instance.options, function(left, right)
               local leftOrder = difficultySortOrder[left.difficultyId] or 1000
@@ -945,9 +922,9 @@ local function SetupInstanceDropdown(frame)
 
             for _, opt in ipairs(instance.options) do
               local diffLabel = opt.diffLabel or "Unknown"
-              FixMenuHighlight(instanceMenu:CreateRadio(diffLabel, function() return IsSelected(opt.textureIndex) end, function()
+              CreateMenuRadio(instanceMenu, diffLabel, function() return IsSelected(opt.textureIndex) end, function()
                 SetSelected(opt.textureIndex, string.format("%s > %s > %s", bucket.label, instance.name, diffLabel))
-              end, opt.textureIndex))
+              end, opt.textureIndex)
             end
           end
         end
@@ -1008,11 +985,11 @@ local function InitializeDropdown(frame)
     local categories = (type(CATEGORIES) == "table") and CATEGORIES or {}
     if #categories == 0 then
       local fallbackType = (Enum and Enum.CalendarEventType and Enum.CalendarEventType.Other) or 0
-      local radio = FixMenuHighlight(rootDescription:CreateRadio("Other", function() return IsSelected(fallbackType) end, function() SetSelected(fallbackType) end))
+      local radio = CreateMenuRadio(rootDescription, "Other", function() return IsSelected(fallbackType) end, function() SetSelected(fallbackType) end, fallbackType)
     else
       for _, entry in ipairs(categories) do
         if entry and entry.eventType then
-          local radio = FixMenuHighlight(rootDescription:CreateRadio(entry.label or "Other", function() return IsSelected(entry.eventType) end, function() SetSelected(entry.eventType) end))
+          local radio = CreateMenuRadio(rootDescription, entry.label or "Other", function() return IsSelected(entry.eventType) end, function() SetSelected(entry.eventType) end, entry.eventType)
         end
       end
     end
