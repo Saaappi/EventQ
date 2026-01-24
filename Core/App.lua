@@ -813,7 +813,7 @@ function App:RemoveCustomEvent(id)
 end
 
 ---@param oldId string
----@param e table
+---@param event table
 function App:ReplaceCustomEvent(oldId, event)
   if not oldId then
     self.customStore:Add(event)
