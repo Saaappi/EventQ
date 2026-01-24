@@ -801,6 +801,38 @@ local function SeriesEquals(a, b)
   return true
 end
 
+local function RemindersEquals(a, b)
+  if a == b then
+    return true
+  end
+
+  local aType = type(a)
+  local bType = type(b)
+
+  if aType ~= "table" and bType ~= "table" then
+    -- Treat nil/empty/invalid as equivalent.
+    return true
+  end
+
+  if aType ~= "table" or bType ~= "table" then
+    return false
+  end
+
+  local aLen = #a
+  local bLen = #b
+  if aLen ~= bLen then
+    return false
+  end
+
+  for i = 1, aLen do
+    if tonumber(a[i]) ~= tonumber(b[i]) then
+      return false
+    end
+  end
+
+  return true
+end
+
 -- Creates the two small atlas-backed buttons used during edit mode.
 --
 -- Undo (Refresh): Reverts all *unsaved* changes back to the original event values.
@@ -927,6 +959,7 @@ function MainFrame:_CaptureEditOriginal(event)
     icon = event.icon or DEFAULT_CUSTOM_ICON,
     desc = trimmed,
     series = CopyTableShallow(event.series),
+    reminders = CopyTableShallow(event.reminders),
   }
 end
 
@@ -938,6 +971,7 @@ function MainFrame:_GetCurrentEditSnapshot()
     icon = DEFAULT_CUSTOM_ICON,
     desc = "",
     series = nil,
+    reminders = nil,
   }
 
   local popup = self._descPopup
@@ -954,6 +988,7 @@ function MainFrame:_GetCurrentEditSnapshot()
   end
 
   snapshot.series = (payload and payload.series) or self._editingSeries or nil
+  snapshot.reminders = (payload and payload.reminders) or self._editingReminders or nil
   return snapshot
 end
 
@@ -970,6 +1005,7 @@ function MainFrame:_IsEditDirty()
   if current.icon ~= original.icon then return true end
   if strtrim(current.desc or "") ~= strtrim(original.desc or "") then return true end
   if not SeriesEquals(current.series, original.series) then return true end
+  if not RemindersEquals(current.reminders, original.reminders) then return true end
 
   return false
 end
@@ -1005,6 +1041,7 @@ function MainFrame:_RevertEditToOriginal()
   self._pendingCustomPayload = nil
   self._editingIcon = original.icon or DEFAULT_CUSTOM_ICON
   self._editingSeries = CopyTableShallow(original.series)
+  self._editingReminders = CopyTableShallow(original.reminders)
   self._editingDescSeed = original.desc or ""
 
   -- If the popup is open or contains stale data, reset it back to the original state.
@@ -2035,16 +2072,196 @@ local function EnsureDescriptionPopup(self)
 
   popupFrame._eventqUpdateSeriesUI = UpdateSeriesUI
 
+  -- ---------------------------------------------------------------------------
+  -- Standalone reminder controls (Reminder 1 + Reminder 2)
+  -- ---------------------------------------------------------------------------
+  -- Standalone events may store up to 2 reminder lead-times (seconds before start)
+  -- Series events always use smart reminders, so these controls should hide when Series
+  -- is enabled.
+
+  local REMINDER_OPTIONS = {
+    { seconds = 0, label = "None" },
+    { seconds = 5 * 60, label = "5 minutes" },
+    { seconds =  10 * 60, label = "10 minutes" },
+    { seconds =  15 * 60, label = "15 minutes" },
+    { seconds = 30 * 60, label = "30 minutes" },
+    { seconds = 60 * 60, label = "1 hour" },
+    { seconds = 2 * 60 * 60, label = "2 hours" },
+    { seconds = 4 * 60 * 60, label = "4 hours" },
+    { seconds = 6 * 60 * 60, label = "6 hours" },
+    { seconds = 12 * 60 * 60, label = "12 hours" },
+    { seconds = 24 * 60 * 60, label = "1 day" },
+  }
+
+  local function FindReminderLabel(seconds)
+    seconds = tonumber(seconds) or 0
+    for _, opt in ipairs(REMINDER_OPTIONS) do
+      if opt.seconds == seconds then
+        return opt.label
+      end
+    end
+
+    -- Fallback: display raw minutes/hours for unusual stored values.
+    if seconds <= 0 then
+      return "None"
+    end
+  
+    if seconds < 3600 then
+      return string.format("%d minutes", math.floor(seconds / 60 + 0.5))
+    end
+
+    if seconds < 86400 then
+      return string.format("%d hours", math.floor(seconds / 3600 + 0.5))
+    end
+
+    return string.format("%d days", math.floor(seconds / 86400 + 0.5))
+  end
+
+  local rem1Dropdown = CreateFrame("DropdownButton", nil, popupFrame, "WowStyle1DropdownTemplate")
+  rem1Dropdown:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 96)
+  rem1Dropdown:SetWidth(160)
+  rem1Dropdown:SetText("None")
+
+  local rem1Label = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  rem1Label:SetPoint("BOTTOMLEFT", rem1Dropdown, "TOPLEFT", 0, 0)
+  rem1Label:SetText("Reminder 1")
+
+  local rem2Dropdown = CreateFrame("DropdownButton", nil, popupFrame, "WowStyle1DropdownTemplate")
+  rem2Dropdown:SetPoint("LEFT", rem1Dropdown, "RIGHT", 16, 0)
+  rem2Dropdown:SetWidth(160)
+  rem2Dropdown:SetText("None")
+
+  local rem2Label = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  rem2Label:SetPoint("BOTTOMLEFT", rem2Dropdown, "TOPLEFT", 0, 0)
+  rem2Label:SetText("Reminder 2")
+
+  popupFrame._eventqRem1Dropdown = rem1Dropdown
+  popupFrame._eventqRem2Dropdown = rem2Dropdown
+  popupFrame._eventqRem1Label = rem1Label
+  popupFrame._eventqRem2Label = rem2Label
+
+  local function GetStandaloneReminderSeconds(payload, index)
+    if type(payload) ~= "table" then return 0 end
+    local reminders = payload.reminders
+    if type(reminders) ~= "table" then return 0 end
+    return tonumber(reminders[index]) or 0
+  end
+
+  local function SetStandaloneReminderSeconds(payload, index, seconds)
+    if type(payload) ~= "table" then
+      return
+    end
+
+    -- If series is enabled, ignore (series always uses smart reminders).
+    if IsSeriesEnabled and IsSeriesEnabled(payload.series) then
+      payload.reminders = nil
+      return
+    end
+
+    seconds = tonumber(seconds) or 0
+    if seconds <= 0 then
+      -- Clear the slot; normalization will compact.
+      if type(payload.reminders) == "table" then
+        payload.reminders[index] = nil
+      end
+    else
+      payload.reminders = (type(payload.reminders) == "table") and payload.reminders or {}
+      payload.reminders[index] = seconds
+    end
+
+    -- Normalize immediately so storage remains stable (max 2, unique, sorted, capped).
+    local owner = popupFrame._eventqOwner
+    if owner and owner._NormalizeStandaloneRemindersPayload then
+      owner:_NormalizeStandaloneRemindersPayload(payload)
+    end
+  end
+
+  local function IsReminderSelected(whichIndex, seconds)
+    local payload = popupFrame._eventqPayload
+    return GetStandaloneReminderSeconds(payload, whichIndex) == seconds
+  end
+
+  local function SetReminder(whichIndex, seconds)
+    local paylaod = popupFrame._eventqPayload
+    if type(payload) ~= "table" then
+      return
+    end
+
+    SetStandaloneReminderSeconds(payload, whichIndex, seconds)
+
+    -- Refresh dropdown text + show/hide.
+    if popupFrame._eventqUpdateRemindersUI then
+      popupFrame._eventqUpdateRemindersUI()
+    end
+
+    local owner = popupFrame._eventqOwner
+    if owner and owner._UpdateEditActionButtons then
+      owner:_UpdateEditActionButtons()
+    end
+  end
+
+  rem1Dropdown:SetupMenu(function(_, rootDescription)
+    rootDescription:SetTag("MENU_EVENTQ_REMINDER_1")
+    for _, opt in ipairs(REMINDER_OPTIONS) do
+      rootDescription:CreateRadio(opt.label, function() return IsReminderSelected(1, opt.seconds) end, function() SetReminder(1, opt.seconds) end)
+    end
+    rootDescription:SetMaximumWidth(170)
+  end)
+
+  rem2Dropdown:SetupMenu(function(_, rootDescription)
+    rootDescription:SetTag("MENU_EVENTQ_REMINDER_1")
+    for _, opt in ipairs(REMINDER_OPTIONS) do
+      rootDescription:CreateRadio(opt.label, function() return IsReminderSelected(2, opt.seconds) end, function() SetReminder(2, opt.seconds) end)
+    end
+    rootDescription:SetMaximumWidth(170)
+  end)
+
+  local function UpdateRemindersUI()
+    local payload = popupFrame._eventqPayload
+    local seriesEnabled = (type(payload) == "table") and (IsSeriesEnabled and IsSeriesEnabled(payload.series)) or false
+
+    local show = (type(payload) == "table") and (not seriesEnabled)
+
+    rem1Label:SetShown(show)
+    rem1Dropdown:SetShown(show)
+    rem2Label:SetShown(show)
+    rem2Dropdown:SetShown(show)
+
+    if not show then
+      return
+    end
+
+    -- Ensure the dropdown button text reflects current stored values.
+    local r1 = GetStandaloneReminderSeconds(payload, 1)
+    local r2 = GetStandaloneReminderSeconds(payload, 2)
+
+    rem1Dropdown:SetDefaultText(FindReminderLabel(r1))
+    rem2Dropdown:SetDefaultText(FindReminderLabel(r2))
+
+    UpdateDropdownSelection(rem1Dropdown)
+    UpdateDropdownSelection(rem2Dropdown)
+  end
+
+  popupFrame._eventqUpdateRemindersUI = UpdateRemindersUI()
+
   seriesCheck:SetScript("OnClick", function()
     local payload = popupFrame._eventqPayload
     if type(payload) ~= "table" then return end
     if seriesCheck:GetChecked() then
       local series = EnsureSeriesInPayload(payload)
       ApplyFrequencyDefaults(payload, series)
+
+      -- Series always uses smart reminders; do not persist per-event reminders.
+      payload.reminders = nil
     else
       payload.series = nil
     end
     UpdateSeriesUI()
+
+    -- Keep reminders UI in sync with series enable/disable.
+    if popupFrame._eventqUpdateRemindersUI then
+      popupFrame._eventqUpdateRemindersUI()
+    end
 
     local owner = popupFrame._eventqOwner
     if owner and owner._UpdateEditActionButtons then
@@ -2182,6 +2399,11 @@ local function EnsureDescriptionPopup(self)
 
   -- Default to hidden until the payload is bound.
   UpdateSeriesUI()
+
+  -- Same for reminders.
+  if popupFrame._eventqUpdateRemindersUI then
+    popupFrame._eventqUpdateRemindersUI()
+  end
 
   -- Buttons
   local back = CreateFrame("Button", nil, popupFrame, "UIPanelButtonTemplate")
@@ -2805,11 +3027,21 @@ function MainFrame:OnNextCustom()
     payload.series = CopyTableShallow(self._editingSeries)
   end
 
+  if self.editingId and self._editingReminders then
+    payload.reminders = CopyTableShallow(self._editingReminders)
+  elseif not self.editingId then
+    -- New standalone event default: 30min & 5min (configurable).
+    payload.reminders = { 30 * 60, 5 * 60 }
+  end
+
   self._pendingCustomPayload = payload
   local popup = EnsureDescriptionPopup(self)
   popup._eventqPayload = payload
   if popup._eventqUpdateSeriesUI then
     popup._eventqUpdateSeriesUI()
+  end
+  if popup._eventqUpdateRemindersUI then
+    popup._eventqUpdateRemindersUI()
   end
   SetDescriptionPopupIcon(popup, payload.icon)
   if popup._eventqOK then
@@ -2947,6 +3179,54 @@ function MainFrame:_NormalizeSeriesPayload(payload)
   end
 end
 
+function MainFrame:_NormalizeStandaloneRemindersPayload(payload)
+  if type(payload) ~= "table" then
+    return
+  end
+
+  -- Series events always use smart reminders; ignore per-event reminders.
+  local series = payload.series
+  if type(series) == "table" and series.enabled then
+    payload.reminders = nil
+    return
+  end
+
+  local reminders = payload.reminders
+  if type(reminders) ~= "table" or #reminders == 0 then
+    payload.reminders = nil
+    return
+  end
+
+  local MAX_LEAD_SECONDS = 8 * 86400
+
+  local unique = {}
+  local cleaned = {}
+  for i = 1, #reminders do
+    local v = tonumber(reminders[i]) or 0
+    if v > 0 then
+      v = math.floor(v + 0.5)
+      if v < 60 then v = 60 end
+      if v > MAX_LEAD_SECONDS then v = MAX_LEAD_SECONDS end
+
+      if not unique[v] then
+        unique[v] = true
+        cleaned[#cleaned + 1] = v
+        if #cleaned >= 2 then
+          break
+        end
+      end
+    end
+  end
+
+  if #cleaned == 0 then
+    payload.reminders = nil
+    return
+  end
+
+  table.sort(cleaned, function(a, b) return a > b end)
+  payload.reminders = cleaned
+end
+
 -- Backward compatibility: older code paths may still call OnAddCustom.
 function MainFrame:OnAddCustom()
   self:OnNextCustom()
@@ -2971,6 +3251,9 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
 
   -- Finalize/clean series settings (if enabled), including any required date correction.
   self:_NormalizeSeriesPayload(payload)
+
+  -- Enforce standalone constraints and ensure series does not persist reminders.
+  self:_NormalizeStandaloneRemindersPayload(payload)
 
   local wasEditing = not not self.editingId
   if wasEditing then
