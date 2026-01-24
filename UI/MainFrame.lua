@@ -16,7 +16,6 @@ local PORTABLE_ICON_SIZE = 32
 -- Match the queueable-event title color used in the full mode list (see UI/Row.lua).
 local PORTABLE_TITLE_R, PORTABLE_TITLE_G, PORTABLE_TITLE_B = 0.4, 0.8, 1.0 -- #66CCFF
 
-
 local UPCOMING_WINDOW_SECONDS = 8 * 86400
 
 -- Match the QuestLog tab positioning, but keep tabs flush to the frame edge.
