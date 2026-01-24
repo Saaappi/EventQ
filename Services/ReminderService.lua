@@ -14,6 +14,90 @@ local ipairs = _G.ipairs
 
 local REMINDER_CHECK_WINDOW_SECONDS = 75
 local REMINDER_SENT_TTL_SECONDS = 21 * 86400
+-- Note: Reminder evaluation is driven by App:RefreshAll() which only passes events
+-- within the upcoming window. Standalone reminders longer than that will naturally
+-- never fire, so we cap to a conservative ceiling.
+local MAX_STANDALONE_LEAD_SECONDS = 8 * 86400
+
+-- Smart reminders (series only): pick lead-times based primarily on the event's duration.
+-- Requirement:
+--  - < 2 hours: more reminders leading up to the event
+--  - > 2 hours: fewer reminders (2) leading up to the event
+--
+-- I still cap by cadence to avoid noisy reminders for short series intervals.
+local function ComputeSmartSeriesLeadTimesSeconds(cadenceSeconds, durationSeconds)
+  cadenceSeconds = tonumber(cadenceSeconds)
+  durationSeconds = tonumber(durationSeconds)
+
+  -- Use small, constant tables to avoid per-event allocations on the "hot path".
+  -- These are ordered from farthest -> nearest.
+  local desired
+  if durationSeconds < (2 * 3600) then
+    desired = { 60 * 60, 30 * 60, 15 * 60, 5 * 60 }
+  else
+    desired = { 60 * 60, 15 * 60 }
+  end
+
+  local maxLeadSeconds = 24 * 3600
+  if cadenceSeconds and cadenceSeconds > 0 then
+    -- Avoid lead times that are longer than a large portion of the cadence.
+    -- For example, a 30-min cadence shouldn't get a 30-min reminder.
+    maxLeadSeconds = math.min(maxLeadSeconds, math.floor(cadenceSeconds * 0.5))
+  end
+
+  local unique = {}
+  local cleaned = {}
+  for _, leadSeconds in ipairs(desired) do
+    leadSeconds = tonumber(leadSeconds) or 0
+    if leadSeconds > 0 then
+      leadSeconds = math.min(leadSeconds, maxLeadSeconds)
+      if leadSeconds >= 60 and not unique[leadSeconds] then
+        unique[leadSeconds] = true
+        cleaned[#cleaned + 1] = leadSeconds
+      end
+    end
+  end
+
+  table.sort(cleaned, function(leftSeconds, rightSeconds) return leftSeconds > rightSeconds end)
+  return cleaned
+end
+
+-- Standalone events: player-configured reminders (up to 2), stored as lead-times in seconds.
+local function NormalizeStandaloneLeadTimesSeconds(reminders)
+  if type(reminders) ~= "table" or #reminders == 0 then
+    return nil
+  end
+
+  local unique = {}
+  local cleaned = {}
+  local used = 0
+
+  for i = 1, #reminders do
+    local leadSeconds = tonumber(reminders[i]) or 0
+    if leadSeconds > 0 then
+      leadSeconds = math.floor(leadSeconds + 0.5)
+      -- Ignore small values; keeps the check window stable.
+      if leadSeconds >= 60 then
+        leadSeconds = math.min(leadSeconds, MAX_STANDALONE_LEAD_SECONDS)
+        if not unique[leadSeconds] then
+          unique[leadSeconds] = true
+          used = used + 1
+          cleaned[used] = leadSeconds
+          if used >= 2 then
+            break
+          end
+        end
+      end
+    end
+  end
+
+  if used == 0 then
+    return nil
+  end
+
+  table.sort(cleaned, function(leftSeconds, rightSeconds) return leftSeconds > rightSeconds end)
+  return cleaned
+end
 
 local function EnsureReminderDefaults(db)
   db.reminders = db.reminders or {}
@@ -146,7 +230,7 @@ local function ComputeSeriesCadenceSeconds(series, durationSeconds, dateUtil, st
   return nil
 end
 
-local function ComputeLeadTimesSeconds(cadenceSeconds, durationSeconds)
+--[[local function ComputeLeadTimesSeconds(cadenceSeconds, durationSeconds)
   cadenceSeconds = tonumber(cadenceSeconds)
   durationSeconds = tonumber(durationSeconds) or 0
 
@@ -193,7 +277,7 @@ local function ComputeLeadTimesSeconds(cadenceSeconds, durationSeconds)
 
   table.sort(cleaned, function(leftSeconds, rightSeconds) return leftSeconds > rightSeconds end)
   return cleaned
-end
+end]]
 
 local function AddMessageToUIErrors(message)
   if UIErrorsFrame and UIErrorsFrame.AddMessage then
@@ -274,10 +358,6 @@ function ReminderService:CheckUpcoming(nowEpoch, upcomingEvents)
   nowEpoch = tonumber(nowEpoch) or (time and time() or 0)
   PruneSent(self.db, nowEpoch)
 
-  -- Note: We intentionally do not attempt to detect "away from keyboard" beyond basic AFK status.
-  -- Deferring and replaying reminders requires extra state and can be confusing if the reminder is late.
-  -- (See design notes in the changelog/response.)
-
   for _, eventInfo in ipairs(upcomingEvents or {}) do
     if eventInfo and eventInfo.isCustom and eventInfo.id and eventInfo.startEpoch then
       local startEpoch = tonumber(eventInfo.startEpoch) or 0
@@ -287,7 +367,32 @@ function ReminderService:CheckUpcoming(nowEpoch, upcomingEvents)
         local durationSeconds = endEpoch - startEpoch
         if durationSeconds < 0 then durationSeconds = 0 end
 
-        local cadenceSeconds
+        local leadTimesSeconds
+        if eventInfo.series then
+          -- Series events always use smart reminders.
+          local cadenceSeconds = ComputeSeriesCadenceSeconds(eventInfo.series, durationSeconds, self.dateUtil, startEpoch)
+          leadTimesSeconds = ComputeSmartSeriesLeadTimesSeconds(cadenceSeconds, durationSeconds)
+        else
+          -- Standalone events only remind if the player configured per-event reminders.
+          leadTimesSeconds = NormalizeStandaloneLeadTimesSeconds(eventInfo.reminders)
+        end
+
+        if leadTimesSeconds and #leadTimesSeconds > 0 then
+          local sentByLead = GetOrCreateSentTable(self.db, eventInfo.id)
+          for _, leadSeconds in ipairs(leadTimesSeconds) do
+            local leadKey = tostring(leadSeconds)
+            if sentByLead[leadKey] ~= startEpoch
+              and secondsUntilStart <= leadSeconds
+              and secondsUntilStart > (leadSeconds - REMINDER_CHECK_WINDOW_SECONDS) then
+
+              sentByLead[leadKey] = startEpoch
+              self:Notify(eventInfo, secondsUntilStart)
+              break
+            end
+          end
+        end
+
+        --[[local cadenceSeconds
         if eventInfo.series then
           cadenceSeconds = ComputeSeriesCadenceSeconds(eventInfo.series, durationSeconds, self.dateUtil, startEpoch)
         end
@@ -301,7 +406,7 @@ function ReminderService:CheckUpcoming(nowEpoch, upcomingEvents)
             self:Notify(eventInfo, secondsUntilStart)
             break
           end
-        end
+        end]]
       end
     end
   end
