@@ -4,6 +4,7 @@
 ## SavedVariables: EventQDB
 ## Author: LightskyGG.
 ## Version: 2.0.2
+
 EventQ.xml
 Core/Class.lua
 Core/ImportExport.lua
