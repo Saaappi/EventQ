@@ -2121,7 +2121,7 @@ local function EnsureDescriptionPopup(self)
   end
 
   local rem1Dropdown = CreateFrame("DropdownButton", nil, popupFrame, "WowStyle1DropdownTemplate")
-  rem1Dropdown:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 96)
+  rem1Dropdown:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 70)
   rem1Dropdown:SetWidth(160)
   rem1Dropdown:SetDefaultText("None")
 
