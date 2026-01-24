@@ -96,7 +96,7 @@ function EventQWowStyle1DropdownControlMixin:Init(initializer)
   self:EvaluateState()
 end
 
-function EventQWowStyle1DropdownControlMixin:InitDropdown()
+--[[function EventQWowStyle1DropdownControlMixin:InitDropdown()
   if not self.Dropdown then return end
 
   local setting = self:GetSetting()
@@ -106,6 +106,79 @@ function EventQWowStyle1DropdownControlMixin:InitDropdown()
 
   local initTooltip = Settings.CreateOptionsInitTooltip(setting, initializer:GetName(), initializer:GetTooltip(), options)
   local inserter = Settings.CreateDropdownOptionInserter(options)
+  Settings.InitDropdown(self.Dropdown, setting, inserter, initTooltip)
+end]]
+function EventQWowStyle1DropdownControlMixin:InitDropdown()
+  if not self.Dropdown then
+    return
+  end
+
+  local setting = self:GetSetting()
+  local initializer = self:GetElementData()
+  if not (setting and initializer) then
+    return
+  end
+
+  -- initializer:GetOptions() may return either:
+  -- 1) a function that returns a table of options, or
+  -- 2) a table of options directly (depending on how the initializer was created)
+  local optionsSource = initializer.GetOptions and initializer:GetOptions()
+  if not optionsSource then
+    return
+  end
+
+  -- Blizzard's Settings.InitDropdown expects an 'optionsFunc' that returns 'optionData' tables.
+  -- In 12.0.0, each table needs a valid 'controlType' (Radio/Checkbox). If missing, then
+  -- an error is thrown.
+  local function OptionsFunc()
+    local raw = optionsSource
+
+    if type(raw) == "function" then
+      local ok, result = pcall(raw)
+      if not ok then
+        -- If the options function errors, do not allow the entire Settings panel to break.
+        return {}
+      end
+      raw = result
+    end
+
+    if type(raw) ~= "table" then
+      return {}
+    end
+
+    -- Normalize the options {value, label/text, tooltip, ... } into Blizzard optionData.
+    local out = {}
+    for i, opt in ipairs(raw) do
+      if type(opt) == "table" then
+        -- Preserve the original table (keeps custom fields like tooltip/recommend),
+        -- but always ensure required Blizzard fields exist.
+        local value = opt.value
+        local text = opt.text or opt.label or (value ~= nil and tostring(value) or ("Option " .. i))
+
+        opt.value = value
+        opt.text = text
+        opt.label = opt.label or text
+
+        -- Required by Blizzard dropdown inserter
+        opt.controlType = opt.controlType or Settings.ControlType.Radio
+
+        out[#out + 1] = opt
+      end
+    end
+
+    return out
+  end
+
+  -- Tooltips also need a stable provider; passing the same OptionsFunc keeps behavior consistent.
+  local initTooltip = Settings.CreateOptionsInitTooltip(
+    setting,
+    initializer:GetName(),
+    initializer:GetTooltip(),
+    OptionsFunc
+  )
+
+  local inserter = Settings.CreateDropdownOptionInserter(setting, OptionsFunc)
+
   Settings.InitDropdown(self.Dropdown, setting, inserter, initTooltip)
 end
 
