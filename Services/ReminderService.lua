@@ -245,7 +245,7 @@ local function EnsureToastSystem(self)
     return self._toastSystem
   end
 
-  if not (AlertFrame and AlertFrame.AddQueuedAlertFrameSubSystem) then
+  if not (AlertFrame and AlertFrame.CreateQueuedSubSystem and AlertFrame.AddAlertFrameSubSystem) then
     return nil
   end
 
@@ -279,6 +279,29 @@ local function EnsureToastSystem(self)
   end
 
   self._toastSystem = AlertFrame:AddQueuedAlertFrameSubSystem("EventQReminderToastFrameTemplate", SetupToast)
+
+  -- Use a queue subsystem, but override anchoring so our reminders appear above center.
+  local subSystem = AlertFrame:CreateQueuedSubSystem("EventQReminderToastFrameTemplate", SetupToast)
+  function subSystem:AdjustAnchors(relativeAlert)
+    local index = 0
+    for alertFrame in self.alertFramePool:EnumerateActive() do
+      index = index + 1
+      alertFrame:ClearAllPoints()
+
+      -- Primary toast above center; subsequent toasts stack upward.
+      local yOffset = 60
+      if index > 1 then
+        yOffset = (index - 1) * ((alertFrame.GetHeight and alertFrame:GetHeight() or 0) + 10)
+      end
+      alertFrame:SetPoint("CENTER", UIParent, "CENTER", 0, yOffset)
+    end
+
+    -- Do not alter the anchor chain for other subsystems.
+    return relativeAlert
+  end
+
+  self._toastSystem = AlertFrame:AddAlertFrameSubSystem(subSystem)
+
   return self._toastSystem
 end
 
