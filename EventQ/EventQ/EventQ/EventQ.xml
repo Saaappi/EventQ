@@ -1,0 +1,125 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+  <!-- Achievement-style reminder toast used for custom event reminders. -->
+  <ContainedAlertFrame name="EventQReminderToastFrameTemplate" parent="UIParent" hidden="true" virtual="true" inherits="AlertFrameTemplate">
+    <Size x="300" y="101"/>
+    <Anchors>
+      <Anchor point="BOTTOM" x="0" y="128"/>
+    </Anchors>
+    <Animations>
+      <AnimationGroup parentKey="animIn">
+        <Alpha fromAlpha="1" toAlpha="0" duration="0" order="1"/>
+        <Alpha fromAlpha="0" toAlpha="1" duration="0.2" order="2"/>
+      </AnimationGroup>
+      <AnimationGroup parentKey="waitAndAnimOut">
+        <Alpha startDelay="4.05" fromAlpha="1" toAlpha="0" duration="1.5" parentKey="animOut">
+          <Scripts>
+            <OnFinished>
+              self:GetRegionParent():Hide();
+            </OnFinished>
+          </Scripts>
+        </Alpha>
+      </AnimationGroup>
+    </Animations>
+    <Layers>
+      <Layer level="BACKGROUND">
+        <Texture parentKey="Background" atlas="ui-achievement-alert-background" useAtlasSize="true">
+          <Anchors>
+            <Anchor point="CENTER"/>
+          </Anchors>
+        </Texture>
+        <FontString parentKey="Header" inherits="GameFontBlackTiny" justifyH="CENTER">
+          <Size x="200" y="12"/>
+          <Anchors>
+            <Anchor point="TOP" x="7" y="-23"/>
+          </Anchors>
+        </FontString>
+        <FontString parentKey="Title" inherits="GameFontHighlight" maxLines="2" justifyH="CENTER" justifyV="MIDDLE">
+          <Size x="155" y="36"/>
+          <Anchors>
+            <Anchor point="TOP" relativeKey="$parent.Header" relativePoint="BOTTOM"/>
+          </Anchors>
+        </FontString>
+        <FontString parentKey="TimeLeft" inherits="GameFontNormal" justifyH="CENTER">
+          <Size x="155" y="14"/>
+          <Anchors>
+            <Anchor point="TOP" relativeKey="$parent.Title" relativePoint="BOTTOM" x="0" y="-2"/>
+          </Anchors>
+        </FontString>
+      </Layer>
+    </Layers>
+    <Frames>
+      <Frame parentKey="Icon">
+        <Size x="78" y="75"/>
+        <Anchors>
+          <Anchor point="TOPLEFT" x="-4" y="-15"/>
+        </Anchors>
+        <Layers>
+          <Layer level="BORDER">
+            <Texture parentKey="Bling" atlas="ui-achievement-bling" useAtlasSize="true" hidden="true">
+              <Anchors>
+                <Anchor point="CENTER" x="-1" y="1"/>
+              </Anchors>
+            </Texture>
+          </Layer>
+          <Layer level="ARTWORK">
+            <Texture parentKey="Texture">
+              <Anchors>
+                <Anchor point="CENTER" x="0" y="0"/>
+              </Anchors>
+              <Size x="52" y="52"/>
+            </Texture>
+          </Layer>
+          <Layer level="OVERLAY">
+            <Texture parentKey="Overlay" atlas="ui-achievement-iconframe" useAtlasSize="true">
+              <Anchors>
+                <Anchor point="CENTER" x="-1" y="2"/>
+              </Anchors>
+            </Texture>
+          </Layer>
+        </Layers>
+      </Frame>
+    </Frames>
+  </ContainedAlertFrame>
+
+  <Button name="EventQEventRowTemplate" virtual="true" inherits="BackdropTemplate">
+    <Size x="340" y="40"/>
+    <HighlightTexture file="Interface/QuestFrame/UI-QuestTitleHighlight" alphaMode="ADD"/>
+  </Button>
+
+  <Button name="EventQSeriesOccurrenceRowTemplate" virtual="true" inherits="BackdropTemplate">
+    <Size x="340" y="28"/>
+    <HighlightTexture file="Interface/QuestFrame/UI-QuestTitleHighlight" alphaMode="ADD"/>
+  </Button>
+
+  <!-- Settings panel element used to draw a subtle horizontal divider line. -->
+  <Frame name="EventQSettingsDividerTemplate" virtual="true">
+    <Size y="4"/>
+    <Layers>
+      <Layer level="BACKGROUND">
+        <Texture parentKey="Line" file="Interface/Buttons/WHITE8X8">
+          <Anchors>
+            <Anchor point="LEFT" x="7" y="0"/>
+            <Anchor point="RIGHT" x="-7" y="0"/>
+          </Anchors>
+          <Size y="1"/>
+          <Color a="0.35" r="1" g="1" b="1"/>
+        </Texture>
+      </Layer>
+    </Layers>
+  </Frame>
+
+  <!-- Settings list control: dropdown rendered using WowStyle1DropdownTemplate. -->
+  <Frame name="EventQWowStyle1DropdownControlTemplate" inherits="SettingsListElementTemplate" mixin="EventQWowStyle1DropdownControlMixin" virtual="true">
+    <Size x="280" y="26"/>
+    <Frames>
+      <DropdownButton parentKey="Dropdown" inherits="WowStyle1DropdownTemplate">
+        <Anchors>
+          <Anchor point="LEFT" relativeKey="$parent" relativePoint="CENTER" x="-48" y="3"/>
+        </Anchors>
+      </DropdownButton>
+    </Frames>
+    <Scripts>
+      <OnLoad method="OnLoad"/>
+    </Scripts>
+  </Frame>
+</Ui>
