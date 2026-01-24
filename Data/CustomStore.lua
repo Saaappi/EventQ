@@ -13,6 +13,33 @@ local function CopyTableShallow(source)
   return out
 end
 
+-- Custom event reminders are stored as an aray of lead-times in seconds.
+-- Standalone events can store up to 2 reminders. Series events ignore this field.
+local function CopyReminders(reminders)
+  if type(reminders) ~= "table" then
+    return nil
+  end
+
+  local out = {}
+  local count = 0
+  for i = 1, #reminders do
+    local v = tonumber(reminders[i])
+    if v and v > 0 then
+      count = count + 1
+      out[count] = v
+      if count >= 2 then
+        break
+      end
+    end
+  end
+
+  if count == 0 then
+    return nil
+  end
+
+  return out
+end
+
 function CustomStore:_NextId()
   local nextId = tonumber(self.db._nextCustomId) or 1
   self.db._nextCustomId = nextId + 1
@@ -26,7 +53,7 @@ function CustomStore:Constructor(db)
   self.db._nextCustomId = tonumber(self.db._nextCustomId) or 1
 end
 
----@param e table {title,startEpoch,endEpoch,icon?,description?,series?}
+---@param event table {title,startEpoch,endEpoch,icon?,description?,series?,reminders?}
 ---@return string id
 function CustomStore:Add(event)
   local id = (event and event.id) or self:_NextId()
@@ -39,6 +66,8 @@ function CustomStore:Add(event)
     icon = (event and event.icon) or DEFAULT_ICON,
     -- series config is intentionally shallow-copied to avoid accidental shared mutations
     series = CopyTableShallow(event and event.series),
+    -- Standalone reminder lead-times in seconds (up to 2 entries).
+    reminders = CopyReminders(event and event.reminders),
   })
   return id
 end
@@ -74,7 +103,7 @@ function CustomStore:Remove(id)
 end
 
 ---@param oldId string
----@param e table
+---@param event table
 ---@return string newId
 function CustomStore:Replace(oldId, event)
   if oldId then
@@ -86,6 +115,7 @@ function CustomStore:Replace(oldId, event)
       existing.endEpoch = event and event.endEpoch or existing.endEpoch
       existing.icon = (event and event.icon) or existing.icon or DEFAULT_ICON
       existing.series = CopyTableShallow(event and event.series)
+      existing.reminders = CopyReminders(event and event.reminders)
       return existing.id
     end
   end
