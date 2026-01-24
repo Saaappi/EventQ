@@ -1058,6 +1058,9 @@ function MainFrame:_RevertEditToOriginal()
     if popup._eventqUpdateSeriesUI then
       popup._eventqUpdateSeriesUI()
     end
+    if popup._eventqUpdateRemindersUI then
+      popup._eventqUpdateRemindersUI()
+    end
     if popup.IsShown and popup:IsShown() then
       popup:Hide()
     end
@@ -2120,7 +2123,7 @@ local function EnsureDescriptionPopup(self)
   local rem1Dropdown = CreateFrame("DropdownButton", nil, popupFrame, "WowStyle1DropdownTemplate")
   rem1Dropdown:SetPoint("BOTTOMLEFT", popupFrame, "BOTTOMLEFT", 18, 96)
   rem1Dropdown:SetWidth(160)
-  rem1Dropdown:SetText("None")
+  rem1Dropdown:SetDefaultText("None")
 
   local rem1Label = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   rem1Label:SetPoint("BOTTOMLEFT", rem1Dropdown, "TOPLEFT", 0, 0)
@@ -2129,7 +2132,7 @@ local function EnsureDescriptionPopup(self)
   local rem2Dropdown = CreateFrame("DropdownButton", nil, popupFrame, "WowStyle1DropdownTemplate")
   rem2Dropdown:SetPoint("LEFT", rem1Dropdown, "RIGHT", 16, 0)
   rem2Dropdown:SetWidth(160)
-  rem2Dropdown:SetText("None")
+  rem2Dropdown:SetDefaultText("None")
 
   local rem2Label = popupFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   rem2Label:SetPoint("BOTTOMLEFT", rem2Dropdown, "TOPLEFT", 0, 0)
@@ -2182,7 +2185,7 @@ local function EnsureDescriptionPopup(self)
   end
 
   local function SetReminder(whichIndex, seconds)
-    local paylaod = popupFrame._eventqPayload
+    local payload = popupFrame._eventqPayload
     if type(payload) ~= "table" then
       return
     end
@@ -2209,7 +2212,7 @@ local function EnsureDescriptionPopup(self)
   end)
 
   rem2Dropdown:SetupMenu(function(_, rootDescription)
-    rootDescription:SetTag("MENU_EVENTQ_REMINDER_1")
+    rootDescription:SetTag("MENU_EVENTQ_REMINDER_2")
     for _, opt in ipairs(REMINDER_OPTIONS) do
       rootDescription:CreateRadio(opt.label, function() return IsReminderSelected(2, opt.seconds) end, function() SetReminder(2, opt.seconds) end)
     end
@@ -2242,7 +2245,7 @@ local function EnsureDescriptionPopup(self)
     UpdateDropdownSelection(rem2Dropdown)
   end
 
-  popupFrame._eventqUpdateRemindersUI = UpdateRemindersUI()
+  popupFrame._eventqUpdateRemindersUI = UpdateRemindersUI
 
   seriesCheck:SetScript("OnClick", function()
     local payload = popupFrame._eventqPayload
@@ -2816,6 +2819,7 @@ function MainFrame:BeginEditCustom(event)
 
   self._editingIcon = event.icon or DEFAULT_CUSTOM_ICON
   self._editingSeries = CopyTableShallow(event.series)
+  self._editingReminders = CopyTableShallow(event.reminders)
 
   -- Seed the description popup. If the saved description is the default, treat it as blank.
   local rawDescription = (type(event.description) == "string") and event.description or ""
@@ -2844,6 +2848,7 @@ function MainFrame:ClearEdit()
   self._editingDescSeed = nil
   self._editingIcon = nil
   self._editingSeries = nil
+  self._editingReminders = nil
   if self.edTitle then self.edTitle:SetText("Add Custom Event") end
   if self.addBtn then self.addBtn:SetText("Next") end
 
@@ -3267,6 +3272,9 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
   if popup._eventqUpdateSeriesUI then
     popup._eventqUpdateSeriesUI()
   end
+  if popup._eventqUpdateRemindersUI then
+    popup._eventqUpdateRemindersUI()
+  end
   if popup._eventqEditBox then
     popup._eventqEditBox:SetText("")
     popup._eventqEditBox:ClearFocus()
@@ -3275,6 +3283,9 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
   SetDescriptionPopupIcon(popup, DEFAULT_CUSTOM_ICON)
   if popup._eventqUpdateSeriesUI then
     popup._eventqUpdateSeriesUI()
+  end
+  if popup._eventqUpdateRemindersUI then
+    popup._eventqUpdateRemindersUI()
   end
   popup:Hide()
 
