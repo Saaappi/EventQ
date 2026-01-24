@@ -5,6 +5,8 @@ local ReminderService = ns.Class:Create("ReminderService")
 -- Hot-path locals
 local _G = _G
 local UIErrorsFrame = _G.UIErrorsFrame
+local PlaySound = _G.PlaySound
+local SOUNDKIT = _G.SOUNDKIT
 local time = _G.time
 local tostring = _G.tostring
 local tonumber = _G.tonumber
@@ -352,6 +354,10 @@ function ReminderService:Notify(eventInfo, secondsUntilStart)
   local timeLeftText = string.format("Starts in %s", FormatDurationShort(secondsUntilStart))
 
   if self:UseToasts() then
+    if PlaySound and SOUNDKIT and SOUNDKIT.MAP_PING then
+      PlaySound(SOUNDKIT.MAP_PING, "Master")
+    end
+
     local toastSystem = EnsureToastSystem(self)
     if toastSystem and toastSystem.AddAlert then
       toastSystem:AddAlert(titleText, timeLeftText, eventInfo.icon, eventInfo._eventqTexCoord)
