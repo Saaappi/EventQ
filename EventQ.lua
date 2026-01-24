@@ -239,6 +239,22 @@ addonFrame:SetScript("OnEvent", function(_, event, arg1)
         return
       end
 
+      -- Reminders use a tight evaluation window (see REMINDER_CHECK_WINDOW_SECONDS),
+      -- so if reminders are enabled we must refresh at least once per minute even
+      -- when the UI is hidden or reminders will be missed.
+      local remindersEnabled = false
+      if app.reminders and app.reminders.IsEnabled then
+        remindersEnabled = app.reminders:IsEnabled()
+      else
+        local db = app.db
+        remindersEnabled = db and db.reminders and db.reminders.mode and db.reminders.mode ~= "off" 
+      end
+
+      if remindersEnabled then
+        app:RefreshAll()
+        return
+      end
+
       local nowEpoch = time()
       if (nowEpoch - (lastBackgroundRefreshEpoch or 0)) >= 300 then
         lastBackgroundRefreshEpoch = nowEpoch
