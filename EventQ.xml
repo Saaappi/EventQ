@@ -3,7 +3,7 @@
   <ContainedAlertFrame name="EventQReminderToastFrameTemplate" parent="UIParent" hidden="true" virtual="true" inherits="AlertFrameTemplate">
     <Size x="300" y="101"/>
     <Anchors>
-      <Anchor point="BOTTOM" x="0" y="128"/>
+      <Anchor point="CENTER" x="0" y="0"/>
     </Anchors>
     <Animations>
       <AnimationGroup parentKey="animIn">
