@@ -1759,7 +1759,7 @@ local function EnsureDescriptionPopup(self)
 
   local function ShowDescTooltip(owner)
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Enter your custom event's description here.", 1, 1, 1, true)
+    GameTooltip:SetText("Enter your custom event's description here.", 1, 1, 1, 1, true)
     GameTooltip:Show()
   end
 
@@ -1885,7 +1885,7 @@ local function EnsureDescriptionPopup(self)
 
   intervalFromEndCheck:HookScript("OnEnter", function()
     GameTooltip:SetOwner(intervalFromEndCheck, "ANCHOR_RIGHT")
-    GameTooltip:SetText("If checked, the interval is a gap after the event ends.\n\nExample: duration 6h + gap 12h.", 1, 1, 1, true)
+    GameTooltip:SetText("If checked, the interval is a gap after the event ends.\n\nExample: duration 6h + gap 12h.", 1, 1, 1, 1, true)
     GameTooltip:Show()
   end)
   intervalFromEndCheck:HookScript("OnLeave", function() GameTooltip:Hide() end)
