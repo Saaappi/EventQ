@@ -230,55 +230,6 @@ local function ComputeSeriesCadenceSeconds(series, durationSeconds, dateUtil, st
   return nil
 end
 
---[[local function ComputeLeadTimesSeconds(cadenceSeconds, durationSeconds)
-  cadenceSeconds = tonumber(cadenceSeconds)
-  durationSeconds = tonumber(durationSeconds) or 0
-
-  local leadTimesSeconds
-  if cadenceSeconds and cadenceSeconds > 0 then
-    if cadenceSeconds <= 2 * 3600 then
-      leadTimesSeconds = { 30 * 60, 15 * 60, 5 * 60 }
-    elseif cadenceSeconds <= 6 * 3600 then
-      leadTimesSeconds = { 60 * 60, 30 * 60, 10 * 60 }
-    elseif cadenceSeconds <= 18 * 3600 then
-      leadTimesSeconds = { 60 * 60, 30 * 60, 15 * 60 }
-    elseif cadenceSeconds <= 48 * 3600 then
-      leadTimesSeconds = { 2 * 3600, 60 * 60, 30 * 60 }
-    else
-      leadTimesSeconds = { 6 * 3600, 2 * 3600, 60 * 60 }
-    end
-  else
-    if durationSeconds >= 4 * 3600 then
-      leadTimesSeconds = { 60 * 60, 30 * 60, 15 * 60 }
-    else
-      leadTimesSeconds = { 30 * 60, 15 * 60, 5 * 60 }
-    end
-  end
-
-  local maxLeadSeconds = 24 * 3600
-  if cadenceSeconds and cadenceSeconds > 0 then
-    -- Avoid lead times that are longer than a large portion of the cadence.
-    -- For example, a 30m cadence shouldn't get a 30m reminder.
-    maxLeadSeconds = math.min(maxLeadSeconds, math.floor(cadenceSeconds * 0.5))
-  end
-
-  local unique = {}
-  local cleaned = {}
-  for _, leadSeconds in ipairs(leadTimesSeconds) do
-    leadSeconds = tonumber(leadSeconds) or 0
-    if leadSeconds > 0 then
-      leadSeconds = math.min(leadSeconds, maxLeadSeconds)
-      if leadSeconds >= 60 and not unique[leadSeconds] then
-        unique[leadSeconds] = true
-        cleaned[#cleaned + 1] = leadSeconds
-      end
-    end
-  end
-
-  table.sort(cleaned, function(leftSeconds, rightSeconds) return leftSeconds > rightSeconds end)
-  return cleaned
-end]]
-
 local function AddMessageToUIErrors(message)
   if UIErrorsFrame and UIErrorsFrame.AddMessage then
     UIErrorsFrame:AddMessage(message, 0.40, 0.80, 1.00)
@@ -391,22 +342,6 @@ function ReminderService:CheckUpcoming(nowEpoch, upcomingEvents)
             end
           end
         end
-
-        --[[local cadenceSeconds
-        if eventInfo.series then
-          cadenceSeconds = ComputeSeriesCadenceSeconds(eventInfo.series, durationSeconds, self.dateUtil, startEpoch)
-        end
-
-        local leadTimesSeconds = ComputeLeadTimesSeconds(cadenceSeconds, durationSeconds)
-        local sentByLead = GetOrCreateSentTable(self.db, eventInfo.id)
-        for _, leadSeconds in ipairs(leadTimesSeconds) do
-          local leadKey = tostring(leadSeconds)
-          if sentByLead[leadKey] ~= startEpoch and secondsUntilStart <= leadSeconds and secondsUntilStart > (leadSeconds - REMINDER_CHECK_WINDOW_SECONDS) then
-            sentByLead[leadKey] = startEpoch
-            self:Notify(eventInfo, secondsUntilStart)
-            break
-          end
-        end]]
       end
     end
   end
