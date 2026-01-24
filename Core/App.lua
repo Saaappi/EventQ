@@ -679,6 +679,8 @@ function App:RefreshAll()
       wrapped.isSeriesRoot = isSeries
       wrapped.series = isSeries and dbEvent.series or nil
       wrapped.seriesRootId = isSeries and id or nil
+      -- Standalone reminder lead-times (in seconds). Series events ignore this field.
+      wrapped.reminders = (not isSeries) and dbEvent.reminders or nil
 
       ApplyIconOverrides(self, wrapped)
       all[#all + 1] = wrapped
