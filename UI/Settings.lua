@@ -96,18 +96,6 @@ function EventQWowStyle1DropdownControlMixin:Init(initializer)
   self:EvaluateState()
 end
 
---[[function EventQWowStyle1DropdownControlMixin:InitDropdown()
-  if not self.Dropdown then return end
-
-  local setting = self:GetSetting()
-  local initializer = self:GetElementData()
-  local options = initializer and initializer.GetOptions and initializer:GetOptions()
-  if not (setting and options) then return end
-
-  local initTooltip = Settings.CreateOptionsInitTooltip(setting, initializer:GetName(), initializer:GetTooltip(), options)
-  local inserter = Settings.CreateDropdownOptionInserter(options)
-  Settings.InitDropdown(self.Dropdown, setting, inserter, initTooltip)
-end]]
 function EventQWowStyle1DropdownControlMixin:InitDropdown()
   if not self.Dropdown then
     return
