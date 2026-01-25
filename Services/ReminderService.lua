@@ -7,6 +7,8 @@ local _G = _G
 local UIErrorsFrame = _G.UIErrorsFrame
 local PlaySound = _G.PlaySound
 local SOUNDKIT = _G.SOUNDKIT
+local PlaySoundFile = _G.PlaySoundFile
+local pcall = _G.pcall
 local time = _G.time
 local tostring = _G.tostring
 local tonumber = _G.tonumber
@@ -123,6 +125,30 @@ local function EnsureReminderDefaults(db)
   -- Keep legacy flags in sync for backward compatibility.
   reminders.enabled = reminders.mode ~= "off"
   reminders.useToasts = reminders.mode == "toast"
+
+  if reminders.soundMode == nil then
+    reminders.soundMode = "map_ping"
+  end
+
+  if reminders.soundMode ~= "off"
+    and reminders.soundMode ~= "map_ping"
+    and reminders.soundMode ~= "raid_warning"
+    and reminders.soundMode ~= "tell_message"
+    and reminders.soundMode ~= "mainmenu_open"
+    and reminders.soundMode ~= "custom" then
+    reminders.soundMode = "map_ping"
+  end
+
+  if reminders.soundMode == "custom" then
+    local customId = tonumber(reminders.customSoundID)
+    if customId and customId > 0 then
+      reminders.customSoundID = math.floor(customId + 0.5)
+    else
+      reminders.customSoundID = nil
+    end
+  else
+    reminders.customSoundID = nil
+  end
 
   if type(reminders.sent) ~= "table" then
     reminders.sent = {}
@@ -372,15 +398,75 @@ function ReminderService:CheckUpcoming(nowEpoch, upcomingEvents)
   end
 end
 
+local function ResolveReminderSound(reminders)
+  if type(reminders) ~= "table" then
+    return nil
+  end
+
+  local mode = reminders.soundMode
+  if mode == "off" then
+    return nil
+  end
+
+  if mode == "custom" then
+    local customId = tonumber(reminders.customSoundID)
+    if customId and customId > 0 then
+      return math.floor(customId + 0.5)
+    end
+    return nil
+  end
+
+  if not SOUNDKIT then
+    return nil
+  end
+
+  if mode == "map_ping" then
+    return SOUNDKIT.MAP_PING
+  elseif mode == "raid_warning" then
+    return SOUNDKIT.RAID_WARNING
+  elseif mode == "ready_check" then
+    return SOUNDKIT.READY_CHECK
+  elseif mode == "tell_message" then
+    return SOUNDKIT.TELL_MESSAGE
+  elseif mode == "mainmenu_open" then
+    return SOUNDKIT.IG_MAINMENU_OPEN
+  end
+
+  return nil
+end
+
+local function TryPlayReminderSound(soundId)
+  soundId = tonumber(soundId)
+  if not (soundId and soundId > 0) then
+    return false
+  end
+
+  if PlaySound then
+    local ok, played = pcall(PlaySound, soundId, "Master")
+    if ok and played then
+      return true
+    end
+  end
+
+  if PlaySoundFile then
+    local ok = pcall(PlaySoundFile, soundId, "Master") 
+    return ok and true or false
+  end
+
+  return false
+end
+
 function ReminderService:Notify(eventInfo, secondsUntilStart)
   local titleText = eventInfo and eventInfo.title or "Event"
   local timeLeftText = string.format("Starts in %s", FormatDurationShort(secondsUntilStart))
 
-  if self:UseToasts() then
-    if PlaySound and SOUNDKIT and SOUNDKIT.MAP_PING then
-      PlaySound(SOUNDKIT.MAP_PING, "Master")
-    end
+  EnsureReminderDefaults(self.db)
+  local soundId = ResolveReminderSound(self.db and self.db.reminders)
+  if soundId then
+    TryPlayReminderSound(soundId)
+  end
 
+  if self:UseToasts() then
     local toastSystem = EnsureToastSystem(self)
     if toastSystem and toastSystem.AddAlert then
       toastSystem:AddAlert(titleText, timeLeftText, eventInfo.icon, eventInfo._eventqTexCoord)
