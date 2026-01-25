@@ -109,7 +109,7 @@ end
 
 
 ---@param dayEpoch integer
----@return integer monthOffset, integer monthDay
+---@return string|integer monthOffset, string|integer monthDay
 function DateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
   local currentCal
   if C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime then
@@ -124,7 +124,7 @@ function DateUtil:EpochToCalendarOffsetAndDay(dayEpoch)
   return monthOffset, targetParts.day
 end
 
----@param s string
+---@param inputText string
 ---@param order "MDY"|"DMY"|nil
 ---@param isEnd boolean|nil  -- when date-only is provided, choose end-of-day defaults
 ---@return integer|nil epoch, string|nil err
@@ -202,7 +202,7 @@ end
 -- -----------------------------------------------------------------------------
 
 ---@param epoch integer
----@return integer weekday -- 1=Sunday .. 7=Saturday
+---@return string|integer weekday -- 1=Sunday .. 7=Saturday
 function DateUtil:GetWeekday(epoch)
   return (date("*t", epoch or time()).wday) or 1
 end
@@ -216,7 +216,7 @@ end
 
 ---@param year integer
 ---@param month integer
----@return integer
+---@return string|integer
 function DateUtil:GetDaysInMonth(year, month)
   year = tonumber(year) or 1970
   month = tonumber(month) or 1
