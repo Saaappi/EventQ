@@ -5,6 +5,8 @@ local SettingsModule = ns.Settings
 
 local CATEGORY_NAME = "EventQ"
 
+local REMINDER_CUSTOM_SOUND_DIALOG_KEY = "EVENTQ_REMINDER_CUSTOM_SOUND_ID"
+
 local function EnsureNotifyDefaults(db)
   db.notify = db.notify or {}
 
@@ -50,9 +52,112 @@ local function EnsureReminderDefaults(db)
   db.reminders.enabled = db.reminders.mode ~= "off"
   db.reminders.useToasts = db.reminders.mode == "toast"
 
+  if db.reminders.soundMode == nil then
+    db.reminders.soundMode = "map_ping"
+  end
+
+  if db.reminders.soundMode ~= "off"
+    and db.reminders.soundMode ~= "map_ping"
+    and db.reminders.soundMode ~= "raid_warning"
+    and db.reminders.soundMode ~= "tell_message"
+    and db.reminders.soundMode ~= "mainmenu_open"
+    and db.reminders.soundMode ~= "custom" then
+    db.reminders.soundMode = "map_ping"
+  end
+
+  if db.reminders.soundMode == "custom" then
+    local customId = tonumber(db.reminders.customSoundID)
+    if customId and customId > 0 then
+      db.reminders.customSoundID = math.floor(customId + 0.5)
+    else
+      db.reminders.customSoundID = nil
+    end
+  else
+    db.reminders.customSoundID = nil
+  end
+
   if type(db.reminders.sent) ~= "table" then
     db.reminders.sent = {}
   end
+end
+
+local function EnsureReminderCustomSoundDialog()
+  if not StaticPopupDialogs then
+    return false
+  end
+
+  if StaticPopupDialogs[REMINDER_CUSTOM_SOUND_DIALOG_KEY] then
+    return true
+  end
+
+  StaticPopupDialogs[REMINDER_CUSTOM_SOUND_DIALOG_KEY] = {
+    text = "Enter a sound ID for EventQ reminders. You can find IDs on Wago.tools or Wowhead.",
+    button1 = (ACCEPT or "Accept"),
+    button2 = (CANCEL or "Cancel"),
+    hasEditBox = 1,
+    maxLetters = 12,
+    OnAccept = function(dialog, data)
+      local raw = dialog:GetEditBox():GetText()
+      local soundId = tonumber(raw)
+
+      if data and data.db and data.db.reminders then
+        if soundId and soundId > 0 then
+          data.db.reminders.soundMode = "custom"
+          data.db.reminders.customSoundID = math.floor(soundId + 0.5)
+        else
+          data.db.reminders.customSoundID = nil
+          if UIErrorsFrame and UIErrorsFrame.AddMessage then
+            UIErrorsFrame:AddMessage("[EventQ]: Invalid sound ID.", 1, 0.1, 0.1)
+          else
+            print("[EventQ]: Invalid sound ID.")
+          end
+        end
+      end
+    end,
+    EditBoxOnEnterPressed = function(editBox, data)
+      local dialog = editBox:GetParent()
+      local raw = editBox:GetText()
+      local soundId = tonumber(raw)
+
+      if data and data.db and data.db.reminders then
+        if soundId and soundId > 0 then
+          data.db.reminders.soundMode = "custom"
+          data.db.reminders.customSoundID = math.floor(soundId + 0.5)
+        else
+          data.db.reminders.customSoundID = nil
+          if UIErrorsFrame and UIErrorsFrame.AddMessage then
+            UIErrorsFrame:AddMessage("[EventQ]: Invalid sound ID.", 1, 0.1, 0.1)
+          else
+            print("[EventQ]: Invalid sound ID.")
+          end
+        end
+      end
+
+      dialog:Hide()
+    end,
+    OnShow = function(dialog, data)
+      dialog:GetEditBox():SetFocus()
+      local existing = data and data.db and data.db.reminders and data.db.reminders.customSoundID
+      if existing then
+        dialog:GetEditBox():SetText(tostring(existing))
+        dialog:GetEditBox():HighlightText()
+      else
+        dialog:GetEditBox():SetText("")
+      end
+    end,
+    OnHide = function(dialog)
+      if ChatFrameUtil and ChatFrameUtil.FocusActiveWindow then
+        ChatFrameUtil.FocusActiveWindow()
+      end
+      dialog:GetEditBox():SetText("")
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+  }
+
+  return true
 end
 
 -- Custom Settings list element: a dropdown backed by the Settings API but using WowStyle1DropdownTemplate.
@@ -327,6 +432,102 @@ function SettingsModule:Init(db)
     reminderModeSetting,
     ReminderModeOptions,
     reminderTooltip
+  )
+
+  local function GetReminderSoundMode()
+    EnsureReminderDefaults(db)
+    return db.reminders.soundMode
+  end
+
+  local function SetReminderSoundMode(value)
+    EnsureReminderDefaults(db)
+    value = tostring(value or "")
+    if value ~= "off"
+      and value ~= "map_ping"
+      and value ~= "raid_warning"
+      and value ~= "ready_check"
+      and value ~= "tell_message"
+      and value ~= "mainmenu_open"
+      and value ~= "custom" then
+      value = "map_ping"
+    end
+
+    db.reminders.soundMode = value
+
+    if value ~= "custom" then
+      db.reminders.customSoundID = nil
+      return
+    end
+
+    if EnsureReminderCustomSoundDialog() and StaticPopup_Show then
+      StaticPopup_Show(REMINDER_CUSTOM_SOUND_DIALOG_KEY, nil, nil, { db = db })
+    end
+  end
+
+  local reminderSoundSetting = Settings.RegisterProxySetting(
+    category,
+    "EVENTQ_CUSTOM_REMINDER_SOUND",
+    Settings.VarType.String,
+    "Reminder Sound",
+    "map_ping",
+    GetReminderSoundMode,
+    SetReminderSoundMode
+  )
+
+  local function ReminderSoundOptions()
+    return {
+      {
+        value = "map_ping",
+        label = "Map Ping",
+        text = "Map Ping",
+        tooltip = "Default EventQ reminder sound.",
+        recommend = true,
+      },
+      {
+        value = "raid_warning",
+        label = "Raid Warning",
+        text = "Raid Warning",
+        tooltip = "A louder, attention-grabbing warning sound.",
+      },
+      {
+        value = "ready_check",
+        label = "Ready Check",
+        text = "Ready Check",
+        tooltip = "Plays the ready check sound.",
+      },
+      {
+        value = "tell_message",
+        label = "Whisper",
+        text = "Whisper (Tell Message)",
+        tooltip = "Plays the whisper notification sound.",
+      },
+      {
+        value = "mainmenu_open",
+        label = "Main Menu",
+        text = "Main Menu Open",
+        tooltip = "Plays the main menu open sound.",
+      },
+      {
+        value = "custom",
+        label = "Custom",
+        text = "Custom (Enter Sound ID...)",
+        tooltip = "Prompts you to enter a sound ID from Wowhead or Wago.tools.",
+      },
+      {
+        value = "off",
+        label = "Off",
+        text = "Disabled",
+        tooltip = "Disables reminder sounds.",
+      },
+    }
+  end
+
+  local reminderSoundTooltip = "Choose which sound plays when a custom event reminder fires."
+  local reminderSoundInitializer = Settings.CreateControlInitializer(
+    "EventQWowStyle1DropdownControlTemplate",
+    reminderSoundSetting,
+    ReminderSoundOptions,
+    reminderSoundTooltip
   )
 
   if layout and layout.AddInitializer then
