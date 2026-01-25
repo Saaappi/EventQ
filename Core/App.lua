@@ -416,6 +416,9 @@ function App:Constructor(db)
   self.importExport = ns.ImportExport()
   self.calendar = ns.CalendarService(self.log, self.dateUtil)
   self.reminders = ns.ReminderService and ns.ReminderService(self.log, self.dateUtil, db) or nil
+  if self.reminders then
+    self.reminders.app = self
+  end
   self.ui = ns.UIMainFrame(self)
 
   self.ongoing = {}

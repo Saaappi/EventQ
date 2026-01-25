@@ -4,6 +4,8 @@ local ReminderService = ns.Class:Create("ReminderService")
 
 -- Hot-path locals
 local _G = _G
+local C_Timer = _G.Timer
+local abs = math.abs
 local UIErrorsFrame = _G.UIErrorsFrame
 local PlaySound = _G.PlaySound
 local SOUNDKIT = _G.SOUNDKIT
@@ -397,6 +399,95 @@ function ReminderService:CheckUpcoming(nowEpoch, upcomingEvents)
       end
     end
   end
+
+  -- Schedule the next exact reminder boundary so reminders fire on time.
+  self:_ScheduleNextWake(nowEpoch, upcomingEvents)
+end
+
+function ReminderService:_CancelNextWake()
+  if self._nextWakeTimer and self._nextWakeTimer.Cancel then
+    self._nextWakeTimer:Cancel()
+  end
+  self._nextWakeTimer = nil
+  self._nextWakeEpoch = nil
+end
+
+function ReminderService:_ScheduleNextWake(nowEpoch, upcomingEvents)
+  if not C_Timer or not C_Timer.NewTimer then
+    return
+  end
+
+  if not self.db or not self.db.reminders or self.db.reminders.mode == "off" then
+    self:_CancelNextWake()
+    return
+  end
+
+  local nextEpoch = nil
+
+  for _, eventInfo in ipairs(upcomingEvents or {}) do
+    if eventInfo and eventInfo.isCustom and eventInfo.id and eventInfo.startEpoch then
+      local startEpoch = tonumber(eventInfo.startEpoch) or 0
+      local endEpoch = tonumber(eventInfo.endEpoch) or startEpoch
+      local secondsUntilStart = startEpoch - nowEpoch
+      if secondsUntilStart > 0 then
+        local durationSeconds = endEpoch - startEpoch
+        if durationSeconds < 0 then
+          durationSeconds = 0
+        end
+
+        local leadTimesSeconds
+        if eventInfo.series then
+          local cadenceSeconds = ComputeSeriesCadenceSeconds(eventInfo.series, durationSeconds, self.dateUtil, startEpoch)
+          leadTimesSeconds = ComputeSmartSeriesLeadTimesSeconds(cadenceSeconds, durationSeconds)
+        else
+          leadTimesSeconds = NormalizeStandaloneLeadTimesSeconds(eventInfo.reminders)
+        end
+
+        if leadTimesSeconds and #leadTimesSeconds > 0 then
+          local sentByLead = GetOrCreateSentTable(self.db, eventInfo.id)
+          for _, leadSeconds in ipairs(leadTimesSeconds) do
+            local leadKey = tostring(leadSeconds)
+            if sentByLead[leadKey] ~= startEpoch then
+              local triggerEpoch = startEpoch - leadSeconds
+              if triggerEpoch > nowEpoch then
+                if (not nextEpoch) or triggerEpoch < nextEpoch then
+                  nextEpoch = triggerEpoch
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  if not nextEpoch then
+    self:_CancelNextWake()
+    return
+  end
+
+  -- If the target wake time hasn't changed meaningfully, keep the existing timer.
+  if self._nextWakeEpoch and abs(self._nextWakeEpoch - nextEpoch) < 1 then
+    return
+  end
+
+  self:_CancelNextWake()
+
+  local delay = nextEpoch - nowEpoch
+  if delay < 0.25 then
+    delay = 0.25 -- avoid 0/negative delays
+  end
+
+  self._nextWakeEpoch = nextEpoch
+  self._nextWakeTimer = C_Timer.NewTimer(delay, function()
+    self._nextWakeTimer = nil
+    self._nextWakeEpoch = nil
+
+    -- Fire a refresh at the exact reminder boundary. CheckUpcoming runs inside RefreshAll.
+    if self.app and self.app.RefreshAll then
+      self.app:RefreshAll()
+    end
+  end)
 end
 
 local function ResolveReminderSound(reminders)

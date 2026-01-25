@@ -149,7 +149,7 @@ local function WarmCalendar()
   -- Calendar initialization can be slow (or race with early CALENDAR_UPDATE_* events).
   -- Retry a few times shortly after login to ensure the list is populated.
   local retryDelaysSeconds = { 1, 3, 6 }
-  for delayIndex, delaySeconds in ipairs(retryDelaysSeconds) do
+  for _, delaySeconds in ipairs(retryDelaysSeconds) do
     C_Timer.After(delaySeconds, function()
       if not app then return end
       app:RequestCalendar()
@@ -253,7 +253,9 @@ addonFrame:SetScript("OnEvent", function(_, event, arg1)
 
 
     C_Timer.NewTicker(60, function()
-      if not app then return end
+      if not app then
+        return
+      end
 
       -- When the UI is hidden, refreshing every minute is wasteful.
       -- Keep background refreshes for reminders/notifications, but at a lower cadence.
