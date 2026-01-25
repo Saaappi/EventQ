@@ -62,6 +62,30 @@ local function EnsureDB()
   EventQDB.reminders.enabled = EventQDB.reminders.mode ~= "off"
   EventQDB.reminders.useToasts = EventQDB.reminders.mode == "toast"
 
+  if EventQDB.reminders.soundMode == nil then
+    EventQDB.reminders.soundMode = "map_ping"
+  end
+
+  if EventQDB.reminders.soundMode ~= "off"
+    and EventQDB.reminders.soundMode ~= "map_ping"
+    and EventQDB.reminders.soundMode ~= "raid_warning"
+    and EventQDB.reminders.soundMode ~= "tell_message"
+    and EventQDB.reminders.soundMode ~= "mainmenu_open"
+    and EventQDB.reminders.soundMode ~= "custom" then
+    EventQDB.reminders.soundMode = "map_ping"
+  end
+
+  if EventQDB.reminders.soundMode == "custom" then
+    local customId = tonumber(EventQDB.reminders.customSoundID)
+    if customId and customId > 0 then
+      EventQDB.reminders.customSoundID = math.floor(customId + 0.5)
+    else
+      EventQDB.reminders.customSoundID = nil
+    end
+  else
+    EventQDB.reminders.customSoundID = nil
+  end
+
   if type(EventQDB.reminders.sent) ~= "table" then
     EventQDB.reminders.sent = {}
   end
