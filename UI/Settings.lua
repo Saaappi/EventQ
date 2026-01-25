@@ -434,6 +434,12 @@ function SettingsModule:Init(db)
     reminderTooltip
   )
 
+  if layout and layout.AddInitializer then
+    layout:AddInitializer(reminderModeInitializer)
+  else
+    Settings.CreateDropdown(category, reminderModeSetting, ReminderModeOptions, reminderTooltip)
+  end
+
   local function GetReminderSoundMode()
     EnsureReminderDefaults(db)
     return db.reminders.soundMode
@@ -531,9 +537,9 @@ function SettingsModule:Init(db)
   )
 
   if layout and layout.AddInitializer then
-    layout:AddInitializer(reminderModeInitializer)
+    layout:AddInitializer(reminderSoundInitializer)
   else
-    Settings.CreateDropdown(category, reminderModeSetting, ReminderModeOptions, reminderTooltip)
+    Settings.CreateDropdown(category, reminderSoundSetting, ReminderSoundOptions, reminderSoundTooltip)
   end
 
 
