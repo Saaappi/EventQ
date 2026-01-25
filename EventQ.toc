@@ -4,6 +4,7 @@
 ## SavedVariables: EventQDB
 ## Author: LightskyGG
 ## Version: 2.2.0
+## IconTexture: 1506458
 
 EventQ.xml
 
