@@ -4,7 +4,7 @@ local ReminderService = ns.Class:Create("ReminderService")
 
 -- Hot-path locals
 local _G = _G
-local C_Timer = _G.Timer
+local C_Timer = _G.C_Timer
 local abs = math.abs
 local UIErrorsFrame = _G.UIErrorsFrame
 local PlaySound = _G.PlaySound
@@ -483,7 +483,15 @@ function ReminderService:_ScheduleNextWake(nowEpoch, upcomingEvents)
     self._nextWakeTimer = nil
     self._nextWakeEpoch = nil
 
-    -- Fire a refresh at the exact reminder boundary. CheckUpcoming runs inside RefreshAll.
+    -- Run the reminder check immediately using the latest computed upcoming list.
+    -- This avoids RefreshAll() contention and calendar scan latency.
+    local app = self.app
+    if app and app.reminders and app.upcoming then
+      self:CheckUpcoming(time(), app.upcoming)
+      return
+    end
+
+    -- Fallback if there isn't an upcoming list yet.
     if self.app and self.app.RefreshAll then
       self.app:RefreshAll()
     end
