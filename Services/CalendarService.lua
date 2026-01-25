@@ -190,12 +190,7 @@ end
 ---@param eventID string
 ---@param monthOffset number?
 ---@param monthDay number?
----@param title string?
----@param calendarType string?
 ---@return string|nil
----@param eventID string
----@param monthOffset number?
----@param monthDay number?
 ---@return number|nil fileID
 function CalendarService:TryFetchBestIcon(eventID, monthOffset, monthDay)
   if not eventID then return nil end
@@ -340,14 +335,6 @@ function CalendarService:TryFetchCreator(eventID, monthOffset, monthDay)
   return nil
 end
 
----@param maxDaysAhead integer
----@return table events
----@param e table
-
----@param monthOffset number
----@param monthDay number
----@param eventID string
----@return number|nil fileID
 ---@param monthOffset number
 ---@param monthDay number
 ---@param eventID string|nil
