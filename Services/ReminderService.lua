@@ -133,6 +133,7 @@ local function EnsureReminderDefaults(db)
   if reminders.soundMode ~= "off"
     and reminders.soundMode ~= "map_ping"
     and reminders.soundMode ~= "raid_warning"
+    and reminders.soundMode ~= "ready_check"
     and reminders.soundMode ~= "tell_message"
     and reminders.soundMode ~= "mainmenu_open"
     and reminders.soundMode ~= "custom" then
