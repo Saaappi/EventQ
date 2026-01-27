@@ -235,9 +235,18 @@ function DateTimePicker:Ensure()
   close:SetPoint("TOPRIGHT", -6, -6)
 
   -- Month header
-  pickerFrame.MonthText = pickerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  pickerFrame.MonthText:SetPoint("TOPLEFT", 16, -14)
-  pickerFrame.MonthText:SetText("")
+  -- Keep month navigation buttons in fixed positions
+  pickerFrame.monthHeader = CreateFrame("Frame", nil, pickerFrame)
+  pickerFrame.monthHeader:SetPoint("TOPLEFT", 16, -14)
+  pickerFrame.monthHeader:SetSize(44 * 7, 20)
+
+  pickerFrame.monthText = pickerFrame.monthHeader:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  pickerFrame.monthText:SetPoint("CENTER", 0, 0)
+  pickerFrame.monthText:SetJustifyH("CENTER")
+  -- Constrain width so long localized month names don't push navigation buttons.
+  pickerFrame.monthText:SetWidth((44 * 7) - (26 * 2) - 16)
+  pickerFrame.monthText:SetText("")
+
   local function StyleHeaderChevron(btn, atlas, fallbackText)
     -- Use the same atlas chevrons as the time spinners (avoids font issues with "<" and ">").
     btn._fallbackText = fallbackText or btn._fallbackText or ""
@@ -273,14 +282,14 @@ function DateTimePicker:Ensure()
   end
 
 
-  pickerFrame.Prev = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+  pickerFrame.Prev = CreateFrame("Button", nil, pickerFrame.monthHeader, "UIPanelButtonTemplate")
   pickerFrame.Prev:SetSize(26, 20)
-  pickerFrame.Prev:SetPoint("LEFT", pickerFrame.MonthText, "RIGHT", 10, 0)
+  pickerFrame.Prev:SetPoint("LEFT", pickerFrame.monthHeader, "LEFT", 0, 0)
   StyleHeaderChevron(pickerFrame.Prev, "uitools-icon-chevron-left", "<")
 
-  pickerFrame.Next = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
+  pickerFrame.Next = CreateFrame("Button", nil, pickerFrame.monthHeader, "UIPanelButtonTemplate")
   pickerFrame.Next:SetSize(26, 20)
-  pickerFrame.Next:SetPoint("LEFT", pickerFrame.Prev, "RIGHT", 4, 0)
+  pickerFrame.Next:SetPoint("RIGHT", pickerFrame.monthHeader, "RIGHT", 0, 0)
   StyleHeaderChevron(pickerFrame.Next, "uitools-icon-chevron-right", ">")
 
   -- Weekday labels
@@ -545,7 +554,7 @@ function DateTimePicker:RefreshCalendar()
   if not pickerFrame.state then return end
 
   local state = pickerFrame.state
-  pickerFrame.MonthText:SetText(string.format("%s %d", MonthName(state.month), state.year))
+  pickerFrame.monthText:SetText(string.format("%s %d", MonthName(state.month), state.year))
 
   local firstWday = FirstWeekdayOfMonth(state.year, state.month) -- 1..7
   local offset = firstWday - 1 -- 0..6, number of cells before day 1
