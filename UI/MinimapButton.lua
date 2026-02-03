@@ -193,7 +193,7 @@ local function SetTooltip(button)
     GameTooltip:AddLine("Click + hold: Move", 1, 1, 1)
   end
 
-  GameTooltip:AddLine("Tip: You can disable this button in Settings -> Minimap.", 0.8, 0.8, 0.8)
+  GameTooltip:AddLine("\nTip: You can disable this button in Settings -> Minimap.", 0.12, 1, 0)
 
   GameTooltip:Show()
 end

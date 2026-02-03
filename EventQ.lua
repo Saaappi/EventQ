@@ -169,8 +169,8 @@ do
     GameTooltip:SetOwner(menuButtonFrame or UIParent, "ANCHOR_LEFT")
     GameTooltip:ClearLines()
     GameTooltip:AddLine("EventQ")
-    GameTooltip:AddLine("Left-click: Open UI", 1, 1, 1)
-    GameTooltip:AddLine("Right-click: Open Settings", 1, 1, 1)
+    GameTooltip:AddLine("Left-click: Open", 1, 1, 1)
+    GameTooltip:AddLine("Right-click: Settings", 1, 1, 1)
     GameTooltip:Show() 
   end
 
