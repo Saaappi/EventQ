@@ -151,6 +151,39 @@ local function isBlank(inputText)
   return (not inputText) or strtrim(inputText) == ""
 end
 
+local function IsCalendarLockoutEvent(dayEvent)
+  if not dayEvent then
+    return false
+  end
+
+  local function TypeHasLockout(value)
+    if type(value) ~= "string" then
+      return false
+    end
+
+    return value:find("LOCKOUT", 1, true) ~= nil
+  end
+
+  if TypeHasLockout(dayEvent.calendarType) then
+    return true
+  end
+
+  if TypeHasLockout(dayEvent.eventType) then
+    return true
+  end
+
+  if type(dayEvent.calendarType) == "number" then
+    local enum =_G.Enum and _G.Enum.CalendarType
+    if enum then
+      if enum.RaidLockout and dayEvent.calendarType == enum.RaidLockout then
+        return true
+      end
+    end
+  end
+
+  return false
+end
+
 local function holidayTextureByName(monthOffset, monthDay, title)
   if not title or not monthOffset or not monthDay then return nil end
   for holidayIndex = 1, 50 do
@@ -639,7 +672,7 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
           local numDayEvents = GetNumDayEvents(0, monthDay)
           for eventIndex = 1, numDayEvents do
             local dayEvent = GetDayEvent(0, monthDay, eventIndex)
-            if dayEvent and dayEvent.startTime then
+            if dayEvent and (not IsCalendarLockoutEvent(dayEvent)) and dayEvent.startTime then
               local startEpoch = dateUtil:CalendarTimeToEpoch(dayEvent.startTime)
               if startEpoch then
                 local eventEndEpoch = ComputeEndEpoch(startEpoch, dayEvent.endTime, dayEvent.calendarType, dateUtil)
@@ -838,7 +871,7 @@ function CalendarService:CollectWindow(maxDaysAhead)
     local numDayEvents = GetNumDayEvents(monthOffset, monthDay)
     for eventIndex = 1, numDayEvents do
       local dayEvent = GetDayEvent(monthOffset, monthDay, eventIndex)
-      if dayEvent and dayEvent.startTime then
+      if dayEvent and (not IsCalendarLockoutEvent(dayEvent)) and dayEvent.startTime then
         local startEpoch = dateUtil:CalendarTimeToEpoch(dayEvent.startTime)
         if startEpoch then
           local eventEndEpoch = ComputeEndEpoch(startEpoch, dayEvent.endTime, dayEvent.calendarType, dateUtil)
