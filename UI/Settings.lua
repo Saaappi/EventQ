@@ -569,10 +569,11 @@ function SettingsModule:Init(db)
     db.minimap.hide = not value
 
     -- Apply immediately in case the minimap button is already initialized.
-    if ns.MinimapButton and ns.MinimapButton.SetHidden then
-      ns.MinimapButton:SetHidden(db.minimap.hide)
-    elseif ns.MinimapButton and ns.MinimapButton.Refresh then
-      ns.MinimapButton:Refresh()
+    if ns.MinimapButton then
+      ns.MinimapButton.db = db.minimap
+      if ns.MinimapButton.Refresh then
+        ns.MinimapButton:Refresh()
+      end
     end
   end
 
