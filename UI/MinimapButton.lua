@@ -38,26 +38,20 @@ local function LockVisibility(btn)
     return
   end
 
-  btn._eventqVisLocked = true
-  btn._eventqOrigShow = btn.Show
-  btn._eventqOrigSetShown = btn.SetShown
+  btn._eventqOnShowLocked = true
+  btn._eventqOrigOnShow = btn:GetScript("OnShow")
 
-  btn.Show = function(selfBtn)
-    if selfBtn.db and selfBtn.db.hide then
-      -- Minimap Button Bag (or something else) tried to show the button
-      -- while it's configured hidden.
-      selfBtn._eventqOrigSetShown(selfBtn, false)
+  btn:SetScript("OnShow", function(self)
+    if self.db and self.db.hide then
+      self:Hide()
       return
     end
-    return selfBtn._eventqOrigShow(selfBtn)
-  end
 
-  btn.SetShown = function(selfBtn, shown)
-    if selfBtn.db and selfBtn.db.hide then
-      return selfBtn._eventqOrigSetShown(selfBtn, false)
+    local orig = self._eventqOrigOnShow
+    if orig then
+      orig(self)
     end
-    return selfBtn._eventqOrigSetShown(selfBtn, shown)
-  end
+  end)
 end
 
 local function UnlockVisibility(btn)
@@ -65,16 +59,9 @@ local function UnlockVisibility(btn)
     return
   end
 
-  if btn._eventqOrigShow then
-    btn.Show = btn._eventqOrigShow
-  end
-  if btn._eventqOrigSetShown then
-    btn.SetShown = btn._eventqOrigSetShown
-  end
-
-  btn._eventqOrigShow = nil
-  btn._eventqOrigSetShown = nil
-  btn._eventqVisLocked = nil
+  btn:SetScript("OnShow", btn._eventqOrigOnShow)
+  btn._eventqOrigOnShow = nil
+  btn._eventqOnShowLocked = nil
 end
 
 local math = _G.math
@@ -377,6 +364,8 @@ function MinimapButton:Refresh()
     -- until the player re-enables it.
     if IsMBBLoaded() then
       LockVisibility(self.button)
+    else
+      UnlockVisibility(self.button)
     end
 
     self.button:Hide()
@@ -386,7 +375,7 @@ function MinimapButton:Refresh()
     UnlockVisibility(self.button)
 
     self.button:SetAlpha(1)
-    self.button:EnableMouse()
+    self.button:EnableMouse(true)
     self.button:Show()
   end
 end
