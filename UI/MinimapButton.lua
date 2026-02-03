@@ -33,6 +33,50 @@ local function IsMBBLoaded()
   return _G.IsAddOnLoaded and _G.IsAddOnLoaded("MBB") or false
 end
 
+local function LockVisibility(btn)
+  if not btn or btn._eventqVisLocked then
+    return
+  end
+
+  btn._eventqVisLocked = true
+  btn._eventqOrigShow = btn.Show
+  btn._eventqOrigSetShown = btn.SetShown
+
+  btn.Show = function(selfBtn)
+    if selfBtn.db and selfBtn.db.hide then
+      -- Minimap Button Bag (or something else) tried to show the button
+      -- while it's configured hidden.
+      selfBtn._eventqOrigSetShown(selfBtn, false)
+      return
+    end
+    return selfBtn._eventqOrigShow(selfBtn)
+  end
+
+  btn.SetShown = function(selfBtn, shown)
+    if selfBtn.db and selfBtn.db.hide then
+      return selfBtn._eventqOrigSetShown(selfBtn, false)
+    end
+    return selfBtn._eventqOrigSetShown(selfBtn, shown)
+  end
+end
+
+local function UnlockVisibility(btn)
+  if not btn or not btn._eventqVisLocked then
+    return
+  end
+
+  if btn._eventqOrigShow then
+    btn.Show = btn._eventqOrigShow
+  end
+  if btn._eventqOrigSetShown then
+    btn.SetShown = btn._eventqOrigSetShown
+  end
+
+  btn._eventqOrigShow = nil
+  btn._eventqOrigSetShown = nil
+  btn._eventqVisLocked = nil
+end
+
 local math = _G.math
 local atan2 = math.atan2
 local cos = math.cos
@@ -328,8 +372,21 @@ function MinimapButton:Refresh()
   UpdatePosition(self.button)
 
   if self.db.hide then
+    -- If MBB is loaded, it will likely try to force-show collected buttons
+    -- in the bag. Lock visibility so external addons can't resurrect the button
+    -- until the player re-enables it.
+    if IsMBBLoaded() then
+      LockVisibility(self.button)
+    end
+
     self.button:Hide()
+    self.button:SetAlpha(0)
+    self.button:EnableMouse(false)
   else
+    UnlockVisibility(self.button)
+
+    self.button:SetAlpha(1)
+    self.button:EnableMouse()
     self.button:Show()
   end
 end
