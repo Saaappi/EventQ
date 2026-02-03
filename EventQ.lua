@@ -140,6 +140,47 @@ local function EnsureApp()
   return app
 end
 
+-- Addon compartment integration.
+do
+  local GameTooltip = _G.GameTooltip
+  local UIParent = _G.UIParent
+
+  _G.EventQ_OnAddonCompartmentClick = function(_, buttonName)
+    -- Mimic the minimap button: left-click opens the main UI, right-click opens the settings.
+    EnsureApp()
+
+    if buttonName == "RightButton" then
+      if ns.Settings and ns.Settings.Open then
+        ns.Settings:Open()
+      end
+      return
+    end
+
+    if app and app.ToggleUI then
+      app:ToggleUI()
+    end
+  end
+
+  _G.EventQ_OnAddonCompartmentEnter = function(_, menuButtonFrame)
+    if not (GameTooltip and GameTooltip) then
+      return
+    end
+
+    GameTooltip:SetOwner(menuButtonFrame or UIParent, "ANCHOR_LEFT")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine("EventQ")
+    GameTooltip:AddLine("Left-click: Open UI", 1, 1, 1)
+    GameTooltip:AddLine("Right-click: Open Settings", 1, 1, 1)
+    GameTooltip:Show() 
+  end
+
+  _G.EventQ_OnAddonCompartmentLeave = function()
+    if GameTooltip then
+      GameTooltip:Hide()
+    end
+  end
+end
+
 local function WarmCalendar()
   if not app then return end
 

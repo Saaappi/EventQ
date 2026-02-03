@@ -7,6 +7,16 @@ local CATEGORY_NAME = "EventQ"
 
 local REMINDER_CUSTOM_SOUND_DIALOG_KEY = "EVENTQ_REMINDER_CUSTOM_SOUND_ID"
 
+local function EnsureMinimapDefaults(db)
+  db.minimap = db.minimap or {}
+  if type(db.minimap) ~= "table" then
+    db.minimap = {}
+  end
+
+  db.minimap.hide = not not db.minimap.hide
+  db.minimap.minimapPos = tonumber(db.minimap.minimapPos) or 225
+end
+
 local function EnsureNotifyDefaults(db)
   db.notify = db.notify or {}
 
@@ -314,6 +324,7 @@ function SettingsModule:Init(db)
     return
   end
 
+  EnsureMinimapDefaults(db)
   EnsureNotifyDefaults(db)
   EnsureReminderDefaults(db)
 
@@ -543,6 +554,43 @@ function SettingsModule:Init(db)
     Settings.CreateDropdown(category, reminderSoundSetting, ReminderSoundOptions, reminderSoundTooltip)
   end
 
+  -- Minimap section
+  if layout and layout.AddInitializer then
+    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Minimap"))
+  end
+
+  local function GetShowMinimapButton()
+    EnsureMinimapDefaults(db)
+    return not db.minimap.hide
+  end
+
+  local function SetShowMinimapButton(value)
+    EnsureMinimapDefaults(db)
+    db.minimap.hide = not value
+
+    -- Apply immediately in case the minimap button is already initialized.
+    if ns.MinimapButton and ns.MinimapButton.SetHidden then
+      ns.MinimapButton:SetHidden(db.minimap.hide)
+    elseif ns.MinimapButton and ns.MinimapButton.Refresh then
+      ns.MinimapButton:Refresh()
+    end
+  end
+
+  local minimapButtonSetting = Settings.RegisterProxySetting(
+    category,
+    "EVENTQ_MINIMAP_BUTTON",
+    Settings.VarType.Boolean,
+    "Minimap Button",
+    Settings.Default.True,
+    GetShowMinimapButton,
+    SetShowMinimapButton
+  )
+
+  Settings.CreateCheckbox(
+    category,
+    minimapButtonSetting,
+    "Show or hide the minimap button. Disable this if you would prefer to use the addon compartment entry."
+  )
 
   -- "Window" section: allow the user to reset the main frame position.
   if layout and layout.AddInitializer and type(CreateSettingsButtonInitializer) == "function" then
