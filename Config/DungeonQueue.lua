@@ -14,38 +14,42 @@ DungeonQueue.ByEventID = {
   [423]  = 288,  -- Love is in the Air
 
   -- Timewalking (random dungeon queues)
-  [559]  = 744,  -- TBC
-  [562]  = 995,  -- WotLK
-  [587]  = 1146, -- Cata
-  [616]  = 995,  -- WotLK
-  [617]  = 995,  -- WotLK
-  [618]  = 744,  -- TBC
-  [622]  = 744,  -- TBC
-  [623]  = 744,  -- TBC
-  [624]  = 995,  -- WotLK
-  [628]  = 1146, -- Cata
-  [629]  = 1146, -- Cata
-  [630]  = 1146, -- Cata
-  [643]  = 1453, -- MoP
-  [652]  = 1453, -- MoP
-  [654]  = 1453, -- MoP
-  [656]  = 1453, -- MoP
-  [1056] = 1971, -- WoD
-  [1063] = 1971, -- WoD
-  [1065] = 1971, -- WoD
-  [1068] = 1971, -- WoD
-  [1263] = 2274, -- Legion
-  [1265] = 2274, -- Legion
-  [1267] = 2274, -- Legion
-  [1269] = 2274, -- Legion
-  [1508] = 2634, -- Classic
-  [1583] = 2634, -- Classic
-  [1584] = 2634, -- Classic
-  [1585] = 2634, -- Classic
-  [1666] = 2874, -- BfA
-  [1667] = 2874, -- BfA
-  [1668] = 2874, -- BfA
-  [1669] = 2874, -- BfA
+  --[559]  = 744,  -- TBC
+  --[562]  = 995,  -- WotLK
+  --[587]  = 1146, -- Cata
+  --[616]  = 995,  -- WotLK
+  --[617]  = 995,  -- WotLK
+  --[618]  = 744,  -- TBC
+  --[622]  = 744,  -- TBC
+  --[623]  = 744,  -- TBC
+  --[624]  = 995,  -- WotLK
+  --[628]  = 1146, -- Cata
+  --[629]  = 1146, -- Cata
+  --[630]  = 1146, -- Cata
+  --[643]  = 1453, -- MoP
+  --[652]  = 1453, -- MoP
+  --[654]  = 1453, -- MoP
+  --[656]  = 1453, -- MoP
+  --[1056] = 1971, -- WoD
+  --[1063] = 1971, -- WoD
+  --[1065] = 1971, -- WoD
+  --[1068] = 1971, -- WoD
+  --[1263] = 2274, -- Legion
+  --[1265] = 2274, -- Legion
+  --[1267] = 2274, -- Legion
+  --[1269] = 2274, -- Legion
+  --[1508] = 2634, -- Classic
+  --[1583] = 2634, -- Classic
+  --[1584] = 2634, -- Classic
+  --[1585] = 2634, -- Classic
+  --[1666] = 2874, -- BfA
+  --[1667] = 2874, -- BfA
+  --[1668] = 2874, -- BfA
+  --[1669] = 2874, -- BfA
+  --[1666] = 3076, -- SL
+  --[1667] = 3076, -- SL
+  --[1668] = 3076, -- SL
+  --[1669] = 3076, -- SL
 }
 
 -- Random Timewalking Dungeon queue IDs (LFGDungeons.db2 / LfgDungeonID).
@@ -58,12 +62,8 @@ DungeonQueue.RandomTimewalkingByExpansionIndex = {
   [4] = 1453, -- Mists of Pandaria
   [5] = 1971, -- Warlords of Draenor
   [6] = 2274, -- Legion
-
-  -- TODO: fill these from LFGDungeons.db2 (wago.tools) for your current client build.
-  [7] = nil,  -- Battle for Azeroth  (Random Timewalking Dungeon (Battle for Azeroth))
-  [8] = nil,  -- Shadowlands         (Random Timewalking Dungeon (Shadowlands))
-  [9] = nil,  -- Dragonflight        (if/when enabled)
-  [10] = nil, -- The War Within      (if/when enabled)
+  [7] = 2874,  -- Battle for Azeroth  (Random Timewalking Dungeon (Battle for Azeroth))
+  [8] = 3076,  -- Shadowlands         (Random Timewalking Dungeon (Shadowlands))
 }
 
 local function GetExpansionName(expIndex)
