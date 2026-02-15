@@ -1,6 +1,8 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local ImportExportPopup = ns.Class:Create("ImportExportPopup")
+local ImportExportPopup = Class:Create("ImportExportPopup")
+Addon.modules.ImportExportPopup = ImportExportPopup
 
 local function EnsureFrame(self)
   if self.frame then return self.frame end
@@ -166,5 +168,3 @@ function ImportExportPopup:ShowImport(importFunc)
   SetStatus(popup, "")
   popup:Show()
 end
-
-ns.ImportExportPopup = ImportExportPopup

@@ -1,6 +1,8 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local DateUtil = ns.Class:Create("DateUtil")
+local DateUtil = Class:Create("DateUtil")
+Addon.modules.DateUtil = DateUtil
 
 local function pad2(numberValue)
   numberValue = tonumber(numberValue) or 0
@@ -358,5 +360,3 @@ function DateUtil:AddYearsByMonthDay(epoch, years, month, day)
     isdst = false,
   })
 end
-
-ns.DateUtil = DateUtil

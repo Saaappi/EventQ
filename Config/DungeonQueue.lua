@@ -1,7 +1,8 @@
 -- Maps certain calendar events (currently Timewalking) to an LFD dungeon ID so rows can be left-clicked to queue.
-local _, ns = ...
+local Addon = _G.EventQ
 
 local DungeonQueue = {}
+Addon.modules.DungeonQueue = DungeonQueue
 
 -- Explicit eventID -> LfgDungeonID mapping.
 -- If an event has a matching eventID, we prefer this mapping over any text/heuristic approach.
@@ -128,4 +129,3 @@ function DungeonQueue:GetDungeonID(event)
   return nil
 end
 
-ns.DungeonQueue = DungeonQueue

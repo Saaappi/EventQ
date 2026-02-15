@@ -1,6 +1,8 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local Row = ns.Class:Create("Row")
+local Row = Class:Create("Row")
+Addon.modules.UIRow = Row
 
 local MENU = CreateFrame("Frame", "EventQRowContextMenu", UIParent, "UIDropDownMenuTemplate")
 local QUEUEABLE_TITLE_R, QUEUEABLE_TITLE_G, QUEUEABLE_TITLE_B = 0.4, 0.8, 1.0 -- #66CCFF
@@ -116,8 +118,9 @@ local function TryQueueLFD(dungeonID)
 end
 
 local function TryQueueBrawl()
-  if ns.PVPQueue and ns.PVPQueue.JoinBrawl then
-    return ns.PVPQueue:JoinBrawl()
+  local pvpQueue = Addon.modules.PVPQueue
+  if pvpQueue and pvpQueue.JoinBrawl then
+    return pvpQueue:JoinBrawl()
   end
   return false
 end
@@ -438,8 +441,9 @@ function Row:Constructor(frame, app)
           if AnyRolesSelected("PVE") then
             TryQueueLFD(self.LfgDungeonID)
           else
-            if ns.RolePopup and ns.RolePopup.Show then
-              ns.RolePopup:Show("PVE", function()
+            local rolePopup = Addon.modules.RolePopup
+            if rolePopup and rolePopup.Show then
+              rolePopup:Show("PVE", function()
                 TryQueueLFD(self.LfgDungeonID)
               end)
             else
@@ -454,8 +458,9 @@ function Row:Constructor(frame, app)
           if AnyRolesSelected("PVP") then
             TryQueueBrawl()
           else
-            if ns.RolePopup and ns.RolePopup.Show then
-              ns.RolePopup:Show("PVP", function()
+            local rolePopup = Addon.modules.RolePopup
+            if rolePopup and rolePopup.Show then
+              rolePopup:Show("PVP", function()
                 TryQueueBrawl()
               end)
             else
@@ -551,10 +556,12 @@ function Row:SetEvent(event, dateUtil)
   self.data = event
   self.frame._eventqData = event
 
-  self.LfgDungeonID = (ns.DungeonQueue and ns.DungeonQueue.GetDungeonID and ns.DungeonQueue:GetDungeonID(event)) or nil
+  local dungeonQueue = Addon.modules.DungeonQueue
+  self.LfgDungeonID = (dungeonQueue and dungeonQueue.GetDungeonID and dungeonQueue:GetDungeonID(event)) or nil
   self.frame._eventqLfgDungeonID = self.LfgDungeonID
 
-  self.IsBrawl = (ns.PVPQueue and ns.PVPQueue.IsBrawlEvent and ns.PVPQueue:IsBrawlEvent(event)) or false
+  local pvpQueue = Addon.modules.PVPQueue
+  self.IsBrawl = (pvpQueue and pvpQueue.IsBrawlEvent and pvpQueue:IsBrawlEvent(event)) or false
   self.frame._eventqIsBrawl = self.IsBrawl
 
   if not event then
@@ -644,4 +651,3 @@ function Row:SetEvent(event, dateUtil)
   end
 end
 
-ns.UIRow = Row

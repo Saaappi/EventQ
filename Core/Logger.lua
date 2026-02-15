@@ -1,6 +1,8 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local Logger = ns.Class:Create("Logger")
+local Logger = Class:Create("Logger")
+Addon.modules.Logger = Logger
 
 function Logger:Constructor(prefix)
   self.prefix = prefix or "EventQ"
@@ -18,4 +20,3 @@ function Logger:Error(msg)
   DEFAULT_CHAT_FRAME:AddMessage(("|cffff4444[%s]|r %s"):format(self.prefix, tostring(msg)))
 end
 
-ns.Logger = Logger

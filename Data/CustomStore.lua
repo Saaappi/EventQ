@@ -1,6 +1,8 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local CustomStore = ns.Class:Create("CustomStore")
+local CustomStore = Class:Create("CustomStore")
+Addon.modules.CustomStore = CustomStore
 
 local DEFAULT_ICON = "Interface/Icons/INV_Misc_Note_01"
 
@@ -146,4 +148,3 @@ function CustomStore:PruneOld(nowEpoch)
   end
 end
 
-ns.CustomStore = CustomStore

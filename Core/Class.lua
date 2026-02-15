@@ -1,13 +1,14 @@
-local _, ns = ...
+local Addon = _G.EventQ
 
----@class EventQ.Class
-ns.Class = {}
+---@class EventQClass
+local Class = {}
+Addon.modules.Class = Class
 
 ---@generic T
 ---@param name string
 ---@param base T|nil
 ---@return T
-function ns.Class:Create(name, base)
+function Class:Create(name, base)
   local cls = {}
   cls.__name = name
   cls.__index = cls

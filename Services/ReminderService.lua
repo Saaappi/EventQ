@@ -1,6 +1,8 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local ReminderService = ns.Class:Create("ReminderService")
+local ReminderService = Class:Create("ReminderService")
+Addon.modules.ReminderService = ReminderService
 
 -- Hot-path locals
 local _G = _G
@@ -578,4 +580,3 @@ function ReminderService:Notify(eventInfo, secondsUntilStart)
   AddMessageToUIErrors(message)
 end
 
-ns.ReminderService = ReminderService

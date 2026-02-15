@@ -1,7 +1,8 @@
-local ADDON, ns = ...
+local ADDON = ...
+local Addon = _G.EventQ
 
-ns.Settings = ns.Settings or {}
-local SettingsModule = ns.Settings
+Addon.modules.Settings = Addon.modules.Settings or {}
+local SettingsModule = Addon.modules.Settings
 
 local CATEGORY_NAME = "EventQ"
 
@@ -569,10 +570,11 @@ function SettingsModule:Init(db)
     db.minimap.hide = not value
 
     -- Apply immediately in case the minimap button is already initialized.
-    if ns.MinimapButton then
-      ns.MinimapButton.db = db.minimap
-      if ns.MinimapButton.Refresh then
-        ns.MinimapButton:Refresh()
+    local minimapButton = Addon.modules.MinimapButton
+    if minimapButton then
+      minimapButton.db = db.minimap
+      if minimapButton.Refresh then
+        minimapButton:Refresh()
       end
     end
   end

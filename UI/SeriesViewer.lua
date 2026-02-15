@@ -1,6 +1,8 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local SeriesViewer = ns.Class:Create("SeriesViewer")
+local SeriesViewer = Class:Create("SeriesViewer")
+Addon.modules.SeriesViewer = SeriesViewer
 
 local ROW_HEIGHT = 28
 local PADDING = 10
@@ -90,7 +92,8 @@ end
 
 function SeriesViewer:Constructor(parentFrame, app)
   self.app = app
-  self.dateUtil = app and app.dateUtil or ns.DateUtil()
+  local DateUtil = Addon.modules.DateUtil
+  self.dateUtil = app and app.dateUtil or DateUtil()
 
   local frame = CreateFrame("Frame", nil, parentFrame, "BackdropTemplate")
   self.frame = frame
@@ -179,5 +182,3 @@ function SeriesViewer:ShowSeries(rootId)
 
   self.frame:Show()
 end
-
-ns.SeriesViewer = SeriesViewer

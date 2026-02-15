@@ -1,6 +1,9 @@
-local ADDON, ns = ...
+local ADDON = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local MainFrame = ns.Class:Create("MainFrame")
+local MainFrame = Class:Create("MainFrame")
+Addon.modules.UIMainFrame = MainFrame
 
 local ROW_HEIGHT = 40
 local LIST_PADDING_TOP = 34
@@ -1067,8 +1070,9 @@ function MainFrame:_RevertEditToOriginal()
   end
 
   -- Hide any auxiliary edit UIs so the user always returns to a predictable baseline.
-  if ns.IconPicker and ns.IconPicker.Hide then
-    ns.IconPicker:Hide()
+  local iconPicker = Addon.modules.IconPicker
+  if iconPicker and iconPicker.Hide then
+    iconPicker:Hide()
   end
   if self.seriesViewer and self.seriesViewer.frame and self.seriesViewer.frame.Hide then
     self.seriesViewer.frame:Hide()
@@ -1098,8 +1102,9 @@ end
 
 function MainFrame:_EnsureImportExportPopup()
   if self._importExportPopup then return self._importExportPopup end
-  if ns.ImportExportPopup then
-    self._importExportPopup = ns.ImportExportPopup()
+  local importExportPopup = Addon.modules.ImportExportPopup
+  if importExportPopup then
+    self._importExportPopup = importExportPopup()
   end
   return self._importExportPopup
 end
@@ -1211,7 +1216,7 @@ CreateModernList = function(parent, app, layout)
     button:SetHeight(ROW_HEIGHT)
 
     if not button._eventqRow then
-      button._eventqRow = ns.UIRow(button, app)
+      button._eventqRow = Addon.modules.UIRow(button, app)
     end
     button._eventqRow:SetEvent(elementData, app.dateUtil)
   end)
@@ -1270,13 +1275,15 @@ local function ResolveQueueableInfo(eventData)
   if not IsEventOngoing(eventData) then return nil end
 
   local dungeonID
-  if ns.DungeonQueue and ns.DungeonQueue.GetDungeonID then
-    dungeonID = ns.DungeonQueue:GetDungeonID(eventData)
+  local dungeonQueue = Addon.modules.DungeonQueue
+  if dungeonQueue and dungeonQueue.GetDungeonID then
+    dungeonID = dungeonQueue:GetDungeonID(eventData)
   end
 
   local isBrawl = false
-  if ns.PVPQueue and ns.PVPQueue.IsBrawlEvent then
-    isBrawl = ns.PVPQueue:IsBrawlEvent(eventData)
+  local pvpQueue = Addon.modules.PVPQueue
+  if pvpQueue and pvpQueue.IsBrawlEvent then
+    isBrawl = pvpQueue:IsBrawlEvent(eventData)
   end
 
   if dungeonID then
@@ -1319,8 +1326,9 @@ local function TryQueuePortableEvent(queueInfo)
     return ok and true or false
   end
 
-  if queueInfo.isBrawl and ns.PVPQueue and ns.PVPQueue.JoinBrawl then
-    return ns.PVPQueue:JoinBrawl() and true or false
+  local pvpQueue = Addon.modules.PVPQueue
+  if queueInfo.isBrawl and pvpQueue and pvpQueue.JoinBrawl then
+    return pvpQueue:JoinBrawl() and true or false
   end
 
   return false
@@ -1335,8 +1343,9 @@ local function TryQueuePortableEventWithRoles(queueInfo)
       return
     end
 
-    if ns.RolePopup and ns.RolePopup.Show then
-      ns.RolePopup:Show("PVE", function()
+    local rolePopup = Addon.modules.RolePopup
+    if rolePopup and rolePopup.Show then
+      rolePopup:Show("PVE", function()
         TryQueuePortableEvent(queueInfo)
       end)
     else
@@ -1351,8 +1360,9 @@ local function TryQueuePortableEventWithRoles(queueInfo)
       return
     end
 
-    if ns.RolePopup and ns.RolePopup.Show then
-      ns.RolePopup:Show("PVP", function()
+    local rolePopup = Addon.modules.RolePopup
+    if rolePopup and rolePopup.Show then
+      rolePopup:Show("PVP", function()
         TryQueuePortableEvent(queueInfo)
       end)
     else
@@ -1753,7 +1763,7 @@ local function EnsureDescriptionPopup(self)
 
   iconButton:SetScript("OnClick", function()
     if iconButton.SetChecked then iconButton:SetChecked(false) end
-    local picker = ns.IconPicker
+    local picker = Addon.modules.IconPicker
     if not picker or not picker.Open then return end
 
     local currentIcon = popupFrame._eventqSelectedIcon or DEFAULT_CUSTOM_ICON
@@ -2541,8 +2551,9 @@ function MainFrame:Constructor(app)
   end
 
   cfgBtn:SetScript("OnClick", function()
-    if ns.Settings and ns.Settings.Open then
-      ns.Settings:Open()
+    local settings = Addon.modules.Settings
+    if settings and settings.Open then
+      settings:Open()
     end
   end)
 
@@ -2620,20 +2631,21 @@ function MainFrame:Constructor(app)
   self.startBox:SetText(hint)
 
   -- Calendar/time picker button (Option A).
-  if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
-    ns.DateTimePicker:AttachCalendarButton(self.startBox, function()
+  local dateTimePicker = Addon.modules.DateTimePicker
+  if dateTimePicker and dateTimePicker.AttachCalendarButton then
+    dateTimePicker:AttachCalendarButton(self.startBox, function()
       local order = self.app.db.settings.dateOrder
-      ns.DateTimePicker:Open(self.startBox, order, false, self.dateUtil)
+      dateTimePicker:Open(self.startBox, order, false, self.dateUtil)
     end)
   end
 
   MakeLabel("End Datetime", editor, 490, -42)
   self.endBox = MakeEditBox(220, editor, 490, -58)
   self.endBox:SetText(hint)
-  if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
-    ns.DateTimePicker:AttachCalendarButton(self.endBox, function()
+  if dateTimePicker and dateTimePicker.AttachCalendarButton then
+    dateTimePicker:AttachCalendarButton(self.endBox, function()
       local order = self.app.db.settings.dateOrder
-      ns.DateTimePicker:Open(self.endBox, order, true, self.dateUtil)
+      dateTimePicker:Open(self.endBox, order, true, self.dateUtil)
     end)
   end
 
@@ -2785,14 +2797,16 @@ function MainFrame:Constructor(app)
   end)
 
   mainFrame:SetScript("OnHide", function()
-    if ns.RolePopup and ns.RolePopup.Hide then
-      ns.RolePopup:Hide()
+    local rolePopup = Addon.modules.RolePopup
+    if rolePopup and rolePopup.Hide then
+      rolePopup:Hide()
     end
     if self._descPopup and self._descPopup.Hide then
       self._descPopup:Hide()
     end
-    if ns.IconPicker and ns.IconPicker.Hide then
-      ns.IconPicker:Hide()
+    local iconPicker = Addon.modules.IconPicker
+    if iconPicker and iconPicker.Hide then
+      iconPicker:Hide()
     end
     if self.seriesViewer and self.seriesViewer.frame and self.seriesViewer.frame.Hide then
       self.seriesViewer.frame:Hide()
@@ -2857,17 +2871,18 @@ function MainFrame:ClearEdit()
   local hint = self.dateUtil:FormatHint(self.app.db.settings.dateOrder)
   self.nameBox:SetText("")
   self.startBox:SetText(hint)
-  if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
-    ns.DateTimePicker:AttachCalendarButton(self.startBox, function()
+  local dateTimePicker = Addon.modules.DateTimePicker
+  if dateTimePicker and dateTimePicker.AttachCalendarButton then
+    dateTimePicker:AttachCalendarButton(self.startBox, function()
       local order = self.app.db.settings.dateOrder
-      ns.DateTimePicker:Open(self.startBox, order, false, self.dateUtil)
+      dateTimePicker:Open(self.startBox, order, false, self.dateUtil)
     end)
   end
   self.endBox:SetText(hint)
-  if ns.DateTimePicker and ns.DateTimePicker.AttachCalendarButton then
-    ns.DateTimePicker:AttachCalendarButton(self.endBox, function()
+  if dateTimePicker and dateTimePicker.AttachCalendarButton then
+    dateTimePicker:AttachCalendarButton(self.endBox, function()
       local order = self.app.db.settings.dateOrder
-      ns.DateTimePicker:Open(self.endBox, order, true, self.dateUtil)
+      dateTimePicker:Open(self.endBox, order, true, self.dateUtil)
     end)
   end
 end
@@ -2877,11 +2892,12 @@ function MainFrame:EnsureSeriesViewer()
     return self.seriesViewer
   end
 
-  if not ns.SeriesViewer then
+  local seriesViewerClass = Addon.modules.SeriesViewer
+  if not seriesViewerClass then
     return nil
   end
 
-  self.seriesViewer = ns.SeriesViewer(self.frame, self.app)
+  self.seriesViewer = seriesViewerClass(self.frame, self.app)
 
   -- When the Series panel hides, restore the MainFrame position if we had to
   -- shift it on-screen to make room.
@@ -2962,8 +2978,9 @@ function MainFrame:ShowSeries(rootId)
   if self._descPopup and self._descPopup.Hide then
     self._descPopup:Hide()
   end
-  if ns.IconPicker and ns.IconPicker.Hide then
-    ns.IconPicker:Hide()
+  local iconPicker = Addon.modules.IconPicker
+  if iconPicker and iconPicker.Hide then
+    iconPicker:Hide()
   end
 
   self:_MaybeShiftForSeriesViewer(viewer.frame)
@@ -3328,5 +3345,3 @@ function MainFrame:UpdateLists()
     end
   end
 end
-
-ns.UIMainFrame = MainFrame

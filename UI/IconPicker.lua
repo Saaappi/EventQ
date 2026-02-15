@@ -1,4 +1,4 @@
-local _, ns = ...
+local Addon = _G.EventQ
 
 -- Icon picker for selecting custom event icons.
 -- Goals:
@@ -7,10 +7,10 @@ local _, ns = ...
 --   * Low memory: build catalog only while shown; release on hide.
 
 local IconPicker = {}
-ns.IconPicker = IconPicker
+Addon.modules.IconPicker = IconPicker
 
 
-local addonIconFileNames = ns.IconFileNames
+local addonIconFileNames = Addon.modules.IconFileNames
 
 local FRAME_NAME = "EventQIconPickerFrame"
 

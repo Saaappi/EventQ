@@ -1,8 +1,9 @@
-local _, ns = ...
+local Addon = _G.EventQ
 
 -- Lightweight PvP queue helpers (used for PvP Brawl events).
 
 local PVPQueue = {}
+Addon.modules.PVPQueue = PVPQueue
 
 local function IsBrawlTitle(title)
   if not title then return false end
@@ -34,4 +35,3 @@ function PVPQueue:JoinBrawl()
   return okJoin and true or false
 end
 
-ns.PVPQueue = PVPQueue

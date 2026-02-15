@@ -1,11 +1,11 @@
-local _, ns = ...
+local Addon = _G.EventQ
 
 -- Icon file names for Interface/Icons.
 -- Source: wowdev/wow-listfile (verified-listfile.csv).
 -- This mapping enables searching icon FileDataIDs by their human-readable icon filenames.
 -- NOTE: Keep this file generated; manual edits will be overwritten.
 
-ns.IconFileNames = {
+Addon.modules.IconFileNames = {
 
   [132089] = "ability_ambush",
   [132090] = "ability_backstab",

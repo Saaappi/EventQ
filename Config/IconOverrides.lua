@@ -1,16 +1,17 @@
-local _, ns = ...
+local Addon = _G.EventQ
 
 -- Icon overrides used by EventQ.
 -- Prefer locale-safe overrides by Holidays.db2 ID (aka C_Calendar holiday IDs), so all clients get the same icons.
 
-ns.IconOverrides = ns.IconOverrides or {}
+local IconOverrides = Addon.modules.IconOverrides or {}
+Addon.modules.IconOverrides = IconOverrides
 
 -- Local texture root for bundled calendar icons.
 local CAL = "Interface/AddOns/EventQ/Media/Calendar/"
 
 -- Locale-safe: Holiday/Event ID -> icon override.
 -- Keys should be Holidays.db2 ID values.
-ns.IconOverrides.byId = {
+IconOverrides.byId = {
   [141] = { icon = CAL .. "calendar_winterveilstart.jpg", texCoord = { 0, 1, 0, 1 } },
   [181] = { icon = CAL .. "calendar_noblegardenstart.jpg", texCoord = { 0, 1, 0, 1 } },
   [201] = { icon = CAL .. "calendar_childrensweekstart.jpg", texCoord = { 0, 1, 0, 1 } },
@@ -211,6 +212,6 @@ ns.IconOverrides.byId = {
 
 -- Locale-dependent fallbacks (used only when a stable holidayID isn't available).
 -- Keep this list minimal to avoid surprises on non-English clients.
-ns.IconOverrides.byTitleContains = {
+IconOverrides.byTitleContains = {
   { "PvP Brawl", { icon = CAL .. "calendar_brawl.jpg", texCoord = { 0, 1, 0, 1 } } },
 }

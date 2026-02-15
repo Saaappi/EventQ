@@ -1,6 +1,8 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local ImportExport = ns.Class:Create("ImportExport")
+local ImportExport = Class:Create("ImportExport")
+Addon.modules.ImportExport = ImportExport
 
 --[[
 Custom Event Import/Export
@@ -553,4 +555,3 @@ function ImportExport:DecodeEvents(exportText)
   return DeserializeEvents(raw)
 end
 
-ns.ImportExport = ImportExport

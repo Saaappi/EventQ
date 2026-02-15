@@ -1,12 +1,13 @@
-local ADDON, ns = ...
+local ADDON = ...
+local Addon = _G.EventQ
 
 -- Minimap icon (no library)
 -- Left-click: toggle main UI
 -- Right-click: open settings
 -- Click + hold: move around minimap; respects GetMinimapShape() when provided by minimap addons.
 
-ns.MinimapButton = ns.MinimapButton or {}
-local MinimapButton = ns.MinimapButton
+Addon.modules.MinimapButton = Addon.modules.MinimapButton or {}
+local MinimapButton = Addon.modules.MinimapButton
 
 local _G = _G
 local Minimap = _G.Minimap

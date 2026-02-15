@@ -1,6 +1,8 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local App = ns.Class:Create("App")
+local App = Class:Create("App")
+Addon.modules.App = App
 
 local UPCOMING_DAYS = 8
 local UPCOMING_WINDOW = UPCOMING_DAYS * 86400
@@ -325,7 +327,7 @@ local function ApplyIconOverrides(app, event)
     end
   end
 
-  local iconOverrides = ns.IconOverrides
+  local iconOverrides = Addon.modules.IconOverrides
   if not iconOverrides then return end
 
   -- 1) Explicit eventID override (config)
@@ -388,8 +390,8 @@ end
 function App:Constructor(db)
   self.db = db
   -- Robust construction: some client environments or stale-file situations can
-  -- leave ns.Logger as an instance table (non-callable). Prefer :New when available.
-  local Logger = ns.Logger
+  -- leave Logger as an instance table (non-callable). Prefer :New when available.
+  local Logger = Addon.modules.Logger
   if type(Logger) == "table" and type(Logger.New) == "function" then
     self.log = Logger:New("EventQ")
   elseif type(Logger) == "function" then
@@ -399,7 +401,7 @@ function App:Constructor(db)
     self.log = Logger
   end
 
-  local DateUtil = ns.DateUtil
+  local DateUtil = Addon.modules.DateUtil
   if type(DateUtil) == "table" and type(DateUtil.New) == "function" then
     self.dateUtil = DateUtil:New()
   elseif type(DateUtil) == "function" then
@@ -412,14 +414,16 @@ function App:Constructor(db)
     self.db.settings.dateOrder = self.dateUtil:GetDefaultDateOrder()
   end
 
-  self.customStore = ns.CustomStore(db)
-  self.importExport = ns.ImportExport()
-  self.calendar = ns.CalendarService(self.log, self.dateUtil)
-  self.reminders = ns.ReminderService and ns.ReminderService(self.log, self.dateUtil, db) or nil
+  local modules = Addon.modules
+
+  self.customStore = modules.CustomStore(db)
+  self.importExport = modules.ImportExport()
+  self.calendar = modules.CalendarService(self.log, self.dateUtil)
+  self.reminders = modules.ReminderService and modules.ReminderService(self.log, self.dateUtil, db) or nil
   if self.reminders then
     self.reminders.app = self
   end
-  self.ui = ns.UIMainFrame(self)
+  self.ui = modules.UIMainFrame(self)
 
   self.ongoing = {}
   self.upcoming = {}
@@ -754,7 +758,6 @@ function App:RefreshAll()
   self.ongoing = ongoing
   self.upcoming = upcoming
 
-  self:NotifyNew(now)
   if self.ui.frame:IsShown() then
     self.ui:UpdateLists()
   end
@@ -1027,5 +1030,3 @@ function App:NotifyNew(now)
   notifyList(self.ongoing)
   notifyList(self.upcoming)
 end
-
-ns.App = App

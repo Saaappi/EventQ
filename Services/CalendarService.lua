@@ -1,6 +1,8 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local CalendarService = ns.Class:Create("CalendarService")
+local CalendarService = Class:Create("CalendarService")
+Addon.modules.CalendarService = CalendarService
 
 -- Hot-path locals
 local _G = _G
@@ -374,7 +376,8 @@ end
 ---@param title string|nil
 ---@return number|nil fileID
 function CalendarService:_TryTimewalkingIconFromMapping(monthOffset, monthDay, eventID, title)
-  local map = ns.IconOverrides and ns.IconOverrides.timewalkingByExpansion
+  local iconOverrides = Addon.modules.IconOverrides
+  local map = iconOverrides and iconOverrides.timewalkingByExpansion
   if not map then return nil end
 
   local desc = nil
@@ -937,4 +940,3 @@ function CalendarService:CollectWindow(maxDaysAhead)
   return filtered
 end
 
-ns.CalendarService = CalendarService

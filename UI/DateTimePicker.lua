@@ -1,4 +1,4 @@
-local ADDON, ns = ...
+local Addon = _G.EventQ
 
 -- A lightweight date+time picker popover for the custom editor datetime editboxes.
 -- Patch target: 11.2.7 (Retail)
@@ -7,7 +7,7 @@ local ADDON, ns = ...
 --  - Output format uses DateUtil:FormatUserDateTime(), matching the addon's parser.
 
 local DateTimePicker = {}
-ns.DateTimePicker = DateTimePicker
+Addon.modules.DateTimePicker = DateTimePicker
 
 local function pad2(numberValue)
   numberValue = tonumber(numberValue) or 0

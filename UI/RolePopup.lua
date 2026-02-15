@@ -1,6 +1,7 @@
-local _, ns = ...
+local Addon = _G.EventQ
+local Class = Addon.modules.Class
 
-local RolePopup = ns.Class:Create("RolePopup")
+local RolePopup = Class:Create("RolePopup")
 
 local ROLE_TEXTURE = "Interface\\LFGFrame\\UI-LFG-ICON-ROLES"
 
@@ -267,4 +268,4 @@ function RolePopup:Show(mode, callback)
   popupFrame:Show()
 end
 
-ns.RolePopup = RolePopup:New()
+Addon.modules.RolePopup = Addon.modules.RolePopup or RolePopup:New()
