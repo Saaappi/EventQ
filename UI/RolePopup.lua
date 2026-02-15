@@ -1,5 +1,6 @@
 local Addon = _G.EventQ
 local Class = Addon.modules.Class
+local C_Timer = _G.C_Timer
 
 local RolePopup = Class:Create("RolePopup")
 
@@ -150,6 +151,8 @@ local function EnsureFrame(self)
   popupFrame._eventqQueue = queue
 
   cancel:SetScript("OnClick", function()
+    popupFrame._eventqCallback = nil
+    popupFrame._eventqQueueRequest = nil
     popupFrame:Hide()
   end)
 
@@ -178,10 +181,39 @@ local function EnsureFrame(self)
     end
 
     local acceptCallback = popupFrame._eventqCallback
+    local queueRequest = popupFrame._eventqQueueRequest
+    local didQueueExplicitly = false
+
+    if queueRequest and queueRequest.dungeonID and LFG_JoinDungeon then
+      if not (InCombatLockdown and InCombatLockdown()) then
+        didQueueExplicitly = pcall(LFG_JoinDungeon, LE_LFG_CATEGORY_LFD, queueRequest.dungeonID, LFDDungeonList, LFDHiddenByCollapseList) and true or false
+      end
+    elseif queueRequest and queueRequest.isBrawl then
+      local pvpQueue = Addon.modules.PVPQueue
+      if pvpQueue and pvpQueue.JoinBrawl then
+        didQueueExplicitly = pcall(function() return pvpQueue:JoinBrawl() end) and true or false
+      end
+    end
+
     popupFrame._eventqCallback = nil
+    popupFrame._eventqQueueRequest = nil
     popupFrame:Hide()
 
-    if acceptCallback then acceptCallback() end
+    local function RunDeferred(task)
+      if C_Timer and C_Timer.After then
+        C_Timer.After(0, task)
+      else
+        task()
+      end
+    end
+
+    if (not didQueueExplicitly) and acceptCallback then
+      local function RunAcceptCallback()
+        pcall(acceptCallback)
+      end
+
+      RunDeferred(RunAcceptCallback)
+    end
   end)
 
   -- Enable/disable queue based on selection
@@ -201,15 +233,20 @@ end
 
 function RolePopup:Hide()
   if self.frame then
+    self.frame._eventqCallback = nil
+    self.frame._eventqQueueRequest = nil
     self.frame:Hide()
   end
 end
 
 ---@param mode '"PVE"'|'"PVP"'
-function RolePopup:Show(mode, callback)
+---@param callback function|nil
+---@param queueRequest table|nil
+function RolePopup:Show(mode, callback, queueRequest)
   local popupFrame = EnsureFrame(self)
   popupFrame._eventqMode = (mode == "PVP") and "PVP" or "PVE"
   popupFrame._eventqCallback = callback
+  popupFrame._eventqQueueRequest = queueRequest
 
   -- Determine available roles for the player and show only those.
   local canTank, canHealer, canDPS = UnitGetAvailableRoles("player")

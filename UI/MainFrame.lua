@@ -1345,9 +1345,7 @@ local function TryQueuePortableEventWithRoles(queueInfo)
 
     local rolePopup = Addon.modules.RolePopup
     if rolePopup and rolePopup.Show then
-      rolePopup:Show("PVE", function()
-        TryQueuePortableEvent(queueInfo)
-      end)
+      rolePopup:Show("PVE", nil, { dungeonID = queueInfo.dungeonID })
     else
       UIErrorsFrame:AddMessage("You must select at least one role.", 1, 0.1, 0.1)
     end
@@ -1362,9 +1360,7 @@ local function TryQueuePortableEventWithRoles(queueInfo)
 
     local rolePopup = Addon.modules.RolePopup
     if rolePopup and rolePopup.Show then
-      rolePopup:Show("PVP", function()
-        TryQueuePortableEvent(queueInfo)
-      end)
+      rolePopup:Show("PVP", nil, { isBrawl = true })
     else
       UIErrorsFrame:AddMessage("You must select at least one role.", 1, 0.1, 0.1)
     end
@@ -3311,7 +3307,6 @@ function MainFrame:_CommitCustomFromDescriptionPopup()
   self:ShowTransientMessage(wasEditing and "Updated." or "Added.", 0.4, 1, 0.4, 4)
 end
 
-
 function MainFrame:UpdateLists()
   local ongoing = self.app.ongoing or {}
   local upcoming = self.app.upcoming or {}
@@ -3330,12 +3325,10 @@ function MainFrame:UpdateLists()
   self.rightScrollBox:SetDataProvider(self.rightDP)
   local horizonEpoch = nowEpoch + UPCOMING_WINDOW_SECONDS
   self:_UpdateEventsTabData(nowEpoch, horizonEpoch)
-  
 
   if self._portableMode then
     self:_UpdatePortableList()
   end
-
 
   -- Refresh search results only when the Search tab is active and the user has entered a query.
   if self._activeTab == TAB_KEY.SEARCH then

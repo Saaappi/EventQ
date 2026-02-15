@@ -443,9 +443,7 @@ function Row:Constructor(frame, app)
           else
             local rolePopup = Addon.modules.RolePopup
             if rolePopup and rolePopup.Show then
-              rolePopup:Show("PVE", function()
-                TryQueueLFD(self.LfgDungeonID)
-              end)
+              rolePopup:Show("PVE", nil, { dungeonID = self.LfgDungeonID })
             else
               UIErrorsFrame:AddMessage("You must select at least one role.", 1, 0.1, 0.1)
             end
@@ -460,9 +458,7 @@ function Row:Constructor(frame, app)
           else
             local rolePopup = Addon.modules.RolePopup
             if rolePopup and rolePopup.Show then
-              rolePopup:Show("PVP", function()
-                TryQueueBrawl()
-              end)
+              rolePopup:Show("PVP", nil, { isBrawl = true })
             else
               UIErrorsFrame:AddMessage("You must select at least one role.", 1, 0.1, 0.1)
             end
