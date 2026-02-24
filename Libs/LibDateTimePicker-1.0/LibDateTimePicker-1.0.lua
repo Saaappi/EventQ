@@ -396,12 +396,12 @@ function DateTimePicker:Ensure()
   pickerFrame.TodayBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.TodayBtn:SetSize(90, 22)
   pickerFrame.TodayBtn:SetPoint("LEFT", pickerFrame.NowBtn, "RIGHT", 8, 0)
-  pickerFrame.TodayBtn:SetText("Start")
+  pickerFrame.TodayBtn:SetText(START)
 
   pickerFrame.DoneBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.DoneBtn:SetSize(90, 22)
   pickerFrame.DoneBtn:SetPoint("BOTTOMRIGHT", -14, 12)
-  pickerFrame.DoneBtn:SetText("Done")
+  pickerFrame.DoneBtn:SetText(DONE)
 
   -- Wire month nav
   pickerFrame.Prev:SetScript("OnClick", function()
