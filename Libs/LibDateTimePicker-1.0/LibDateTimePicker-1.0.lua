@@ -5,6 +5,20 @@ if not Lib then return end
 local DateTimePicker = Lib
 local KEY_CALENDAR_BUTTON = {}
 
+DateTimePicker.locale = nil
+
+function DateTimePicker:SetLocaleTable(localeTable)
+  self.locale = localeTable or nil
+end
+
+local function GetLocalized(self, key, fallback)
+  local t = self and self.locale
+  if t and t[key] ~= nil then
+    return t[key]
+  end
+  return fallback
+end
+
 local MONTH_KEYS = {
   "MONTH_JANUARY", "MONTH_FEBRUARY", "MONTH_MARCH", "MONTH_APRIL", "MONTH_MAY",
   "MONTH_JUNE", "MONTH_JULY", "MONTH_AUGUST", "MONTH_SEPTEMBER", "MONTH_OCTOBER",
@@ -380,7 +394,7 @@ function DateTimePicker:Ensure()
 
   local timeTitle = timeArea:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   timeTitle:SetPoint("TOP", 0, 0)
-  timeTitle:SetText("Time")
+  timeTitle:SetText(GetLocalized(self, "LABEL_TIME", _G.TIME or "Time"))
 
   pickerFrame.HourCol = CreateSpinnerColumn(timeArea, COLUMN_WIDTH, "HH")
   pickerFrame.MinCol = CreateSpinnerColumn(timeArea, COLUMN_WIDTH, "MM")
@@ -402,22 +416,22 @@ function DateTimePicker:Ensure()
   pickerFrame.ClearBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.ClearBtn:SetSize(90, 22)
   pickerFrame.ClearBtn:SetPoint("BOTTOMLEFT", 14, 12)
-  pickerFrame.ClearBtn:SetText("Clear")
+  pickerFrame.ClearBtn:SetText(GetLocalized(self, "BUTTON_CLEAR", _G.CLEAR or "Clear"))
 
   pickerFrame.NowBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.NowBtn:SetSize(90, 22)
   pickerFrame.NowBtn:SetPoint("LEFT", pickerFrame.ClearBtn, "RIGHT", 8, 0)
-  pickerFrame.NowBtn:SetText("Now")
+  pickerFrame.NowBtn:SetText(GetLocalized(self, "BUTTON_NOW", _G.NOW or "Now"))
 
   pickerFrame.TodayBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.TodayBtn:SetSize(90, 22)
   pickerFrame.TodayBtn:SetPoint("LEFT", pickerFrame.NowBtn, "RIGHT", 8, 0)
-  pickerFrame.TodayBtn:SetText(START)
+  pickerFrame.TodayBtn:SetText(GetLocalized(self, "BUTTON_START", _G.START or "Start"))
 
   pickerFrame.DoneBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.DoneBtn:SetSize(90, 22)
   pickerFrame.DoneBtn:SetPoint("BOTTOMRIGHT", -14, 12)
-  pickerFrame.DoneBtn:SetText(DONE)
+  pickerFrame.DoneBtn:SetText(GetLocalized(self, "BUTTON_DONE", _G.DONE or "Done"))
 
   -- Wire month nav
   pickerFrame.Prev:SetScript("OnClick", function()
@@ -684,7 +698,9 @@ function DateTimePicker:Open(editBox, order, isEnd, dateUtil)
 
   pickerFrame.isEnd = not not isEnd
   if pickerFrame.TodayBtn then
-    pickerFrame.TodayBtn:SetText(pickerFrame.isEnd and "End" or "Start")
+    pickerFrame.TodayBtn:SetText(pickerFrame.isEnd and
+      GetLocalized(self, "BUTTON_END", _G.END or "End") or
+      GetLocalized(self, "BUTTON_START", _G.START or "Start"))
   end
 
   -- Resolve initial state from the editbox value, if parseable.
@@ -762,10 +778,11 @@ function DateTimePicker:AttachCalendarButton(editBox, onClick)
     end)
   end
 
+  -- Localize? Make customizable when the player loads the library?
   calendarButton:SetScript("OnEnter", function()
     GameTooltip:SetOwner(calendarButton, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Pick date & time")
-    GameTooltip:AddLine("Opens a calendar/time picker.", 1, 1, 1, true)
+    GameTooltip:SetText(GetLocalized(DateTimePicker, "TOOLTIP_PICK_DATE_TIME", "Pick date & time"))
+    GameTooltip:AddLine(GetLocalized(DateTimePicker, "TOOLTIP_OPENS_DATE_TIME_PICKER", "Opens a calendar/time picker."), 1, 1, 1, true)
     GameTooltip:Show()
   end)
   calendarButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
