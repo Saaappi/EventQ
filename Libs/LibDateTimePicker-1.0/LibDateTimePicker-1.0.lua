@@ -15,6 +15,12 @@ local ENG_MONTHS = {
   "July", "August", "September", "October", "November", "December"
 }
 
+local WEEKDAY_KEYS = {
+  "WEEKDAY_SUNDAY", "WEEKDAY_MONDAY", "WEEKDAY_TUESDAY", "WEEKDAY_WEDNESDAY",
+  "WEEKDAY_THURSDAY", "WEEKDAY_FRIDAY", "WEEKDAY_SATURDAY"
+}
+local ENG_SHORTHAND_WEEKDAYS = { "S", "M", "T", "W", "T", "F", "S" }
+
 local function pad2(numberValue)
   numberValue = tonumber(numberValue) or 0
   return (numberValue < 10) and ("0" .. numberValue) or tostring(numberValue)
@@ -35,6 +41,17 @@ end
 local function MonthName(month)
   local key = MONTH_KEYS and MONTH_KEYS[month]
   return (key and _G[key]) or ENG_MONTHS[month] or tostring(month)
+end
+
+local function get_weekday_shorthand(i, n)
+  n = n or 1
+
+  local key = (CALENDAR_WEEKDAY_NAMES and CALENDAR_WEEKDAY_NAMES[i]) or (WEEKDAY_KEYS and _G[WEEKDAY_KEYS[i]])
+  if key then
+    return key:sub(1, n)
+  end
+
+  return ENG_SHORTHAND_WEEKDAYS[i] or "?"
 end
 
 local function Clamp(value, minValue, maxValue)
@@ -294,9 +311,10 @@ function DateTimePicker:Ensure()
   StyleHeaderChevron(pickerFrame.Next, "uitools-icon-chevron-right", ">")
 
   -- Weekday labels
-  local weekdays = { "S", "M", "T", "W", "T", "F", "S" }
+  local weekdays = {}
   pickerFrame.Weekday = {}
   for i = 1, 7 do
+    weekdays[i] = get_weekday_shorthand(i, 3)
     local fontString = pickerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     fontString:SetPoint("TOPLEFT", 16 + (i - 1) * 44, -42)
     fontString:SetJustifyH("CENTER")
