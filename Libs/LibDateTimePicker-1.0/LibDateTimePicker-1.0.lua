@@ -5,6 +5,16 @@ if not Lib then return end
 local DateTimePicker = Lib
 local KEY_CALENDAR_BUTTON = {}
 
+local MONTH_KEYS = {
+  "MONTH_JANUARY", "MONTH_FEBRUARY", "MONTH_MARCH", "MONTH_APRIL", "MONTH_MAY",
+  "MONTH_JUNE", "MONTH_JULY", "MONTH_AUGUST", "MONTH_SEPTEMBER", "MONTH_OCTOBER",
+  "MONTH_NOVEMBER", "MONTH_DECEMBER"
+}
+local ENG_MONTHS = {
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+}
+
 local function pad2(numberValue)
   numberValue = tonumber(numberValue) or 0
   return (numberValue < 10) and ("0" .. numberValue) or tostring(numberValue)
@@ -23,13 +33,8 @@ local function FirstWeekdayOfMonth(year, month)
 end
 
 local function MonthName(month)
-  -- Prefer WoW globals if present (localized), otherwise fall back.
-  if MONTH_NAMES and MONTH_NAMES[month] then return MONTH_NAMES[month] end
-  local fallback = {
-    "January","February","March","April","May","June",
-    "July","August","September","October","November","December"
-  }
-  return fallback[month] or tostring(month)
+  local key = MONTH_KEYS and MONTH_KEYS[month]
+  return (key and _G[key]) or ENG_MONTHS[month] or tostring(month)
 end
 
 local function Clamp(value, minValue, maxValue)
