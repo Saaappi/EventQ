@@ -3,11 +3,14 @@
 ## Notes: Queue for dungeon and PvP events directly from the interface, search for events, add custom events, and an optional portable mode for a smaller visual footprint and quick queues.
 ## SavedVariables: EventQDB
 ## Author: LightskyGG
-## Version: 2.3.2
+## Version: 2.3.3
 ## IconTexture: 1506458
 ## AddonCompartmentFunc: EventQ_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: EventQ_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: EventQ_OnAddonCompartmentLeave
+## OptionalDeps: LibStub
+
+Embeds.xml
 
 EventQ.xml
 
@@ -26,7 +29,6 @@ UI/Settings.lua
 UI/RolePopup.lua
 UI/ImportExportPopup.lua
 UI/Row.lua
-UI/DateTimePicker.lua
 
 Data/IconFileNames.lua
 

@@ -69,6 +69,13 @@ local WEEKDAY_OPTIONS = {
   { key = 7, label = "Saturday" },
 }
 
+local function get_date_time_picker()
+  if LibStub then
+    return LibStub("LibDateTimePicker-1.0", true)
+  end
+  return nil
+end
+
 local function CopyTableShallow(source)
   if type(source) ~= "table" then return nil end
   local out = {}
@@ -83,12 +90,6 @@ local function WipeArray(array)
   for index = #array, 1, -1 do
     array[index] = nil
   end
-end
-
-local function SmoothStep01(progress)
-  if progress <= 0 then return 0 end
-  if progress >= 1 then return 1 end
-  return progress * progress * (3 - 2 * progress)
 end
 
 -- Many Blizzard XML templates rely on their OnLoad scripts to initialize mixins / callback registries.
@@ -2627,7 +2628,7 @@ function MainFrame:Constructor(app)
   self.startBox:SetText(hint)
 
   -- Calendar/time picker button (Option A).
-  local dateTimePicker = Addon.modules.DateTimePicker
+  local dateTimePicker = get_date_time_picker()
   if dateTimePicker and dateTimePicker.AttachCalendarButton then
     dateTimePicker:AttachCalendarButton(self.startBox, function()
       local order = self.app.db.settings.dateOrder
@@ -2867,7 +2868,7 @@ function MainFrame:ClearEdit()
   local hint = self.dateUtil:FormatHint(self.app.db.settings.dateOrder)
   self.nameBox:SetText("")
   self.startBox:SetText(hint)
-  local dateTimePicker = Addon.modules.DateTimePicker
+  local dateTimePicker = get_date_time_picker()
   if dateTimePicker and dateTimePicker.AttachCalendarButton then
     dateTimePicker:AttachCalendarButton(self.startBox, function()
       local order = self.app.db.settings.dateOrder
