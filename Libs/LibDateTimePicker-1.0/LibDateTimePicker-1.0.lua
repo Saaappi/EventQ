@@ -79,17 +79,6 @@ local function MonthName(month)
   return (key and _G[key]) or ENG_MONTHS[month] or tostring(month)
 end
 
-local function get_weekday_shorthand(i, n)
-  n = n or 1
-
-  local key = (CALENDAR_WEEKDAY_NAMES and CALENDAR_WEEKDAY_NAMES[i]) or (WEEKDAY_KEYS and _G[WEEKDAY_KEYS[i]])
-  if key then
-    return utf8_sub(key, n)
-  end
-
-  return ENG_SHORTHAND_WEEKDAYS[i] or "?"
-end
-
 local function Clamp(value, minValue, maxValue)
   if value < minValue then return minValue end
   if value > maxValue then return maxValue end
@@ -254,7 +243,7 @@ function DateTimePicker:Ensure()
   pickerFrame:SetBackdropColor(0, 0, 0, 0.95)
 
   -- Most localizations will use 24h time, but enUS uses 12h.
-  local use24h = true--(GetLocale() ~= "enUS")
+  local use24h = (GetLocale() ~= "enUS")
   pickerFrame.use24h = use24h
 
   local COLUMN_WIDTH = 52
@@ -396,8 +385,8 @@ function DateTimePicker:Ensure()
   timeTitle:SetPoint("TOP", 0, 0)
   timeTitle:SetText(GetLocalized(self, "LABEL_TIME", _G.TIME or "Time"))
 
-  pickerFrame.HourCol = CreateSpinnerColumn(timeArea, COLUMN_WIDTH, "HH")
-  pickerFrame.MinCol = CreateSpinnerColumn(timeArea, COLUMN_WIDTH, "MM")
+  pickerFrame.HourCol = CreateSpinnerColumn(timeArea, COLUMN_WIDTH, GetLocalized(self, "LABEL_HOUR", _G.HOUR or "Hour"))
+  pickerFrame.MinCol = CreateSpinnerColumn(timeArea, COLUMN_WIDTH, GetLocalized(self, "LABEL_MINUTE", _G.MINUTE or "Minute"))
 
   if not use24h then
     pickerFrame.HourCol:SetPoint("TOPLEFT", 0, -32)
