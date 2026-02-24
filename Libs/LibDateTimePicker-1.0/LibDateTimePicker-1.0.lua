@@ -239,6 +239,13 @@ function DateTimePicker:Ensure()
   })
   pickerFrame:SetBackdropColor(0, 0, 0, 0.95)
 
+  -- Most localizations will use 24h time, but enUS uses 12h.
+  local use24h = true--(GetLocale() ~= "enUS")
+  pickerFrame.use24h = use24h
+
+  local COLUMN_WIDTH = 52
+  local GAP_WIDTH = 6
+
   -- Dismiss overlay: clicking anywhere outside the picker closes it.
   -- Note: this intentionally blocks clicks to underlying UI while the picker is open.
   local dismiss = CreateFrame("Button", nil, UIParent)
@@ -375,14 +382,23 @@ function DateTimePicker:Ensure()
   timeTitle:SetPoint("TOP", 0, 0)
   timeTitle:SetText("Time")
 
-  pickerFrame.HourCol = CreateSpinnerColumn(timeArea, 52, "HH")
-  pickerFrame.HourCol:SetPoint("TOPLEFT", 0, -32)
+  pickerFrame.HourCol = CreateSpinnerColumn(timeArea, COLUMN_WIDTH, "HH")
+  pickerFrame.MinCol = CreateSpinnerColumn(timeArea, COLUMN_WIDTH, "MM")
 
-  pickerFrame.MinCol = CreateSpinnerColumn(timeArea, 52, "MM")
-  pickerFrame.MinCol:SetPoint("TOPLEFT", pickerFrame.HourCol, "TOPRIGHT", 6, 0)
+  if not use24h then
+    pickerFrame.HourCol:SetPoint("TOPLEFT", 0, -32)
+    pickerFrame.MinCol:SetPoint("TOPLEFT", pickerFrame.HourCol, "TOPRIGHT", 6, 0)
+    pickerFrame.AmCol = CreateSpinnerColumn(timeArea, 52, "")
+    pickerFrame.AmCol:SetPoint("TOPLEFT", pickerFrame.MinCol, "TOPRIGHT", 6, 0)
+  else
+    -- Center HH/MM columns under the "Time" header.
+    local groupWidth = (COLUMN_WIDTH * 2) + GAP_WIDTH
+    local hourCenterOffsetX = - (groupWidth / 2) + (COLUMN_WIDTH / 2)
+    pickerFrame.HourCol:SetPoint("TOP", timeArea, "TOP", hourCenterOffsetX, -32)
+    pickerFrame.MinCol:SetPoint("TOPLEFT", pickerFrame.HourCol, "TOPRIGHT", GAP_WIDTH, 0)
+    pickerFrame.AmCol = nil
+  end
 
-  pickerFrame.AmCol = CreateSpinnerColumn(timeArea, 52, "")
-  pickerFrame.AmCol:SetPoint("TOPLEFT", pickerFrame.MinCol, "TOPRIGHT", 6, 0)
   pickerFrame.ClearBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.ClearBtn:SetSize(90, 22)
   pickerFrame.ClearBtn:SetPoint("BOTTOMLEFT", 14, 12)
@@ -425,39 +441,45 @@ function DateTimePicker:Ensure()
   local function setTimeUI()
     if not pickerFrame.state then return end
     local state = pickerFrame.state
-    local hour12, amPm = To12h(state.hour)
-    pickerFrame.HourCol.Value:SetText(pad2(hour12))
-    pickerFrame.MinCol.Value:SetText(pad2(state.min))
-    pickerFrame.AmCol.Value:SetText(amPm)
-  end
 
-  local function commitTimeFromUI()
-    if not pickerFrame.state then return end
-    local state = pickerFrame.state
-    local hour12 = tonumber(pickerFrame.HourCol.Value:GetText() or "12") or 12
-    local minuteValue = tonumber(pickerFrame.MinCol.Value:GetText() or "0") or 0
-    local amPm = pickerFrame.AmCol.Value:GetText()
-    state.min = Clamp(minuteValue, 0, 59)
-    state.hour = From12h(hour12, amPm)
-    setTimeUI()
-    DateTimePicker:ApplyToEditBox()
+    if pickerFrame.use24h then
+      pickerFrame.HourCol.Value:SetText(pad2(state.hour))
+      pickerFrame.MinCol.Value:SetText(pad2(state.min))
+    else
+      local hour12, amPm = To12h(state.hour)
+      pickerFrame.HourCol.Value:SetText(pad2(hour12))
+      pickerFrame.MinCol.Value:SetText(pad2(state.min))
+      pickerFrame.AmCol.Value:SetText(amPm)
+    end
   end
 
   pickerFrame.HourCol.Up:SetScript("OnClick", function()
     if not pickerFrame.state then return end
     local state = pickerFrame.state
-    local hour12, amPm = To12h(state.hour)
-    hour12 = hour12 + 1; if hour12 > 12 then hour12 = 1 end
-    state.hour = From12h(hour12, amPm)
+
+    if pickerFrame.use24h then
+      state.hour = (state.hour + 1) % 24
+    else
+      local hour12, amPm = To12h(state.hour)
+      hour12 = hour12 + 1; if hour12 > 12 then hour12 = 1 end
+      state.hour = From12h(hour12, amPm)
+    end
+
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
   pickerFrame.HourCol.Down:SetScript("OnClick", function()
     if not pickerFrame.state then return end
     local state = pickerFrame.state
-    local hour12, amPm = To12h(state.hour)
-    hour12 = hour12 - 1; if hour12 < 1 then hour12 = 12 end
-    state.hour = From12h(hour12, amPm)
+
+    if pickerFrame.use24h then
+      state.hour = (state.hour + 23) % 24
+    else
+      local hour12, amPm = To12h(state.hour)
+      hour12 = hour12 - 1; if hour12 < 1 then hour12 = 12 end
+      state.hour = From12h(hour12, amPm)
+    end
+
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
@@ -477,58 +499,23 @@ function DateTimePicker:Ensure()
     DateTimePicker:ApplyToEditBox()
   end)
 
-  pickerFrame.AmCol.Up:SetScript("OnClick", function()
-    if not pickerFrame.state then return end
-    local state = pickerFrame.state
-    state.hour = (state.hour + 12) % 24
-    setTimeUI()
-    DateTimePicker:ApplyToEditBox()
-  end)
-  pickerFrame.AmCol.Down:SetScript("OnClick", function()
-    if not pickerFrame.state then return end
-    local state = pickerFrame.state
-    state.hour = (state.hour + 12) % 24
-    setTimeUI()
-    DateTimePicker:ApplyToEditBox()
-  end)
-  pickerFrame.HourCol.Value:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-  pickerFrame.MinCol.Value:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-  pickerFrame.AmCol.Value:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  if not pickerFrame.use24h then
+    pickerFrame.AmCol.Up:SetScript("OnClick", function()
+      if not pickerFrame.state then return end
+      local state = pickerFrame.state
+      state.hour = (state.hour + 12) % 24
+      setTimeUI()
+      DateTimePicker:ApplyToEditBox()
+    end)
+    pickerFrame.AmCol.Down:SetScript("OnClick", function()
+      if not pickerFrame.state then return end
+      local state = pickerFrame.state
+      state.hour = (state.hour + 12) % 24
+      setTimeUI()
+      DateTimePicker:ApplyToEditBox()
+    end)
+  end
 
-  -- Clicking the time values: left-click increments, right-click decrements.
-  pickerFrame.HourCol.Value:SetScript("OnClick", function(_, button)
-    if not pickerFrame.state then return end
-    local state = pickerFrame.state
-    local hour12, amPm = To12h(state.hour)
-    if button == "RightButton" then
-      hour12 = hour12 - 1; if hour12 < 1 then hour12 = 12 end
-    else
-      hour12 = hour12 + 1; if hour12 > 12 then hour12 = 1 end
-    end
-    state.hour = From12h(hour12, amPm)
-    setTimeUI()
-    DateTimePicker:ApplyToEditBox()
-  end)
-
-  pickerFrame.MinCol.Value:SetScript("OnClick", function(_, button)
-    if not pickerFrame.state then return end
-    local state = pickerFrame.state
-    if button == "RightButton" then
-      state.min = (state.min - 1) % 60
-    else
-      state.min = (state.min + 1) % 60
-    end
-    setTimeUI()
-    DateTimePicker:ApplyToEditBox()
-  end)
-
-  pickerFrame.AmCol.Value:SetScript("OnClick", function()
-    if not pickerFrame.state then return end
-    local state = pickerFrame.state
-    state.hour = (state.hour + 12) % 24
-    setTimeUI()
-    DateTimePicker:ApplyToEditBox()
-  end)
   pickerFrame.DoneBtn:SetScript("OnClick", function() DateTimePicker:Close() end)
 
   pickerFrame.ClearBtn:SetScript("OnClick", function()
