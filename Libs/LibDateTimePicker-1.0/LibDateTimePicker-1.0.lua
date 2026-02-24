@@ -21,6 +21,29 @@ local WEEKDAY_KEYS = {
 }
 local ENG_SHORTHAND_WEEKDAYS = { "S", "M", "T", "W", "T", "F", "S" }
 
+-- Blizzard doesn't have a UTF8-safe substring function, as the library was added in
+-- Lua 5.3. We'll need to invent our own because some locales have multi-byte characters
+-- in their weekday abbreviations.
+local function utf8_char_size(byte)
+  if byte < 0x80 then return 1
+  elseif byte < 0xE0 then return 2
+  elseif byte < 0xF0 then return 3
+  elseif byte < 0xF8 then return 4
+  end
+  return 1
+end
+
+local function utf8_sub(str, n)
+  if not str or n <= 0 then return "" end
+  local i, chars = 1, 0
+  local len = #str
+  while i <= len and chars < n do
+    chars = chars + 1
+    i = i + utf8_char_size(str:byte(i))
+  end
+  return str:sub(1, i - 1)
+end
+
 local function pad2(numberValue)
   numberValue = tonumber(numberValue) or 0
   return (numberValue < 10) and ("0" .. numberValue) or tostring(numberValue)
@@ -33,7 +56,6 @@ local function DaysInMonth(year, month)
 end
 
 local function FirstWeekdayOfMonth(year, month)
-  -- 1=Sunday..7=Saturday
   local dateParts = date("*t", time({ year = year, month = month, day = 1, hour = 12 }))
   return dateParts.wday or 1
 end
@@ -48,7 +70,7 @@ local function get_weekday_shorthand(i, n)
 
   local key = (CALENDAR_WEEKDAY_NAMES and CALENDAR_WEEKDAY_NAMES[i]) or (WEEKDAY_KEYS and _G[WEEKDAY_KEYS[i]])
   if key then
-    return key:sub(1, n)
+    return utf8_sub(key, n)
   end
 
   return ENG_SHORTHAND_WEEKDAYS[i] or "?"
@@ -581,7 +603,9 @@ function DateTimePicker:RefreshCalendar()
     for headerColumn = 1, 7 do
       local weekdayIndex = ((weekStart + headerColumn -2) % 7) + 1
 
-      pickerFrame.Weekday[headerColumn]:SetText(get_weekday_shorthand(weekdayIndex, 3))
+      local label = utf8_sub(CALENDAR_WEEKDAY_NAMES[weekdayIndex], 3)
+
+      pickerFrame.Weekday[headerColumn]:SetText(label)
     end
   end
 
