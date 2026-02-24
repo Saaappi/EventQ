@@ -311,15 +311,13 @@ function DateTimePicker:Ensure()
   StyleHeaderChevron(pickerFrame.Next, "uitools-icon-chevron-right", ">")
 
   -- Weekday labels
-  local weekdays = {}
   pickerFrame.Weekday = {}
   for i = 1, 7 do
-    weekdays[i] = get_weekday_shorthand(i, 3)
     local fontString = pickerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     fontString:SetPoint("TOPLEFT", 16 + (i - 1) * 44, -42)
     fontString:SetJustifyH("CENTER")
     fontString:SetWidth(44)
-    fontString:SetText(weekdays[i])
+    fontString:SetText("")
     pickerFrame.Weekday[i] = fontString
   end
 
@@ -575,8 +573,18 @@ function DateTimePicker:RefreshCalendar()
   local state = pickerFrame.state
   pickerFrame.monthText:SetText(string.format("%s %d", MonthName(state.month), state.year))
 
-  local firstWday = FirstWeekdayOfMonth(state.year, state.month) -- 1..7
-  local offset = firstWday - 1 -- 0..6, number of cells before day 1
+  local firstWeekday = FirstWeekdayOfMonth(state.year, state.month)
+  local weekStart = CALENDAR_FIRST_WEEKDAY or 1
+  local offset = (firstWeekday - weekStart) % 7
+
+  if pickerFrame.Weekday then
+    for headerColumn = 1, 7 do
+      local weekdayIndex = ((weekStart + headerColumn -2) % 7) + 1
+
+      pickerFrame.Weekday[headerColumn]:SetText(get_weekday_shorthand(weekdayIndex, 3))
+    end
+  end
+
   local dim = DaysInMonth(state.year, state.month)
 
   -- Render a fixed 6x7 grid (42 cells). Cells before day 1 are populated from the
