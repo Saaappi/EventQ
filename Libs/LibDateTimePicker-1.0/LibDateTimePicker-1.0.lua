@@ -69,6 +69,21 @@ local function MakeLocalEpoch(parts)
   return time(parts)
 end
 
+local function SetDismissOverlayActive(pickerFrame, isActive)
+  local dismiss = DateTimePicker and DateTimePicker.dismiss
+  if not dismiss then return end
+
+  if isActive then
+    dismiss:SetFrameStrata(pickerFrame:GetFrameStrata())
+    dismiss:SetFrameLevel(math.max(pickerFrame:GetFrameLevel() - 1, 0))
+    dismiss:EnableMouse(true)
+    dismiss:Show()
+  else
+    dismiss:Hide()
+    dismiss:EnableMouse(false)
+  end
+end
+
 local function DaysInMonth(year, month)
   -- Lua date trick: day=0 gives last day of previous month.
   local dateParts = date("*t", time({ year = year, month = month + 1, day = 0, hour = 12 }))
@@ -264,7 +279,7 @@ function DateTimePicker:Ensure()
   dismiss:SetFrameStrata(pickerFrame:GetFrameStrata())
   dismiss:SetFrameLevel(math.max(pickerFrame:GetFrameLevel() - 1, 0))
   dismiss:EnableMouse(true)
-  dismiss:RegisterForClicks("AnyUp")
+  dismiss:RegisterForClicks("AnyDown")
   dismiss:SetScript("OnClick", function()
     DateTimePicker:Close()
   end)
@@ -273,22 +288,20 @@ function DateTimePicker:Ensure()
   end)
 
   pickerFrame:HookScript("OnShow", function()
-    if DateTimePicker.dismiss then
-      DateTimePicker.dismiss:SetFrameStrata(pickerFrame:GetFrameStrata())
-      DateTimePicker.dismiss:SetFrameLevel(math.max(pickerFrame:GetFrameLevel() - 1, 0))
-      DateTimePicker.dismiss:EnableMouse(true)
-      DateTimePicker.dismiss:Show()
-    end
+    SetDismissOverlayActive(pickerFrame, true)
   end)
 
   pickerFrame:HookScript("OnHide", function()
-    if DateTimePicker.dismiss then
-      DateTimePicker.dismiss:Hide()
-      DateTimePicker.dismiss:EnableMouse(false)
-    end
+    SetDismissOverlayActive(pickerFrame, false)
   end)
   local close = CreateFrame("Button", nil, pickerFrame, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", -6, -6)
+  close:SetScript("OnMouseDown", function()
+    SetDismissOverlayActive(pickerFrame, false)
+  end)
+  close:SetScript("OnClick", function()
+    DateTimePicker:Close()
+  end)
 
   -- Month header
   -- Keep month navigation buttons in fixed positions
@@ -573,11 +586,13 @@ function DateTimePicker:Ensure()
 end
 
 function DateTimePicker:Close()
-  if self.dismiss then
+  local pickerFrame = self.frame
+  if pickerFrame then
+    SetDismissOverlayActive(pickerFrame, false)
+  elseif self.dismiss then
     self.dismiss:Hide()
     self.dismiss:EnableMouse(false)
   end
-  local pickerFrame = self.frame
   if pickerFrame and pickerFrame:IsShown() then
     pickerFrame:Hide()
   end
