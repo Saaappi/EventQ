@@ -9,6 +9,12 @@ local function pad2(numberValue)
   return (numberValue < 10) and ("0" .. numberValue) or tostring(numberValue)
 end
 
+local function MakeLocalEpoch(parts)
+  -- Let the client infer DST for local wall-clock times.
+  -- Forcing `isdst = false` can shift times by one hour after DST changes.
+  return time(parts)
+end
+
 local function formatDateTimeParts(parts, includeYear)
   local monthPadded = pad2(parts.month)
   local dayPadded = pad2(parts.day)
@@ -54,10 +60,9 @@ function DateUtil:CalendarTimeToEpoch(cal)
   local second = tonumber(cal.second or cal.sec) or 0
   if not (year and month and day) then return nil end
 
-  return time({
+  return MakeLocalEpoch({
     year = year, month = month, day = day,
     hour = hour, min = minute, sec = second,
-    isdst = false,
   })
 end
 
@@ -186,10 +191,9 @@ function DateUtil:ParseUserDateTime(inputText, order, isEnd)
   if not minute or minute < 0 or minute > 59 then return nil, "Invalid minute." end
   if not second or second < 0 or second > 59 then return nil, "Invalid seconds." end
 
-  local epoch = time({
+  local epoch = MakeLocalEpoch({
     year = year, month = month, day = day,
     hour = hour, min = minute, sec = second,
-    isdst = false,
   })
 
   if not epoch then
@@ -224,14 +228,13 @@ function DateUtil:GetDaysInMonth(year, month)
   month = tonumber(month) or 1
 
   -- Lua date/time supports day=0 to mean "day 0 of next month" (i.e., last day of this month).
-  local lastDayEpoch = time({
+  local lastDayEpoch = MakeLocalEpoch({
     year = year,
     month = month + 1,
     day = 0,
     hour = 12,
     min = 0,
     sec = 0,
-    isdst = false,
   })
   local parts = lastDayEpoch and date("*t", lastDayEpoch) or nil
   return (parts and parts.day) or 28
@@ -248,7 +251,7 @@ function DateUtil:GetNthWeekdayOfMonth(year, month, weekOfMonth, weekday)
   weekOfMonth = tonumber(weekOfMonth) or 1
   weekday = tonumber(weekday) or 1
 
-  local firstDayEpoch = time({ year = year, month = month, day = 1, hour = 12, min = 0, sec = 0, isdst = false })
+  local firstDayEpoch = MakeLocalEpoch({ year = year, month = month, day = 1, hour = 12, min = 0, sec = 0 })
   local firstWday = (firstDayEpoch and date("*t", firstDayEpoch).wday) or 1
   local offset = (weekday - firstWday) % 7
   local day = 1 + offset + (weekOfMonth - 1) * 7
@@ -271,14 +274,13 @@ function DateUtil:CorrectToNthWeekdayInMonth(epoch, weekOfMonth, weekday)
   local parts = date("*t", epoch or time())
   local year, month = parts.year, parts.month
   local day = self:GetNthWeekdayOfMonth(year, month, weekOfMonth, weekday)
-  return time({
+  return MakeLocalEpoch({
     year = year,
     month = month,
     day = day,
     hour = parts.hour,
     min = parts.min,
     sec = parts.sec,
-    isdst = false,
   })
 end
 
@@ -323,14 +325,13 @@ function DateUtil:AddMonthsByNthWeekday(epoch, months, weekOfMonth, weekday)
   local month = (targetIndex % 12) + 1
 
   local day = self:GetNthWeekdayOfMonth(year, month, weekOfMonth, weekday)
-  return time({
+  return MakeLocalEpoch({
     year = year,
     month = month,
     day = day,
     hour = parts.hour,
     min = parts.min,
     sec = parts.sec,
-    isdst = false,
   })
 end
 
@@ -350,13 +351,12 @@ function DateUtil:AddYearsByMonthDay(epoch, years, month, day)
     day = daysInMonth
   end
 
-  return time({
+  return MakeLocalEpoch({
     year = year,
     month = month,
     day = day,
     hour = parts.hour,
     min = parts.min,
     sec = parts.sec,
-    isdst = false,
   })
 end

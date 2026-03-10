@@ -63,6 +63,12 @@ local function pad2(numberValue)
   return (numberValue < 10) and ("0" .. numberValue) or tostring(numberValue)
 end
 
+local function MakeLocalEpoch(parts)
+  -- Let the client infer DST for local wall-clock times.
+  -- Forcing `isdst = false` shifts midnight to 01:00 during DST.
+  return time(parts)
+end
+
 local function DaysInMonth(year, month)
   -- Lua date trick: day=0 gives last day of previous month.
   local dateParts = date("*t", time({ year = year, month = month + 1, day = 0, hour = 12 }))
@@ -656,10 +662,9 @@ function DateTimePicker:ApplyToEditBox()
   if not pickerFrame or not pickerFrame.targetEditBox or not pickerFrame.state or not pickerFrame.dateUtil then return end
 
   local state = pickerFrame.state
-  local epoch = time({
+  local epoch = MakeLocalEpoch({
     year = state.year, month = state.month, day = state.day,
     hour = state.hour, min = state.min, sec = 0,
-    isdst = false,
   })
   if not epoch then return end
 

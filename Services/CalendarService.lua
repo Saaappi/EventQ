@@ -666,7 +666,7 @@ function CalendarService:CollectSearchIndex(maxDaysAhead)
 
     if month and year then
       for monthDay = 1, numDays do
-        local dayEpoch = time({ year = year, month = month, day = monthDay, hour = 0, min = 0, sec = 0, isdst = false })
+        local dayEpoch = time({ year = year, month = month, day = monthDay, hour = 0, min = 0, sec = 0 })
         if dayEpoch < startDayEpoch then
           -- Skip days earlier than our window start (happens in the first month).
         elseif dayEpoch > (startDayEpoch + maxDaysAhead * 86400) then
