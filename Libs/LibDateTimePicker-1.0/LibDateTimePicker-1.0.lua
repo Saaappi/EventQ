@@ -29,12 +29,6 @@ local ENG_MONTHS = {
   "July", "August", "September", "October", "November", "December"
 }
 
-local WEEKDAY_KEYS = {
-  "WEEKDAY_SUNDAY", "WEEKDAY_MONDAY", "WEEKDAY_TUESDAY", "WEEKDAY_WEDNESDAY",
-  "WEEKDAY_THURSDAY", "WEEKDAY_FRIDAY", "WEEKDAY_SATURDAY"
-}
-local ENG_SHORTHAND_WEEKDAYS = { "S", "M", "T", "W", "T", "F", "S" }
-
 -- Blizzard doesn't have a UTF8-safe substring function, as the library was added in
 -- Lua 5.3. We'll need to invent our own because some locales have multi-byte characters
 -- in their weekday abbreviations.
@@ -96,7 +90,7 @@ local function FirstWeekdayOfMonth(year, month)
 end
 
 local function MonthName(month)
-  local key = MONTH_KEYS and MONTH_KEYS[month]
+  local key = MONTH_KEYS[month]
   return (key and _G[key]) or ENG_MONTHS[month] or tostring(month)
 end
 
@@ -174,8 +168,6 @@ function DateTimePicker:UpdateCalendarButtonIcons()
 
   local day = GetCalendarDayNumber()
   if not day then return end
-
-  self.calendarDay = day
 
   local atlas = GetCalendarDayAtlas(day) or PickCalendarAtlas()
 
@@ -434,7 +426,6 @@ function DateTimePicker:Ensure()
   pickerFrame.TodayBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.TodayBtn:SetSize(90, 22)
   pickerFrame.TodayBtn:SetPoint("LEFT", pickerFrame.NowBtn, "RIGHT", 8, 0)
-  pickerFrame.TodayBtn:SetText(GetLocalized(self, "BUTTON_START", _G.START or "Start"))
 
   pickerFrame.DoneBtn = CreateFrame("Button", nil, pickerFrame, "UIPanelButtonTemplate")
   pickerFrame.DoneBtn:SetSize(90, 22)
@@ -569,7 +560,6 @@ function DateTimePicker:Ensure()
       state.hour, state.min = 0, 0
     end
 
-    DateTimePicker:RefreshCalendar()
     setTimeUI()
     DateTimePicker:ApplyToEditBox()
   end)
