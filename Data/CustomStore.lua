@@ -53,6 +53,10 @@ function CustomStore:Constructor(db)
   self.db.customEvents = self.db.customEvents or {}
   -- Per-profile monotonically increasing id counter for stable ids.
   self.db._nextCustomId = tonumber(self.db._nextCustomId) or 1
+
+  if type(self.db._migrations) ~= "table" then
+    self.db._migrations = {}
+  end
 end
 
 ---@param event table {title,startEpoch,endEpoch,icon?,description?,series?,reminders?}
@@ -66,6 +70,9 @@ function CustomStore:Add(event)
     startEpoch = event and event.startEpoch or nil,
     endEpoch = event and event.endEpoch or nil,
     icon = (event and event.icon) or DEFAULT_ICON,
+    -- Marker for epoch construction mode.
+    -- "local_auto" means the epoch was created with DST inferred (no forced isdst).
+    _eventqEpochMode = "local_auto",
     -- series config is intentionally shallow-copied to avoid accidental shared mutations
     series = CopyTableShallow(event and event.series),
     -- Standalone reminder lead-times in seconds (up to 2 entries).
@@ -118,6 +125,7 @@ function CustomStore:Replace(oldId, event)
       existing.icon = (event and event.icon) or existing.icon or DEFAULT_ICON
       existing.series = CopyTableShallow(event and event.series)
       existing.reminders = CopyReminders(event and event.reminders)
+      existing._eventqEpochMode = "local_auto"
       return existing.id
     end
   end
@@ -146,5 +154,34 @@ function CustomStore:PruneOld(nowEpoch)
   for i = #events, write + 1, -1 do
     events[i] = nil
   end
+end
+
+--- Adjust all stored custom events by adding `seconds` to start/end epochs.
+-- This is a helper for manual migration when timestamps must be shifted
+-- (e.g., after a DST-related import). It does not change series config.
+function CustomStore:AdjustAllEventsOffset(seconds)
+  seconds = tonumber(seconds) or 0
+  if seconds == 0 then return 0 end
+  local count = 0
+  for _, ev in ipairs(self.db.customEvents or {}) do
+    if ev then
+      if ev.startEpoch then ev.startEpoch = tonumber(ev.startEpoch) + seconds end
+      if ev.endEpoch then ev.endEpoch = tonumber(ev.endEpoch) + seconds end
+      count = count + 1
+    end
+  end
+
+  -- If the caller is applying the known legacy DST correction offset, mark the
+  -- migration as complete so automatic migration won't re-apply it.
+  if seconds == -3600 or seconds == 3600 then
+    if type(self.db._migrations) ~= "table" then
+      self.db._migrations = {}
+    end
+    self.db._migrations.customEventsDstEpochFixV1 = true
+    self.db._migrations.customEventsDstEpochFixV1Adjusted = count
+    self.db._migrations.customEventsDstEpochFixV1Manual = true
+  end
+
+  return count
 end
 

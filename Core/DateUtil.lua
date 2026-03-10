@@ -302,14 +302,22 @@ end
 ---@param days integer
 ---@return integer
 function DateUtil:AddDays(epoch, days)
-  return (tonumber(epoch) or 0) + (tonumber(days) or 0) * 86400
+  epoch = tonumber(epoch) or 0
+  days = tonumber(days) or 0
+  if days == 0 then return epoch end
+  local parts = date("*t", epoch)
+  if not parts then return epoch + (days * 86400) end
+  -- Use Lua's overflow handling for day arithmetic but preserve local wall-clock hour/min/sec.
+  return MakeLocalEpoch({ year = parts.year, month = parts.month, day = (parts.day or 1) + days, hour = parts.hour, min = parts.min, sec = parts.sec })
 end
 
 ---@param epoch integer
 ---@param weeks integer
 ---@return integer
 function DateUtil:AddWeeks(epoch, weeks)
-  return (tonumber(epoch) or 0) + (tonumber(weeks) or 0) * 7 * 86400
+  weeks = tonumber(weeks) or 0
+  if weeks == 0 then return tonumber(epoch) or 0 end
+  return self:AddDays(epoch, (weeks * 7))
 end
 
 ---@param epoch integer

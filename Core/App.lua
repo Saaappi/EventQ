@@ -211,15 +211,22 @@ local function NextOccurrenceStartAtOrAfter(dateUtil, firstStartEpoch, series, t
     local steps = math.floor((deltaSeconds + intervalSeconds - 1) / intervalSeconds)
     return firstStartEpoch + (steps * intervalSeconds)
   elseif frequency == SERIES_FREQ.DAILY then
-    local intervalSeconds = 86400
-    local deltaSeconds = targetEpoch - firstStartEpoch
-    local steps = math.floor((deltaSeconds + intervalSeconds - 1) / intervalSeconds)
-    return firstStartEpoch + (steps * intervalSeconds)
+    -- Preserve wall-clock when advancing by days (avoid DST drift).
+    local daysDiff = math.floor((targetEpoch - firstStartEpoch) / 86400)
+    if daysDiff < 0 then daysDiff = 0 end
+    local candidate = dateUtil:AddDays(firstStartEpoch, daysDiff)
+    if candidate < targetEpoch then
+      candidate = dateUtil:AddDays(candidate, 1)
+    end
+    return candidate
   elseif frequency == SERIES_FREQ.WEEKLY then
-    local intervalSeconds = 7 * 86400
-    local deltaSeconds = targetEpoch - firstStartEpoch
-    local steps = math.floor((deltaSeconds + intervalSeconds - 1) / intervalSeconds)
-    return firstStartEpoch + (steps * intervalSeconds)
+    local weeksDiff = math.floor((targetEpoch - firstStartEpoch) / (7 * 86400))
+    if weeksDiff < 0 then weeksDiff = 0 end
+    local candidate = dateUtil:AddWeeks(firstStartEpoch, weeksDiff)
+    if candidate < targetEpoch then
+      candidate = dateUtil:AddWeeks(candidate, 1)
+    end
+    return candidate
   elseif frequency == SERIES_FREQ.MONTHLY then
     local startParts = date("*t", firstStartEpoch)
     local targetParts = date("*t", targetEpoch)

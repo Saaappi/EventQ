@@ -103,6 +103,67 @@ local function EnsureMinimapDefaults(db)
   db.minimap.minimapPos = tonumber(db.minimap.minimapPos) or 225
 end
 
+local function EnsureMigrationDefaults(db)
+  if type(db._migrations) ~= "table" then
+    db._migrations = {}
+  end
+end
+
+-- Legacy migration:
+-- Older builds forced `isdst = false` when constructing epochs for custom events,
+-- which can shift events that occur during DST by +1 hour.
+--
+-- We can safely adjust only events that were created before the fix by checking
+-- for the absence of the per-event marker `_eventqEpochMode`.
+local function MigrateLegacyCustomEventDstEpochs(db)
+  EnsureMigrationDefaults(db)
+
+  if db._migrations.customEventsDstEpochFixV1 then
+    return
+  end
+
+  local events = db.customEvents
+  if type(events) ~= "table" or #events == 0 then
+    return
+  end
+
+  local adjusted = 0
+  for _, ev in ipairs(events) do
+    if type(ev) == "table" and ev._eventqEpochMode == nil then
+      local didAdjust = false
+
+      local startEpoch = tonumber(ev.startEpoch)
+      if startEpoch then
+        local startParts = date("*t", startEpoch)
+        if startParts and startParts.isdst then
+          ev.startEpoch = startEpoch - 3600
+          didAdjust = true
+        end
+      end
+
+      local endEpoch = tonumber(ev.endEpoch)
+      if endEpoch then
+        local endParts = date("*t", endEpoch)
+        if endParts and endParts.isdst then
+          ev.endEpoch = endEpoch - 3600
+          didAdjust = true
+        end
+      end
+
+      if didAdjust then
+        adjusted = adjusted + 1
+      end
+
+      -- Mark as migrated/modernized regardless, so we won't ever try to
+      -- re-adjust this event via heuristics.
+      ev._eventqEpochMode = "local_auto"
+    end
+  end
+
+  db._migrations.customEventsDstEpochFixV1 = true
+  db._migrations.customEventsDstEpochFixV1Adjusted = adjusted
+end
+
 ---@return table
 function Database:Init()
   _G.EventQDB = _G.EventQDB or {}
@@ -112,6 +173,9 @@ function Database:Init()
   EnsureReminderDefaults(db)
   EnsureWindowDefaults(db)
   EnsureMinimapDefaults(db)
+
+  -- Run one-time migrations after defaults are present.
+  MigrateLegacyCustomEventDstEpochs(db)
 
   Addon.db = db
   return db
